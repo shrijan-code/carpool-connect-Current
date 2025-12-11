@@ -1,0 +1,312 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    // Security helper functions
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+    function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
+    function isValidTimestamp(ts) { 
+      return ts is timestamp && ts > timestamp.date(2024, 1, 1); 
+    }
+    function isRecentRequest() {
+      return request.time > timestamp.date(2024, 1, 1) && 
+             request.time < timestamp.date(2030, 12, 31);
+    }
+    function hasValidUserAgent() {
+      return request.auth.token.user_agent != null && 
+             string(request.auth.token.user_agent).size() > 0;
+    }
+    function isRateLimited() {
+      // Basic rate limiting check - can be enhanced with external systems
+      return false; // Placeholder - implement with Cloud Functions
+    }
+    function validateStringLength(str, maxLength) {
+      return str is string && str.size() <= maxLength && str.size() > 0;
+    }
+    function validateEmail(email) {
+      return email is string && email.matches('.*@.*\\..*') && email.size() <= 254;
+    }
+    function validatePhoneNumber(phone) {
+      return phone is string && phone.matches('[+]?[0-9\\s\\-\\(\\)]{10,15}');
+    }
+
+    match /users/{uid} {
+      // Enhanced user profile security
+      allow read: if isSignedIn() && isRecentRequest() && !isRateLimited();
+      
+      allow create: if request.auth != null && 
+                      request.auth.uid == uid &&
+                      isRecentRequest() &&
+                      validateStringLength(request.resource.data.name, 100) &&
+                      validateEmail(request.resource.data.email) &&
+                      (request.resource.data.phone == '' || validatePhoneNumber(request.resource.data.phone)) &&
+                      request.resource.data.role in ['rider', 'driver', 'both'] &&
+                      request.resource.data.rating >= 0 &&
+                      request.resource.data.rating <= 5 &&
+                      request.resource.data.totalRides >= 0;
+      
+      allow update: if isOwner(uid) && 
+                      isRecentRequest() &&
+                      (!('name' in request.resource.data) || validateStringLength(request.resource.data.name, 100)) &&
+                      (!('email' in request.resource.data) || validateEmail(request.resource.data.email)) &&
+                      (!('phone' in request.resource.data) || request.resource.data.phone == '' || validatePhoneNumber(request.resource.data.phone)) &&
+                      (!('role' in request.resource.data) || request.resource.data.role in ['rider', 'driver', 'both']);
+      
+      // Prevent deletion of user profiles
+      allow delete: if false;
+    }
+
+    match /rides/{rideId} {
+      // Enhanced ride security with input validation
+      allow read: if isRecentRequest() && !isRateLimited();
+      
+      allow create: if isSignedIn() && 
+                      isRecentRequest() &&
+                      request.resource.data.driverId == request.auth.uid &&
+                      request.resource.data.seatsTotal > 0 &&
+                      request.resource.data.seatsTotal <= 8 &&
+                      request.resource.data.pricePerSeat >= 0 &&
+                      request.resource.data.pricePerSeat <= 50000 && // Max $500
+                      // Allow creates if departureTime is present (client validation handles 'future' check)
+                      (request.resource.data.departureTime is string || request.resource.data.departureTime is timestamp) &&
+                      validateStringLength(request.resource.data.from.address, 500) &&
+                      validateStringLength(request.resource.data.to.address, 500) &&
+                      request.resource.data.status == 'upcoming';
+      
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      resource.data.driverId == request.auth.uid &&
+                      // Prevent manipulation of critical fields
+                      request.resource.data.driverId == resource.data.driverId &&
+                      request.resource.data.pricePerSeat == resource.data.pricePerSeat &&
+                      request.resource.data.departureAt == resource.data.departureAt;
+      
+      allow delete: if isSignedIn() && 
+                      isRecentRequest() &&
+                      resource.data.driverId == request.auth.uid &&
+                      resource.data.status in ['upcoming', 'cancelled'];
+    }
+
+    match /bookings/{bookingId} {
+      // Enhanced booking security with concurrency protection
+      allow read: if isSignedIn() && 
+                    isRecentRequest() &&
+                    (
+                      resource.data.riderId == request.auth.uid ||
+                      resource.data.driverId == request.auth.uid
+                    );
+      
+      // Rider creates pending booking with enhanced validation
+      allow create: if isSignedIn() &&
+                      isRecentRequest() &&
+                      request.resource.data.riderId == request.auth.uid &&
+                      request.resource.data.status in ["pending_driver", "pending_payment"] &&
+                      request.resource.data.amountTotal >= 0 &&
+                      request.resource.data.amountTotal <= 100000 && // Max $1000
+                      request.resource.data.seats > 0 &&
+                      request.resource.data.seats <= 4 && // Max 4 seats per booking
+                      isValidTimestamp(request.resource.data.createdAt);
+
+      // Enhanced update rules with atomic operations protection
+      allow update: if isSignedIn() &&
+                      isRecentRequest() &&
+                      (
+                        // Rider can cancel own pending/confirmed bookings
+                        (request.auth.uid == resource.data.riderId &&
+                          resource.data.status in ["pending_driver", "confirmed", "pending_payment"] &&
+                          request.resource.data.status == "cancelled_by_rider") ||
+                        // Rider can complete payment flow
+                        (request.auth.uid == resource.data.riderId &&
+                          resource.data.status == "pending_payment" &&
+                          request.resource.data.status == "pending_driver") ||
+                        // Driver can accept/decline pending requests (with concurrency check)
+                        (request.auth.uid == resource.data.driverId &&
+                          resource.data.status == "pending_driver" &&
+                          request.resource.data.status in ["confirmed", "declined"] &&
+                          // Ensure no tampering with critical fields
+                          request.resource.data.riderId == resource.data.riderId &&
+                          request.resource.data.amountTotal == resource.data.amountTotal &&
+                          request.resource.data.seats == resource.data.seats) ||
+                        // Cloud Functions service account can update payment statuses
+                        (isAdmin())
+                      );
+      
+      allow delete: if false;
+    }
+
+    // Messages collection for ride/delivery chat (FIXED: was incorrectly nested)
+    match /messages/{messageId} {
+      allow read: if isSignedIn() && isRecentRequest();
+      allow create: if isSignedIn() && isRecentRequest() && !isRateLimited() &&
+                      request.resource.data.senderId == request.auth.uid &&
+                      request.resource.data.senderName is string &&
+                      request.resource.data.message is string;
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      // Only allow updating readBy array
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']) &&
+                      // User can only add themselves to readBy
+                      request.resource.data.readBy.hasAll(resource.data.readBy);
+      allow delete: if false;
+    }
+
+    // Message threads for organizing conversations
+    match /message_threads/{threadId} {
+      allow read: if isSignedIn() && 
+                    isRecentRequest() &&
+                    request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn() && isRecentRequest() &&
+                      request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      request.auth.uid in resource.data.participants;
+      allow delete: if false;
+    }
+
+    // Delivery messages (separate collection)
+    match /delivery_messages/{messageId} {
+      allow read: if isSignedIn() && isRecentRequest();
+      allow create: if isSignedIn() && isRecentRequest() && !isRateLimited() &&
+                      request.resource.data.senderId == request.auth.uid;
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy']);
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false; // Only Cloud Functions can write notifications
+    }
+
+    // Safety Reports Collection
+    match /safety_reports/{reportId} {
+      allow read: if isSignedIn() && 
+                    isRecentRequest() &&
+                    resource.data.reporterId == request.auth.uid;
+      allow create: if isSignedIn() && 
+                      isRecentRequest() &&
+                      request.resource.data.reporterId == request.auth.uid &&
+                      request.resource.data.type in ['unsafe_driving', 'harassment', 'vehicle_issue', 'route_deviation', 'emergency', 'other'] &&
+                      request.resource.data.severity in ['low', 'medium', 'high', 'critical'] &&
+                      validateStringLength(request.resource.data.description, 5000) &&
+                      request.resource.data.status in ['pending', 'investigating', 'resolved', 'escalated', 'closed'];
+      // Prevent updates and deletes to maintain report integrity
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // Top-level Emergency Contacts Collection
+    match /emergency_contacts/{contactId} {
+      allow read: if isSignedIn() && 
+                    isRecentRequest() &&
+                    resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && 
+                      isRecentRequest() &&
+                      request.resource.data.userId == request.auth.uid &&
+                      validateStringLength(request.resource.data.name, 100) &&
+                      validatePhoneNumber(request.resource.data.phone) &&
+                      validateStringLength(request.resource.data.relationship, 50);
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      resource.data.userId == request.auth.uid &&
+                      request.resource.data.userId == resource.data.userId;
+      allow delete: if isSignedIn() && 
+                      isRecentRequest() &&
+                      resource.data.userId == request.auth.uid;
+    }
+
+    // User Emergency Contacts Subcollection (Legacy)
+    match /users/{userId}/emergencyContacts/{contactId} {
+      allow read, write: if isSignedIn() && 
+                           isRecentRequest() &&
+                           userId == request.auth.uid;
+    }
+
+    // Enhanced Deliveries security
+    match /deliveries/{deliveryId} {
+      allow read: if isSignedIn() && isRecentRequest() && !isRateLimited();
+      
+      allow create: if isSignedIn() &&
+                      isRecentRequest() &&
+                      request.resource.data.businessId == request.auth.uid &&
+                      validateStringLength(request.resource.data.title, 100) &&
+                      validateStringLength(request.resource.data.description, 500) &&
+                      request.resource.data.price >= 0 &&
+                      request.resource.data.price <= 50000 && // Max $500
+                      validateStringLength(request.resource.data.pickupAddress, 200) &&
+                      validateStringLength(request.resource.data.deliveryAddress, 200) &&
+                      request.resource.data.status == 'pending';
+      
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      (
+                        // Business owner can update their deliveries
+                        (resource.data.businessId == request.auth.uid &&
+                         request.resource.data.businessId == resource.data.businessId) ||
+                        // Driver can accept deliveries
+                        (resource.data.status == 'pending' &&
+                         request.resource.data.status == 'accepted' &&
+                         request.resource.data.driverId == request.auth.uid) ||
+                        // Driver can update status of accepted deliveries
+                        (resource.data.driverId == request.auth.uid &&
+                         request.resource.data.driverId == resource.data.driverId &&
+                         request.resource.data.status in ['in_transit', 'delivered', 'cancelled'])
+                      );
+      
+      allow delete: if isSignedIn() && 
+                      isRecentRequest() &&
+                      resource.data.businessId == request.auth.uid &&
+                      resource.data.status in ['pending', 'cancelled'];
+    }
+
+    // Enhanced Delivery Bookings
+    match /delivery_bookings/{bookingId} {
+      allow read: if isSignedIn() && 
+                    isRecentRequest() &&
+                    (
+                      resource.data.businessId == request.auth.uid ||
+                      resource.data.driverId == request.auth.uid
+                    );
+      
+      allow create: if isSignedIn() && 
+                      isRecentRequest() &&
+                      request.resource.data.driverId == request.auth.uid &&
+                      request.resource.data.status == 'pending' &&
+                      isValidTimestamp(request.resource.data.createdAt);
+      
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      (
+                        resource.data.businessId == request.auth.uid ||
+                        resource.data.driverId == request.auth.uid
+                      ) &&
+                      // Prevent tampering with critical fields
+                      request.resource.data.businessId == resource.data.businessId &&
+                      request.resource.data.driverId == resource.data.driverId;
+    }
+    
+    // Security audit logs - only Cloud Functions can write
+    match /security_logs/{logId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Rate limiting data - only Cloud Functions can manage
+    match /rate_limits/{limitId} {
+      allow read, write: if isAdmin();
+    }
+    
+    // System health monitoring
+    match /system_health/{healthId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+    
+    // Default deny all other paths with security logging
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

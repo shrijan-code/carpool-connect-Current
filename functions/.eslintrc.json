@@ -1,0 +1,57 @@
+{
+  "root": true,
+  "env": {
+    "es6": true,
+    "node": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+  "overrides": [
+    {
+      "files": ["**/*.ts", "**/*.tsx"],
+      "parser": "@typescript-eslint/parser",
+      "parserOptions": {
+        "sourceType": "module"
+      }
+    },
+    {
+      "files": ["**/*.js"],
+      "parser": "espree",
+      "rules": {}
+    }
+  ],
+  "ignorePatterns": [
+    "lib/**/*",
+    "**/*.js",
+    "**/*.js.map",
+    "src/**/*.js",
+    "bookingFlow.js",
+    "index.js",
+    "stripe.js",
+    "node_modules/**/*"
+  ],
+  "plugins": [
+    "@typescript-eslint"
+  ],
+  "rules": {
+    "quotes": "off",
+    "object-curly-spacing": "off",
+    "max-len": "off",
+    "comma-dangle": "off",
+    "require-jsdoc": "off",
+    "indent": "off",
+    "no-trailing-spaces": "off",
+    "arrow-parens": "off",
+    "operator-linebreak": "off",
+    "padded-blocks": "off",
+    "curly": "off",
+    "eol-last": "off",
+    "import/export": "off",
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "@typescript-eslint/no-inferrable-types": "off"
+  }
+}

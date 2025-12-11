@@ -1,0 +1,1 @@
+﻿src/index.ts(494,4): error TS2339: Property 'schedule' does not exist on type 'typeof import("C:/Users/Shrijan-Work/Documents/CarpoolConnect1.0/functions/node_modules/firebase-functions/lib/v2/providers/pubsub")'.
