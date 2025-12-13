@@ -40,7 +40,7 @@ export const RideControls: React.FC<RideControlsProps> = ({
   const confirmedPassengers = ride.passengers || [];
   const totalPassengerSeats = confirmedPassengers.reduce((sum, p) => sum + p.seats, 0);
   const estimatedRevenue = totalPassengerSeats * ride.pricePerSeat;
-  const platformFee = Math.round(estimatedRevenue * 0.1);
+  const platformFee = 500; // $5 flat platform fee
   const driverPayout = estimatedRevenue - platformFee;
 
   const handleStartRide = async () => {
@@ -61,18 +61,18 @@ export const RideControls: React.FC<RideControlsProps> = ({
           text: 'Start Ride',
           onPress: async () => {
             setIsStarting(true);
-            
+
             try {
               console.log('🚗 Starting ride:', ride.id);
-              
+
               const startRide = httpsCallable(functions, 'startRide');
               const result = await startRide({ rideId: ride.id });
-              
+
               const data = result.data as any;
-              
+
               if (data.success) {
                 console.log('✅ Ride started successfully');
-                
+
                 Alert.alert(
                   'Ride Started! 🚗',
                   data.message,
@@ -104,18 +104,18 @@ export const RideControls: React.FC<RideControlsProps> = ({
           style: 'destructive',
           onPress: async () => {
             setIsCompleting(true);
-            
+
             try {
               console.log('🚗 Completing ride and processing charges:', ride.id);
-              
+
               const completeRideAndCharge = httpsCallable(functions, 'completeRideAndCharge');
               const result = await completeRideAndCharge({ rideId: ride.id });
-              
+
               const data = result.data as any;
-              
+
               if (data.success) {
                 console.log('✅ Ride completed and payments processed');
-                
+
                 const summary = data.summary;
                 Alert.alert(
                   'Ride Completed! 🎉',
@@ -188,7 +188,7 @@ export const RideControls: React.FC<RideControlsProps> = ({
             </Text>
           </View>
         </View>
-        
+
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ride.status) }]}>
           <Text style={styles.statusText}>{getStatusText(ride.status)}</Text>
         </View>
@@ -203,7 +203,7 @@ export const RideControls: React.FC<RideControlsProps> = ({
             {confirmedPassengers.length} ({totalPassengerSeats} seats)
           </Text>
         </View>
-        
+
         <View style={styles.statItem}>
           <DollarSign size={20} color="#34C759" />
           <Text style={styles.statLabel}>Est. Payout</Text>
@@ -239,7 +239,7 @@ export const RideControls: React.FC<RideControlsProps> = ({
             </Text>
           </View>
           <View style={styles.revenueRow}>
-            <Text style={styles.revenueLabel}>Platform Fee (10%)</Text>
+            <Text style={styles.revenueLabel}>Platform Fee ($5)</Text>
             <Text style={styles.revenueAmount}>
               -${(platformFee / 100).toFixed(2)}
             </Text>
@@ -271,7 +271,7 @@ export const RideControls: React.FC<RideControlsProps> = ({
             )}
           </TouchableOpacity>
         )}
-        
+
         {ride.status === 'active' && (
           <TouchableOpacity
             style={[styles.actionButton, styles.completeButton]}
@@ -288,7 +288,7 @@ export const RideControls: React.FC<RideControlsProps> = ({
             )}
           </TouchableOpacity>
         )}
-        
+
         {ride.status === 'completed' && (
           <View style={styles.completedContainer}>
             <Text style={styles.completedText}>

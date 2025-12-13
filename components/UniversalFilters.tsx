@@ -8,19 +8,19 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import { Filter, X, MapPin, DollarSign, Package, Navigation } from 'lucide-react-native';
+import { Filter, X, MapPin, DollarSign, Navigation, Car } from 'lucide-react-native';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/colors';
-import { FilterOptions, DeliveryFilterOptions } from '@/hooks/useRideFilters';
+import { FilterOptions } from '@/hooks/useRideFilters';
 import { PlacesAutocomplete } from '@/components/PlacesAutocomplete';
 import { Location } from '@/types';
 import { LocationService } from '@/services/location';
 
 interface UniversalFiltersProps {
-  type: 'rides' | 'deliveries';
-  filters: FilterOptions | DeliveryFilterOptions;
-  onFiltersChange: (filters: Partial<FilterOptions | DeliveryFilterOptions>) => void;
+  type: 'rides';
+  filters: FilterOptions;
+  onFiltersChange: (filters: Partial<FilterOptions>) => void;
   onClearFilters: () => void;
   activeFiltersCount: number;
   totalCount: number;
@@ -37,27 +37,27 @@ export function UniversalFilters({
   filteredCount
 }: UniversalFiltersProps) {
   const [showModal, setShowModal] = useState(false);
-  const [tempFilters, setTempFilters] = useState<FilterOptions | DeliveryFilterOptions>({});
-  
+  const [tempFilters, setTempFilters] = useState<FilterOptions>({});
+
   // Handle modal opening and initialize tempFilters
   const handleOpenModal = useCallback(() => {
     setTempFilters(filters);
     setShowModal(true);
   }, [filters]);
-  
+
   const [showLocationPicker, setShowLocationPicker] = useState(false);
-  
+
   const handleApplyFilters = useCallback(() => {
     onFiltersChange(tempFilters);
     setShowModal(false);
   }, [tempFilters, onFiltersChange]);
-  
+
   const handleClearFilters = useCallback(() => {
     setTempFilters({});
     onClearFilters();
     setShowModal(false);
   }, [onClearFilters]);
-  
+
   const handleLocationSelect = useCallback((location: Location) => {
     if (location?.latitude && location?.longitude) {
       setTempFilters(prev => ({
@@ -81,7 +81,7 @@ export function UniversalFilters({
             Filters {activeFiltersCount > 0 && `(${activeFiltersCount})`}
           </Text>
         </TouchableOpacity>
-        
+
         {activeFiltersCount > 0 && (
           <View style={styles.resultsContainer}>
             <Text style={styles.resultsText}>
@@ -90,7 +90,7 @@ export function UniversalFilters({
           </View>
         )}
       </View>
-      
+
       <Modal
         visible={showModal}
         animationType="slide"
@@ -99,7 +99,7 @@ export function UniversalFilters({
       >
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Filter {type === 'rides' ? 'Rides' : 'Deliveries'}</Text>
+            <Text style={styles.modalTitle}>Filter Rides</Text>
             <TouchableOpacity
               onPress={() => setShowModal(false)}
               style={styles.closeButton}
@@ -108,7 +108,7 @@ export function UniversalFilters({
               <X size={24} color={Colors.text} />
             </TouchableOpacity>
           </View>
-          
+
           <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
             {/* Location Filters */}
             <View style={styles.filterSection}>
@@ -116,7 +116,7 @@ export function UniversalFilters({
                 <MapPin size={20} color={Colors.primary} />
                 <Text style={styles.sectionTitle}>Location</Text>
               </View>
-              
+
               <Input
                 label="City"
                 value={tempFilters.city || ''}
@@ -124,7 +124,7 @@ export function UniversalFilters({
                 placeholder="e.g., Sydney, Melbourne"
                 style={styles.input}
               />
-              
+
               <Input
                 label="Suburb"
                 value={tempFilters.suburb || ''}
@@ -132,7 +132,7 @@ export function UniversalFilters({
                 placeholder="e.g., Bondi, Richmond"
                 style={styles.input}
               />
-              
+
               <Input
                 label="Postcode"
                 value={tempFilters.postcode || ''}
@@ -141,7 +141,7 @@ export function UniversalFilters({
                 keyboardType="numeric"
                 style={styles.input}
               />
-              
+
               {/* Location Picker for Distance Filter */}
               <TouchableOpacity
                 style={styles.locationPickerButton}
@@ -149,13 +149,13 @@ export function UniversalFilters({
               >
                 <Navigation size={16} color={Colors.primary} />
                 <Text style={styles.locationPickerText}>
-                  {tempFilters.userLocation 
-                    ? 'Location set for distance filter' 
+                  {tempFilters.userLocation
+                    ? 'Location set for distance filter'
                     : 'Set location for distance filter'
                   }
                 </Text>
               </TouchableOpacity>
-              
+
               {tempFilters.userLocation && (
                 <Input
                   label="Max Distance (km)"
@@ -170,14 +170,14 @@ export function UniversalFilters({
                 />
               )}
             </View>
-            
+
             {/* Price Filters */}
             <View style={styles.filterSection}>
               <View style={styles.sectionHeader}>
                 <DollarSign size={20} color={Colors.primary} />
                 <Text style={styles.sectionTitle}>Price Range</Text>
               </View>
-              
+
               <View style={styles.priceRow}>
                 <Input
                   label="Min Price ($)"
@@ -190,7 +190,7 @@ export function UniversalFilters({
                   keyboardType="decimal-pad"
                   style={[styles.input, styles.halfWidth]}
                 />
-                
+
                 <Input
                   label="Max Price ($)"
                   value={tempFilters.maxPrice?.toString() || ''}
@@ -204,76 +204,28 @@ export function UniversalFilters({
                 />
               </View>
             </View>
-            
-            {/* Type-specific Options */}
+
+            {/* Ride Options */}
             <View style={styles.filterSection}>
               <View style={styles.sectionHeader}>
-                <Package size={20} color={Colors.primary} />
-                <Text style={styles.sectionTitle}>
-                  {type === 'rides' ? 'Ride Options' : 'Delivery Options'}
-                </Text>
+                <Car size={20} color={Colors.primary} />
+                <Text style={styles.sectionTitle}>Ride Options</Text>
               </View>
-              
-              {type === 'rides' ? (
-                <>
-                  <Input
-                    label="Minimum Seats"
-                    value={(tempFilters as FilterOptions).minSeats?.toString() || ''}
-                    onChangeText={(text) => {
-                      const value = text ? parseInt(text, 10) : undefined;
-                      setTempFilters(prev => ({ ...prev, minSeats: value }));
-                    }}
-                    placeholder="1"
-                    keyboardType="numeric"
-                    style={styles.input}
-                  />
-                  
-                  {/* Delivery Toggle */}
-                  <View style={styles.toggleContainer}>
-                    <Text style={styles.toggleLabel}>Available for Deliveries</Text>
-                    <TouchableOpacity
-                      style={[styles.toggle, (tempFilters as FilterOptions).availableForDelivery && styles.toggleActive]}
-                      onPress={() => setTempFilters(prev => ({ 
-                        ...prev, 
-                        availableForDelivery: (prev as FilterOptions).availableForDelivery ? undefined : true 
-                      }))}
-                      testID="delivery-filter-toggle"
-                    >
-                      <View style={[styles.toggleThumb, (tempFilters as FilterOptions).availableForDelivery && styles.toggleThumbActive]} />
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <>
-                  {/* Package Size Filter for Deliveries */}
-                  <Text style={styles.inputLabel}>Package Size</Text>
-                  <View style={styles.packageSizeContainer}>
-                    {['all', 'small', 'medium', 'large', 'extra_large'].map((size) => (
-                      <TouchableOpacity
-                        key={size}
-                        style={[
-                          styles.packageSizeButton,
-                          (tempFilters as DeliveryFilterOptions).packageSize === size && styles.packageSizeButtonActive
-                        ]}
-                        onPress={() => setTempFilters(prev => ({ 
-                          ...prev, 
-                          packageSize: size as any
-                        }))}
-                      >
-                        <Text style={[
-                          styles.packageSizeButtonText,
-                          (tempFilters as DeliveryFilterOptions).packageSize === size && styles.packageSizeButtonTextActive
-                        ]}>
-                          {size === 'all' ? 'All' : size.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </>
-              )}
+
+              <Input
+                label="Minimum Seats"
+                value={(tempFilters as FilterOptions).minSeats?.toString() || ''}
+                onChangeText={(text) => {
+                  const value = text ? parseInt(text, 10) : undefined;
+                  setTempFilters(prev => ({ ...prev, minSeats: value }));
+                }}
+                placeholder="1"
+                keyboardType="numeric"
+                style={styles.input}
+              />
             </View>
           </ScrollView>
-          
+
           <View style={styles.modalFooter}>
             <Button
               title="Clear All"
@@ -289,7 +241,7 @@ export function UniversalFilters({
           </View>
         </View>
       </Modal>
-      
+
       {/* Location Picker Modal */}
       {showLocationPicker && (
         <Modal
@@ -308,18 +260,18 @@ export function UniversalFilters({
                 <X size={24} color={Colors.text} />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.locationPickerContainer}>
               <Text style={styles.locationPickerDescription}>
                 Choose a location to filter by distance. This will show {type} within your specified radius.
               </Text>
-              
+
               <PlacesAutocomplete
                 placeholder="Search for a location..."
                 onLocationSelect={handleLocationSelect}
                 style={styles.placesInput}
               />
-              
+
               <Button
                 title="Use Current Location"
                 onPress={async () => {

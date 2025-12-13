@@ -113,7 +113,7 @@ const templates = {
               <li><strong>Passenger Respect:</strong> Treat all passengers with respect and professionalism.</li>
               <li><strong>Seat Accuracy:</strong> Only accept bookings up to your stated available seats.</li>
               <li><strong>Timely Departure:</strong> Arrive on time and notify passengers of any delays or changes.</li>
-              <li><strong>Platform Fees:</strong> CarpoolConnect charges a 10% service fee on completed rides for payment processing and platform maintenance.</li>
+              <li><strong>Platform Fees:</strong> CarpoolConnect charges a flat $5.00 service fee on completed rides for payment processing and platform maintenance.</li>
               <li><strong>Cancellation Policy:</strong> Cancel rides at least 2 hours before departure to avoid penalties. Late cancellations may affect your driver rating.</li>
               <li><strong>No Discrimination:</strong> Accept passengers without discrimination based on race, religion, gender, age, or disability.</li>
               <li><strong>Prohibited Activities:</strong> Smoking, alcohol, or drugs are strictly prohibited during rides.</li>
@@ -162,6 +162,29 @@ const templates = {
     `,
   }),
 
+  newBookingRequest: (driverName: string, riderName: string, rideDetails: any) => ({
+    subject: "🚗 New Booking Request!",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #4F46E5;">New Booking Request! 🚗</h1>
+        <p>Hi ${driverName},</p>
+        <p>Great news! <strong>${riderName}</strong> wants to book a seat on your ride.</p>
+        <div style="background: #F3F4F6; padding: 20px; border-radius: 10px; margin: 20px 0;">
+          <h3 style="margin-top: 0;">Ride Details</h3>
+          <p><strong>From:</strong> ${rideDetails.origin || rideDetails.from || "Origin"}</p>
+          <p><strong>To:</strong> ${rideDetails.destination || rideDetails.to || "Destination"}</p>
+          <p><strong>Date:</strong> ${rideDetails.departureTime || rideDetails.date || "As scheduled"}</p>
+          <p><strong>Seats Requested:</strong> ${rideDetails.seats || 1}</p>
+        </div>
+        <div style="background: #FEF3C7; padding: 15px; border-radius: 10px; margin: 20px 0;">
+          <p style="margin: 0; color: #92400E;"><strong>⏰ Action Required</strong></p>
+          <p style="margin: 10px 0 0 0; color: #92400E;">Please open the app to accept or decline this booking request.</p>
+        </div>
+        <p>Safe travels,<br/>The CarpoolConnect Team</p>
+      </div>
+    `,
+  }),
+
   bookingAccepted: (passengerName: string, driverName: string, rideDetails: any) => ({
     subject: "✅ Your ride is confirmed!",
     html: `
@@ -191,6 +214,34 @@ const templates = {
         <p>Unfortunately, the driver couldn't accept your ride request from <strong>${origin}</strong> to <strong>${destination}</strong>.</p>
         <p>Don't worry! There are plenty of other drivers available. Check the app for alternative rides.</p>
         <p>Keep searching,<br/>The CarpoolConnect Team</p>
+      </div>
+    `,
+  }),
+
+  bookingRequestSent: (riderName: string, rideDetails: any, driverName: string) => ({
+    subject: "🚗 Your Booking Request Has Been Sent!",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h1 style="color: #4F46E5;">Booking Request Sent! 🚗</h1>
+        <p>Hi ${riderName},</p>
+        <p>Great news! Your booking request has been sent to <strong>${driverName}</strong>.</p>
+        <div style="background: #F3F4F6; padding: 20px; border-radius: 10px; margin: 20px 0;">
+          <h3 style="margin-top: 0;">Ride Details</h3>
+          <p><strong>From:</strong> ${rideDetails.origin || "Origin"}</p>
+          <p><strong>To:</strong> ${rideDetails.destination || "Destination"}</p>
+          <p><strong>Date:</strong> ${rideDetails.departureTime || "As scheduled"}</p>
+          <p><strong>Seats Requested:</strong> ${rideDetails.seats || 1}</p>
+        </div>
+        <div style="background: #EFF6FF; padding: 15px; border-radius: 10px; margin: 20px 0;">
+          <p style="margin: 0; color: #1E40AF;"><strong>⏳ What happens next?</strong></p>
+          <ul style="color: #1E40AF; margin: 10px 0;">
+            <li>The driver will review your request</li>
+            <li>You'll receive a notification when they respond</li>
+            <li>Your payment will only be charged if the driver accepts</li>
+          </ul>
+        </div>
+        <p>You can view your booking status in the app at any time.</p>
+        <p>Safe travels,<br/>The CarpoolConnect Team</p>
       </div>
     `,
   }),

@@ -6,7 +6,7 @@ export interface User {
   email: string;
   phone: string;
   photoURL?: string;
-  role: 'driver' | 'rider' | 'both' | 'business';
+  role: 'driver' | 'rider' | 'both';
   preferredRole?: 'driver' | 'rider';
   canBeDriver: boolean;
   canBeRider: boolean;
@@ -68,8 +68,6 @@ export interface Ride {
   seatsAvailable: number;
   pricePerSeatCents: number; // cents, integer
   status: 'active' | 'cancelled' | 'completed' | 'draft';
-  acceptDeliveries: boolean;
-  cargoCapacity: number;
   createdAt: string;
   updatedAt: string;
   deletedAt?: string;
@@ -101,9 +99,6 @@ export interface Booking {
   rideId: string;
   driverId: string;
   riderId: string | null;
-  businessId: string | null;
-  isDelivery: boolean;
-  deliveryDetails?: DeliveryDetails;
   seats: number;
   status: 'requested' | 'pending_driver' | 'accepted' | 'declined' | 'cancelled_rider' | 'cancelled_driver' | 'completed' | 'refunded';
   payment: {
@@ -122,60 +117,6 @@ export interface Booking {
   cancellationReason?: string;
   cancelledBy?: string;
   rejectedBy?: string;
-}
-
-// Delivery types
-export interface DeliveryDetails {
-  businessId: string;
-  items: DeliveryItem[];
-  pickupAddress: string;
-  dropoffAddress: string;
-  packageSize: string;
-  specialInstructions: string;
-  priceCents: number;
-  status: 'pending' | 'confirmed' | 'inTransit' | 'delivered' | 'cancelled';
-  assignedRideId?: string;
-}
-
-export interface DeliveryItem {
-  itemId: string;
-  name: string;
-  quantity: number;
-}
-
-export interface Delivery {
-  id: string;
-  businessId: string;
-  items: DeliveryItem[];
-  pickupAddress: string;
-  dropoffAddress: string;
-  packageSize: string;
-  specialInstructions: string;
-  priceCents: number;
-  status: 'pending' | 'confirmed' | 'inTransit' | 'delivered' | 'cancelled';
-  assignedRideId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Business {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  address: string;
-  contactPersons: ContactPerson[];
-  verified: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ContactPerson {
-  id: string;
-  name: string;
-  email: string;
-  phone: string;
-  role: string;
 }
 
 // Chat and messaging
@@ -212,7 +153,7 @@ export interface Notification {
   userId: string;
   title: string;
   body: string;
-  type: 'booking_request' | 'booking_accepted' | 'booking_rejected' | 'ride_started' | 'ride_completed' | 'message' | 'payment' | 'system' | 'delivery_request' | 'delivery_accepted';
+  type: 'booking_request' | 'booking_accepted' | 'booking_rejected' | 'ride_started' | 'ride_completed' | 'message' | 'payment' | 'system';
   data?: any;
   read: boolean;
   createdAt: string;
@@ -325,8 +266,6 @@ export interface CreateRideForm {
   departureTime: string;
   totalSeats: number;
   pricePerSeatCents: number;
-  acceptDeliveries: boolean;
-  cargoCapacity: number;
   note?: string;
 }
 
@@ -340,18 +279,6 @@ export interface SearchRideForm {
 export interface BookingForm {
   seats: number;
   specialRequests?: string;
-}
-
-export interface DeliveryRequestForm {
-  items: DeliveryItem[];
-  pickupAddress: string;
-  dropoffAddress: string;
-  packageSize: string;
-  specialInstructions: string;
-  preferredTimeWindow: {
-    start: string;
-    end: string;
-  };
 }
 
 // Error types

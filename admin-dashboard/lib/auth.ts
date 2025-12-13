@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { db } from './firebase-admin';
 import admin from './firebase-admin';
 import bcrypt from 'bcryptjs';
+import { AdminRole, ROLE_PERMISSIONS } from '@/types';
 
 // Validate required environment variable
 if (!process.env.NEXTAUTH_SECRET) {
@@ -15,7 +16,24 @@ export interface AdminUser {
     id: string;
     email: string;
     name: string;
-    role: 'super_admin' | 'support_admin';
+    role: AdminRole;
+}
+
+// Permission helper functions
+export function canManageAdmins(role: AdminRole): boolean {
+    return ROLE_PERMISSIONS[role]?.canManageAdmins ?? false;
+}
+
+export function canEditData(role: AdminRole): boolean {
+    return ROLE_PERMISSIONS[role]?.canEditData ?? false;
+}
+
+export function canViewData(role: AdminRole): boolean {
+    return ROLE_PERMISSIONS[role]?.canViewData ?? true;
+}
+
+export function getRoleLabel(role: AdminRole): string {
+    return ROLE_PERMISSIONS[role]?.label ?? role;
 }
 
 export async function createSession(adminUser: AdminUser) {

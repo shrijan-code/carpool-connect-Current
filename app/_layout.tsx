@@ -8,7 +8,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { useAuthStore } from "@/store/auth-store";
 import { useRidesStore } from "@/store/rides-store";
 import { useSettingsStore } from "@/store/settings-store";
-import { DeliveryProvider } from "@/store/delivery-store";
+
 import { initializeStripe, STRIPE_PUBLISHABLE_KEY } from "@/services/stripe";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StripeProvider } from "@stripe/stripe-react-native";
@@ -254,11 +254,9 @@ export default function RootLayout() {
           publishableKey={STRIPE_PUBLISHABLE_KEY}
           merchantIdentifier="merchant.com.carpoolconnect" // Optional: for Apple Pay
         >
-          <DeliveryProvider>
-            <GestureHandlerRootView style={styles.rootContainer}>
-              <RootLayoutNav />
-            </GestureHandlerRootView>
-          </DeliveryProvider>
+          <GestureHandlerRootView style={styles.rootContainer}>
+            <RootLayoutNav />
+          </GestureHandlerRootView>
         </StripeProvider>
       </QueryClientProvider>
     </ErrorBoundary>

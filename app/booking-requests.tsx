@@ -20,7 +20,7 @@ export default function BookingRequestsScreen() {
 
   const loadPendingBookings = useCallback(async () => {
     if (!user?.id || user.role !== 'driver') return;
-    
+
     setLoadingBookings(true);
     try {
       const bookings = await getPendingBookingRequests(user.id);
@@ -42,7 +42,7 @@ export default function BookingRequestsScreen() {
   const handleAcceptBooking = async (booking: Booking) => {
     Alert.alert(
       '✅ Accept Booking',
-      `Accept booking from ${booking.passenger.name}?\n\n• ${booking.seats} seat(s)\n• $${(booking.amountTotal / 100).toFixed(2)} total\n• Payment will be captured immediately`,
+      `Accept booking from ${booking.passenger?.name || 'Passenger'}?\n\n• ${booking.seats} seat(s)\n• $${(booking.amountTotal / 100).toFixed(2)} total\n• Payment will be captured immediately`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -50,10 +50,10 @@ export default function BookingRequestsScreen() {
           onPress: async () => {
             try {
               await acceptBooking(booking.id, user!.id);
-              
+
               Alert.alert(
                 '🎉 Booking Accepted!',
-                `You've accepted ${booking.passenger.name}'s booking.\n\n• Payment has been captured\n• Chat is now enabled\n• Passenger has been notified`,
+                `You've accepted ${booking.passenger?.name || 'the passenger'}'s booking.\n\n• Payment has been captured\n• Chat is now enabled\n• Passenger has been notified`,
                 [{ text: 'OK', onPress: loadPendingBookings }]
               );
             } catch (error: any) {
@@ -68,7 +68,7 @@ export default function BookingRequestsScreen() {
   const handleDeclineBooking = async (booking: Booking) => {
     Alert.alert(
       '❌ Decline Booking',
-      `Decline booking from ${booking.passenger.name}?\n\n• Payment authorization will be cancelled\n• Passenger will be notified`,
+      `Decline booking from ${booking.passenger?.name || 'Passenger'}?\n\n• Payment authorization will be cancelled\n• Passenger will be notified`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -77,10 +77,10 @@ export default function BookingRequestsScreen() {
           onPress: async () => {
             try {
               await declineBooking(booking.id, booking.rideId, booking.seats, user!.id, 'Declined by driver');
-              
+
               Alert.alert(
                 'Booking Declined',
-                `You've declined ${booking.passenger.name}'s booking.\n\n• Payment authorization cancelled\n• Passenger has been notified`,
+                `You've declined ${booking.passenger?.name || 'the passenger'}'s booking.\n\n• Payment authorization cancelled\n• Passenger has been notified`,
                 [{ text: 'OK', onPress: loadPendingBookings }]
               );
             } catch (error: any) {
@@ -113,7 +113,7 @@ export default function BookingRequestsScreen() {
     const requestTime = new Date(dateString);
     const diffMs = now.getTime() - requestTime.getTime();
     const diffMins = Math.floor(diffMs / (1000 * 60));
-    
+
     if (diffMins < 1) return 'Just now';
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
@@ -124,12 +124,12 @@ export default function BookingRequestsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ 
+      <Stack.Screen options={{
         title: 'Booking Requests',
         headerStyle: { backgroundColor: Colors.primary },
         headerTintColor: Colors.background
       }} />
-      
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={styles.title}>Pending Requests</Text>
@@ -149,14 +149,14 @@ export default function BookingRequestsScreen() {
                 <View style={styles.passengerInfo}>
                   <View style={styles.passengerAvatar}>
                     <Text style={styles.passengerAvatarText}>
-                      {booking.passenger.name.charAt(0)}
+                      {(booking.passenger?.name || 'P').charAt(0)}
                     </Text>
                   </View>
                   <View style={styles.passengerDetails}>
-                    <Text style={styles.passengerName}>{booking.passenger.name}</Text>
+                    <Text style={styles.passengerName}>{booking.passenger?.name || 'Unknown Passenger'}</Text>
                     <View style={styles.passengerRating}>
-                      <Text style={styles.ratingText}>⭐ {booking.passenger.rating}</Text>
-                      <Text style={styles.ridesCount}>• {booking.passenger.totalRides} rides</Text>
+                      <Text style={styles.ratingText}>⭐ {booking.passenger?.rating ?? 'N/A'}</Text>
+                      <Text style={styles.ridesCount}>• {booking.passenger?.totalRides ?? 0} rides</Text>
                     </View>
                   </View>
                 </View>
@@ -172,7 +172,7 @@ export default function BookingRequestsScreen() {
                     <Text style={[
                       styles.locationText,
                       isSmallScreen && styles.smallScreenLocationText
-                    ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride.origin?.name || 'Unknown'}</Text>
+                    ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride?.origin?.name || booking.ride?.from?.name || 'Unknown'}</Text>
                   </View>
                   <View style={styles.routeLine} />
                   <View style={styles.routePoint}>
@@ -180,7 +180,7 @@ export default function BookingRequestsScreen() {
                     <Text style={[
                       styles.locationText,
                       isSmallScreen && styles.smallScreenLocationText
-                    ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride.destination?.name || 'Unknown'}</Text>
+                    ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride?.destination?.name || booking.ride?.to?.name || 'Unknown'}</Text>
                   </View>
                 </View>
 
@@ -191,7 +191,7 @@ export default function BookingRequestsScreen() {
                       styles.detailText,
                       isSmallScreen && styles.smallScreenDetailText
                     ]} numberOfLines={isSmallScreen ? 2 : 1}>
-                      {formatDate(booking.ride.departureAt)} at {formatTime(booking.ride.departureAt)}
+                      {formatDate(booking.ride?.departureAt || booking.ride?.departureTime || '')} at {formatTime(booking.ride?.departureAt || booking.ride?.departureTime || '')}
                     </Text>
                   </View>
                   <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>

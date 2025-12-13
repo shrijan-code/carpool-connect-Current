@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, ActivityIndicator } from 'react-native';
+import { TouchableOpacity, Text, StyleSheet, ViewStyle, TextStyle, ActivityIndicator, StyleProp } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { DarkColors, LightColors } from '@/constants/colors';
 import { useSettingsStore } from '@/store/settings-store';
@@ -11,8 +11,8 @@ interface ButtonProps {
   size?: 'small' | 'medium' | 'large';
   disabled?: boolean;
   loading?: boolean;
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
   testID?: string;
   leftIcon?: React.ReactNode;
   rightIcon?: React.ReactNode;
@@ -68,9 +68,9 @@ export const Button: React.FC<ButtonProps> = ({
           end={{ x: 1, y: 0 }}
         >
           {loading ? (
-            <ActivityIndicator 
-              color={Colors.background} 
-              size="small" 
+            <ActivityIndicator
+              color={Colors.background}
+              size="small"
             />
           ) : (
             <>
@@ -93,9 +93,9 @@ export const Button: React.FC<ButtonProps> = ({
       activeOpacity={0.8}
     >
       {loading ? (
-        <ActivityIndicator 
-          color={variant === 'secondary' || variant === 'outline' || variant === 'ghost' ? Colors.primary : Colors.background} 
-          size="small" 
+        <ActivityIndicator
+          color={variant === 'secondary' || variant === 'outline' || variant === 'ghost' ? Colors.primary : Colors.background}
+          size="small"
         />
       ) : (
         <>

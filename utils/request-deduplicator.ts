@@ -109,8 +109,8 @@ export function deduplicate<T extends (...args: any[]) => Promise<any>>(
  * 
  * // Or use directly
  * await requestDeduplicator.execute(
- *   `create-delivery-${userId}`,
- *   () => deliveryService.create(data)
+ *   `update-ride-${rideId}`,
+ *   () => ridesService.update(rideId, data)
  * );
  */
 

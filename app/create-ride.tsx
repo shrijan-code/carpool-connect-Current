@@ -14,13 +14,13 @@ import { TimeField } from '@/src/components/TimeField';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
-import { Users, DollarSign, AlertTriangle, CreditCard, CheckCircle, Package } from 'lucide-react-native';
+import { Users, DollarSign, AlertTriangle, CreditCard, CheckCircle } from 'lucide-react-native';
 import { Location, Vehicle, Ride } from '@/types';
 
 export default function CreateRideScreen() {
   const { user } = useAuthStore();
   const { createRide, isLoading } = useRidesStore();
-  
+
 
   const [fromLocation, setFromLocation] = useState<Location | null>(null);
   const [toLocation, setToLocation] = useState<Location | null>(null);
@@ -38,7 +38,7 @@ export default function CreateRideScreen() {
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [stripeRequirement, setStripeRequirement] = useState<{ required: boolean; completedRides: number; message: string } | null>(null);
   const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
-  const [availableForDelivery, setAvailableForDelivery] = useState(false);
+
 
   // Check Stripe requirement on component mount only
   useEffect(() => {
@@ -56,7 +56,7 @@ export default function CreateRideScreen() {
         }
       }
     };
-    
+
     checkStripeStatus();
   }, [user?.id, user?.role]); // Only depend on user ID and role
 
@@ -94,14 +94,14 @@ export default function CreateRideScreen() {
   const isFormValid = React.useMemo(() => {
     const now = new Date();
     const minDepartureTime = new Date(now.getTime() + 5 * 60 * 1000);
-    
-    return fromLocation && 
-           toLocation && 
-           departureDateTime >= minDepartureTime &&
-           pricePerSeat && 
-           parseFloat(pricePerSeat) > 0 &&
-           availableSeats >= 1 && 
-           availableSeats <= 8;
+
+    return fromLocation &&
+      toLocation &&
+      departureDateTime >= minDepartureTime &&
+      pricePerSeat &&
+      parseFloat(pricePerSeat) > 0 &&
+      availableSeats >= 1 &&
+      availableSeats <= 8;
   }, [fromLocation, toLocation, departureDateTime, pricePerSeat, availableSeats]);
 
   // Format date and time for display
@@ -119,7 +119,7 @@ export default function CreateRideScreen() {
 
   const handleCreateRide = async () => {
     dismissKeyboard();
-    
+
     if (!user) {
       Alert.alert('Error', 'You must be logged in to create a ride');
       return;
@@ -181,15 +181,14 @@ export default function CreateRideScreen() {
         distance: '0 km', // In real app, calculate distance
         duration: '0 min', // In real app, calculate duration
         notes: notes?.trim() || '',
-        availableForDelivery: availableForDelivery
       };
 
       console.log('Creating ride with data:', rideData);
       const rideId = await createRide(rideData);
       console.log('Ride created successfully with ID:', rideId);
-      
+
       setShowSuccessScreen(true);
-      
+
       // Auto-redirect after 3 seconds
       setTimeout(() => {
         router.replace('/(tabs)/home');
@@ -241,9 +240,7 @@ export default function CreateRideScreen() {
               </Text>
               <Text style={styles.successDetailText}>Seats: {availableSeats}</Text>
               <Text style={styles.successDetailText}>Price: ${pricePerSeat}/seat</Text>
-              <Text style={styles.successDetailText}>
-                Deliveries: {availableForDelivery ? 'Available' : 'Not available'}
-              </Text>
+
             </View>
             <Text style={styles.redirectText}>Redirecting to home...</Text>
           </View>
@@ -254,15 +251,15 @@ export default function CreateRideScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ 
+      <Stack.Screen options={{
         title: 'Create Ride',
         headerStyle: { backgroundColor: Colors.primary },
         headerTintColor: Colors.background
       }} />
-      
-      <ScrollView 
-        style={styles.content} 
-        showsVerticalScrollIndicator={false} 
+
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
       >
@@ -303,7 +300,7 @@ export default function CreateRideScreen() {
 
         <Card style={styles.formCard}>
           <Text style={styles.sectionTitle}>Route Details</Text>
-          
+
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>From Location *</Text>
             <PlacesAutocomplete
@@ -331,7 +328,7 @@ export default function CreateRideScreen() {
 
         <Card style={styles.formCard}>
           <Text style={styles.sectionTitle}>Schedule</Text>
-          
+
           <View style={styles.dateTimeRow}>
             <View style={[styles.inputGroup, styles.halfWidth]}>
               <DateField
@@ -354,7 +351,7 @@ export default function CreateRideScreen() {
                 testID="departure-date-field"
               />
             </View>
-            
+
             <View style={[styles.inputGroup, styles.halfWidth]}>
               <TimeField
                 value={departureDateTime}
@@ -375,7 +372,7 @@ export default function CreateRideScreen() {
               />
             </View>
           </View>
-          
+
           {validationErrors.departureDateTime && (
             <Text style={styles.errorText}>{validationErrors.departureDateTime}</Text>
           )}
@@ -383,11 +380,11 @@ export default function CreateRideScreen() {
 
         <Card style={styles.formCard}>
           <Text style={styles.sectionTitle}>Ride Details</Text>
-          
+
           <View style={styles.row}>
             <View style={[styles.inputGroup, styles.halfWidth]}>
               <Users size={20} color={Colors.primary} style={styles.inputIcon} />
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.dateTimeButton}
                 onPress={() => setShowSeatsPicker(true)}
               >
@@ -397,7 +394,7 @@ export default function CreateRideScreen() {
                 </Text>
               </TouchableOpacity>
             </View>
-            
+
             <View style={[styles.inputGroup, styles.halfWidth]}>
               <DollarSign size={20} color={Colors.primary} style={styles.inputIcon} />
               <Input
@@ -433,27 +430,7 @@ export default function CreateRideScreen() {
             />
           </View>
 
-          {/* Delivery Toggle */}
-          <View style={styles.inputGroup}>
-            <View style={styles.toggleContainer}>
-              <View style={styles.toggleHeader}>
-                <Package size={20} color={availableForDelivery ? '#059669' : '#6b7280'} />
-                <Text style={styles.toggleLabel}>Available for Deliveries</Text>
-              </View>
-              <TouchableOpacity
-                style={[styles.toggle, availableForDelivery && styles.toggleActive]}
-                onPress={() => setAvailableForDelivery(!availableForDelivery)}
-                testID="delivery-toggle"
-              >
-                <View style={[styles.toggleThumb, availableForDelivery && styles.toggleThumbActive]} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.toggleDescription}>
-              {availableForDelivery 
-                ? 'Riders can request deliveries along your route' 
-                : 'Only passengers can book this ride'}
-            </Text>
-          </View>
+
         </Card>
 
         <View style={styles.buttonContainer}>
@@ -552,10 +529,10 @@ export default function CreateRideScreen() {
               itemStyle={styles.pickerItem}
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map(num => (
-                <Picker.Item 
-                  key={num} 
-                  label={`${num} seat${num !== 1 ? 's' : ''}`} 
-                  value={num} 
+                <Picker.Item
+                  key={num}
+                  label={`${num} seat${num !== 1 ? 's' : ''}`}
+                  value={num}
                   color={Colors.text}
                 />
               ))}

@@ -28,10 +28,10 @@ export default function AuthScreen() {
   const { login, register, loginWithGoogle, sendPasswordReset } = useAuthStore();
   const { colors } = useTheme();
   const theme = useSettingsStore((s) => s.settings.currentTheme);
-  
+
   // Match onboarding gradient colors exactly
-  const gradientColors: readonly [string, string, string] = theme === 'dark' 
-    ? ['#1a1a2e', '#16213e', '#0f3460'] 
+  const gradientColors: readonly [string, string, string] = theme === 'dark'
+    ? ['#1a1a2e', '#16213e', '#0f3460']
     : ['#667eea', '#764ba2', '#f093fb'];
 
   const handleLogin = async () => {
@@ -71,9 +71,9 @@ export default function AuthScreen() {
   const renderRoleSelection = () => (
     <View style={styles.roleContainer}>
       <Text style={styles.roleTitle}>How do you want to use CarpoolConnect?</Text>
-      
+
       <View style={styles.roleOptions}>
-        <Card 
+        <Card
           style={[
             styles.roleCard,
             formData.role === 'driver' && styles.selectedRole
@@ -101,7 +101,7 @@ export default function AuthScreen() {
           </View>
         </Card>
 
-        <Card 
+        <Card
           style={[
             styles.roleCard,
             formData.role === 'rider' && styles.selectedRole
@@ -352,7 +352,7 @@ export default function AuthScreen() {
     }
 
     const trimmedEmail = formData.email.trim().toLowerCase();
-    
+
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
       Alert.alert('Invalid Email', 'Please enter a valid email address');
@@ -364,13 +364,13 @@ export default function AuthScreen() {
       console.log('Sending password reset for:', trimmedEmail);
       await sendPasswordReset(trimmedEmail);
       console.log('Password reset sent successfully');
-      
+
       Alert.alert(
         'Reset Link Sent',
         `A password reset link has been sent to ${trimmedEmail}.\n\nPlease check your email inbox and spam folder.\n\nThe link will expire in 1 hour.`,
         [
-          { 
-            text: 'OK', 
+          {
+            text: 'OK',
             onPress: () => {
               setFormData({ ...formData, email: '' });
               setMode('login');
@@ -380,13 +380,13 @@ export default function AuthScreen() {
       );
     } catch (error: any) {
       console.error('Password reset error:', error);
-      
+
       let errorMessage = 'Failed to send reset email. Please try again.';
-      
+
       if (error.message) {
         errorMessage = error.message;
       }
-      
+
       Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
@@ -451,27 +451,27 @@ export default function AuthScreen() {
       end={{ x: 0, y: 1 }}
     >
       <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           style={styles.keyboardAvoid}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
-          <ScrollView 
-            contentContainerStyle={styles.content} 
+          <ScrollView
+            contentContainerStyle={styles.content}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
             bounces={false}
           >
-          <View style={styles.header}>
-            <Text style={styles.appName}>CarpoolConnect</Text>
-          </View>
+            <View style={styles.header}>
+              <Text style={styles.appName}>CarpoolConnect</Text>
+            </View>
 
-          <Card style={styles.card}>
-            {mode === 'role-select' && renderRoleSelection()}
-            {mode === 'login' && renderLogin()}
-            {mode === 'register' && renderRegister()}
-            {mode === 'forgot-password' && renderForgotPassword()}
-          </Card>
+            <Card style={styles.card}>
+              {mode === 'role-select' && renderRoleSelection()}
+              {mode === 'login' && renderLogin()}
+              {mode === 'register' && renderRegister()}
+              {mode === 'forgot-password' && renderForgotPassword()}
+            </Card>
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -760,7 +760,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   modernSwitchButtonText: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#FFFFFF',
+    color: '#6366F1',
     opacity: 0.9,
   },
 });

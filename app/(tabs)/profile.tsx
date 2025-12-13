@@ -629,6 +629,39 @@ export default function ProfileScreen() {
             </Card>
           )}
 
+          {/* Identity Verification Card */}
+          <Card style={styles.stripeCard}>
+            <View style={styles.stripeHeader}>
+              <Shield size={24} color={user?.verification?.status === 'verified' ? Colors.success : Colors.textSecondary} />
+              <View style={styles.stripeInfo}>
+                <Text style={styles.stripeTitle}>Identity Verification</Text>
+                <Text style={[styles.stripeStatus, user?.verification?.status === 'verified' && styles.stripeStatusComplete]}>
+                  {user?.verification?.status === 'verified' ? 'Verified' :
+                    user?.verification?.status === 'pending' ? 'Pending' : 'Not Verified'}
+                </Text>
+              </View>
+              {user?.verification?.status === 'verified' ? (
+                <CheckCircle size={20} color={Colors.success} />
+              ) : (
+                <TouchableOpacity
+                  style={styles.setupButton}
+                  onPress={() => router.push('/verify-identity')}
+                >
+                  <Text style={styles.setupButtonText}>
+                    {user?.verification?.status === 'pending' ? 'Check Status' : 'Verify Now'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={styles.stripeDescription}>
+              {user?.verification?.status === 'verified'
+                ? 'Your identity is verified. You can post rides and access all features.'
+                : user?.role === 'driver'
+                  ? 'Verify your identity to post rides and build trust with riders.'
+                  : 'Get verified to access premium features and build trust in the community.'}
+            </Text>
+          </Card>
+
           <Card style={styles.infoCard}>
             <Text style={styles.cardTitle}>Contact Information</Text>
             <View style={styles.infoItem}>

@@ -1,6 +1,6 @@
 import { Tabs, Redirect } from "expo-router";
 import React from "react";
-import { Home, Calendar, MessageCircle, User, Package } from "lucide-react-native";
+import { Home, Calendar, MessageCircle, User } from "lucide-react-native";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -53,13 +53,7 @@ export default function TabLayout() {
           tabBarIcon: ({ color, size }) => <Calendar color={color} size={size} />,
         }}
       />
-      <Tabs.Screen
-        name="deliveries"
-        options={{
-          title: "Deliveries",
-          tabBarIcon: ({ color, size }) => <Package color={color} size={size} />,
-        }}
-      />
+
       <Tabs.Screen
         name="chat"
         options={{

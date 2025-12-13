@@ -67,14 +67,15 @@ try {
   db = getFirestore(app);
   console.log('Firestore already initialized, using existing instance');
 } catch {
-  // Initialize Firestore with robust connectivity settings
-  const baseSettings = Platform.OS === 'web'
-    ? {
-      localCache: persistentLocalCache({}),
-    }
-    : {
-      localCache: memoryLocalCache(),
-    };
+  // Initialize Firestore with robust connectivity and persistence settings
+  // Use persistent cache for all platforms to reduce network reads
+  const baseSettings = {
+    // Persistent cache for both web and mobile to reduce reads
+    localCache: persistentLocalCache({
+      // Default cache size (40MB) is fine for most apps
+      // cacheSizeBytes: 50 * 1024 * 1024, // 50MB
+    }),
+  };
 
   const connectivitySettings: Partial<import('firebase/firestore').FirestoreSettings> = {
     experimentalAutoDetectLongPolling: true,
@@ -84,7 +85,7 @@ try {
     app,
     { ...(baseSettings as object), ...(connectivitySettings as object) } as import('firebase/firestore').FirestoreSettings,
   );
-  console.log('Firestore initialized with reliable connectivity settings');
+  console.log('Firestore initialized with persistent cache enabled for offline support');
 }
 
 const storage = getStorage(app);

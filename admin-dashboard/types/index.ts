@@ -1,12 +1,49 @@
+// Admin role types - Microsoft 365 style
+export type AdminRole = 'global_admin' | 'editor_admin' | 'viewer_admin';
+
+// AdminUser for session/auth usage
+export interface AdminUser {
+    id: string;
+    email: string;
+    name: string;
+    role: AdminRole;
+}
+
 export interface Admin {
     id: string;
     email: string;
     name: string;
-    role: 'super_admin' | 'support_admin';
+    role: AdminRole;
     active: boolean;
     createdAt: string;
     lastLogin?: string;
+    createdBy?: string; // ID of admin who created this admin
 }
+
+// Role permission helpers
+export const ROLE_PERMISSIONS = {
+    global_admin: {
+        canManageAdmins: true,
+        canEditData: true,
+        canViewData: true,
+        label: 'Global Admin',
+        description: 'Full access to everything, can manage other admins',
+    },
+    editor_admin: {
+        canManageAdmins: false,
+        canEditData: true,
+        canViewData: true,
+        label: 'Editor Admin',
+        description: 'Can view and modify data, cannot manage admins',
+    },
+    viewer_admin: {
+        canManageAdmins: false,
+        canEditData: false,
+        canViewData: true,
+        label: 'Viewer Admin',
+        description: 'Read-only access to all data',
+    },
+} as const;
 
 export interface SafetyReport {
     id: string;

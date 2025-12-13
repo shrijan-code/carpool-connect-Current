@@ -10,10 +10,11 @@ import {
   limit,
   serverTimestamp,
   addDoc,
+  runTransaction,
   Query
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { Ride, Booking } from '@/types';
+import { Ride, Booking, User } from '@/types';
 import { NotificationService } from './notifications';
 
 // Audit log service
@@ -54,8 +55,13 @@ export class RidesService {
         console.log(`Price stored as ${rideData.pricePerSeat} cents (${(rideData.pricePerSeat / 100).toFixed(2)})`);
       }
 
+      // Ensure availableSeats is set (use totalSeats or seatsAvailable if not provided)
+      const availableSeats = rideData.availableSeats ?? rideData.seatsAvailable ?? rideData.totalSeats ?? 4;
+
       const rideRef = await addDoc(collection(db, 'rides'), {
         ...rideData,
+        availableSeats, // Ensure this is always set
+        seatsAvailable: availableSeats, // Maintain both fields for compatibility
         status: 'upcoming',
         passengers: [],
         createdAt: serverTimestamp(),
@@ -310,33 +316,52 @@ export class RidesService {
         }
       }
 
-      // Method 3: Fallback - Query all bookings for this ride and filter manually
+      // Method 3: Secure Fallback - Query all bookings for this USER (not ride) and filter for ride
+      // This works because users can always see their own bookings, and simple index on riderId exists by default.
       if (existingActiveBookings.length === 0) {
-        console.log('🔄 Using fallback approach: querying all bookings for this ride');
+        console.log('🔄 Using secure fallback approach: querying all bookings for this rider');
         try {
-          const allBookingsQuery = query(
+          const userBookingsQuery = query(
             collection(db, 'bookings'),
-            where('rideId', '==', rideId)
+            where('riderId', '==', passengerId)
+            // No other filters to avoid composite index requirements
           );
 
-          const allBookingsSnapshot = await getDocs(allBookingsQuery);
-          console.log(`📊 Found ${allBookingsSnapshot.size} total bookings for ride ${rideId}`);
+          const userBookingsSnapshot = await getDocs(userBookingsQuery);
+          console.log(`📊 Found ${userBookingsSnapshot.size} total bookings for rider ${passengerId}`);
 
-          allBookingsSnapshot.forEach(doc => {
+          userBookingsSnapshot.forEach(doc => {
             const bookingData = doc.data();
-            const isMatchingPassenger = bookingData.riderId === passengerId || bookingData.passengerId === passengerId;
+            const isMatchingRide = bookingData.rideId === rideId;
             const isActiveBooking = bookingData.status === 'pending_driver' || bookingData.status === 'confirmed';
 
-            console.log(`🔍 Checking booking ${doc.id}: riderId=${bookingData.riderId}, passengerId=${bookingData.passengerId}, status=${bookingData.status}, matches=${isMatchingPassenger}, active=${isActiveBooking}`);
-
-            if (isMatchingPassenger && isActiveBooking) {
+            if (isMatchingRide && isActiveBooking) {
               existingActiveBookings.push({ id: doc.id, ...bookingData });
-              console.log(`📋 Found active booking via fallback: ${doc.id} with status ${bookingData.status}`);
+              console.log(`📋 Found active booking via secure fallback: ${doc.id} with status ${bookingData.status}`);
             }
           });
         } catch (fallbackError) {
-          console.error('❌ All booking check methods failed:', fallbackError);
-          // Continue with booking creation as we can't verify duplicates
+          console.error('❌ Secure booking check failed:', fallbackError);
+          // If even this fails, we really can't proceed safely, but we'll try legacy passengerId check
+        }
+
+        // Also check legacy passengerId just in case
+        if (existingActiveBookings.length === 0) {
+          try {
+            const legacyUserBookingsQuery = query(
+              collection(db, 'bookings'),
+              where('passengerId', '==', passengerId)
+            );
+            const legacySnapshot = await getDocs(legacyUserBookingsQuery);
+            legacySnapshot.forEach(doc => {
+              const bookingData = doc.data();
+              const isMatchingRide = bookingData.rideId === rideId;
+              const isActiveBooking = bookingData.status === 'pending_driver' || bookingData.status === 'confirmed';
+              if (isMatchingRide && isActiveBooking) {
+                existingActiveBookings.push({ id: doc.id, ...bookingData });
+              }
+            });
+          } catch { /* ignore */ }
         }
       }
 
@@ -715,35 +740,97 @@ export class RidesService {
 
       const rideData = rideDoc.data() as Ride;
 
-      // Check if seats are still available
-      const availableSeats = ((rideData.availableSeats ?? rideData.seatsAvailable ?? 0) as number);
-      if (availableSeats < bookingData.seats) {
-        throw new Error('Not enough seats available');
+      // Note: Seats were already reserved when the booking was created (pending_driver status)
+      // So we don't need to check or decrement seats here again
+      // We just need to update booking status and add passenger to the ride
+
+      // Get passenger data if not present in booking
+      let passengerData = bookingData.passenger;
+      const passengerId = bookingData.riderId || bookingData.passenger?.id || bookingData.passengerId;
+
+      if (!passengerData && passengerId) {
+        console.log('⚠️ Booking missing passenger data, fetching user:', passengerId);
+        const userDoc = await getDoc(doc(db, 'users', passengerId));
+        if (userDoc.exists()) {
+          passengerData = userDoc.data() as User;
+        }
       }
 
-      // Update booking status to confirmed
-      await updateDoc(doc(db, 'bookings', bookingId), {
-        status: 'confirmed',
-        updatedAt: serverTimestamp()
+      if (!passengerData) {
+        throw new Error('Passenger data not found');
+      }
+
+      // Use a transaction to ensure atomic updates
+      await runTransaction(db, async (transaction) => {
+        // 1. Get current booking state
+        const bookingRef = doc(db, 'bookings', bookingId);
+        const bookingDoc = await transaction.get(bookingRef);
+
+        if (!bookingDoc.exists()) {
+          throw new Error('Booking not found');
+        }
+
+        const currentBookingData = bookingDoc.data();
+        if (currentBookingData.status !== 'pending_driver') {
+          throw new Error('Booking is no longer pending approval');
+        }
+
+        // 2. Get current ride state to ensure seat availability hasn't changed (though seats are already reserved)
+        const rideRef = doc(db, 'rides', bookingData.rideId);
+        const rideDoc = await transaction.get(rideRef);
+
+        if (!rideDoc.exists()) {
+          throw new Error('Ride not found');
+        }
+
+        const currentRideData = rideDoc.data() as Ride;
+
+        // 3. Prepare updates
+        // Restore passenger data logic
+        let passengerData = currentBookingData.passenger;
+        if (!passengerData) {
+          // If we still don't have passenger data, we can't easily fetch inside transaction without potentially reading too many docs
+          // So we rely on what we passed or fail. 
+          // Ideally, we should have fetched this before the transaction if needed, but for now strict check:
+          const pId = currentBookingData.riderId || currentBookingData.passengerId;
+          // We can try to read the user doc within transaction if we have the ID
+          if (pId) {
+            const userRef = doc(db, 'users', pId);
+            const userDoc = await transaction.get(userRef);
+            if (userDoc.exists()) {
+              passengerData = userDoc.data() as User;
+            }
+          }
+        }
+
+        if (!passengerData) {
+          throw new Error('Passenger data missing and could not be retrieved');
+        }
+
+        // Update Booking
+        transaction.update(bookingRef, {
+          status: 'confirmed',
+          passenger: passengerData,
+          updatedAt: serverTimestamp()
+        });
+
+        // Update Ride Passengers
+        const updatedPassengers = [...(currentRideData.passengers || []), {
+          id: currentBookingData.riderId || currentBookingData.passengerId || '',
+          seats: currentBookingData.seats,
+          bookingId: bookingId,
+          user: passengerData
+        }];
+
+        transaction.update(rideRef, {
+          passengers: updatedPassengers,
+          updatedAt: serverTimestamp()
+        });
       });
 
-      // Update ride with passenger info and reduce available seats
-      const updatedPassengers = [...(rideData.passengers || []), {
-        id: bookingData.riderId || bookingData.passenger?.id || '',
-        seats: bookingData.seats,
-        bookingId: bookingId,
-        user: bookingData.passenger
-      }];
+      console.log('✅ Booking acceptance transaction committed successfully');
 
-      await updateDoc(doc(db, 'rides', bookingData.rideId), {
-        passengers: updatedPassengers,
-        availableSeats: Math.max(0, (availableSeats - bookingData.seats)),
-        seatsAvailable: Math.max(0, (availableSeats - bookingData.seats)), // Update both for compatibility
-        updatedAt: serverTimestamp()
-      });
-
-      // Capture payment if payment intent exists
-      // Capture payment if payment intent exists
+      // Capture payment if payment intent exists (outside transaction as it's an external API call usually)
       if (bookingData.payment?.intentId) {
         try {
           // Use lazy import to avoid circular dependencies if any
@@ -936,32 +1023,71 @@ export class RidesService {
   }
 
   // Get bookings for a ride (Driver view)
-  static async getRideBookings(rideId: string): Promise<Booking[]> {
+  static async getRideBookings(rideId: string, userId?: string): Promise<Booking[]> {
     try {
-      const q = query(
-        collection(db, 'bookings'),
-        where('rideId', '==', rideId),
-        limit(50)
-      );
+      // Build query - if userId is provided, add it for Firestore rules compliance
+      let q;
+      if (userId) {
+        // First try as driver
+        q = query(
+          collection(db, 'bookings'),
+          where('rideId', '==', rideId),
+          where('driverId', '==', userId),
+          limit(50)
+        );
 
-      const querySnapshot = await getDocs(q);
-      const bookings: Booking[] = [];
+        let querySnapshot = await getDocs(q);
 
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        bookings.push({
-          id: doc.id,
-          ...data,
-          createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
-        } as Booking);
-      });
+        // If no results as driver, try as rider
+        if (querySnapshot.empty) {
+          q = query(
+            collection(db, 'bookings'),
+            where('rideId', '==', rideId),
+            where('riderId', '==', userId),
+            limit(50)
+          );
+          querySnapshot = await getDocs(q);
+        }
 
-      // Sort by creation date
-      bookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        const bookings: Booking[] = [];
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          bookings.push({
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+          } as Booking);
+        });
 
-      return bookings;
+        // Sort by creation date
+        bookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return bookings;
+      } else {
+        // Legacy: query without user filter (may fail with strict rules)
+        q = query(
+          collection(db, 'bookings'),
+          where('rideId', '==', rideId),
+          limit(50)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const bookings: Booking[] = [];
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          bookings.push({
+            id: doc.id,
+            ...data,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt
+          } as Booking);
+        });
+
+        // Sort by creation date
+        bookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        return bookings;
+      }
     } catch (error: any) {
-      console.error('Get ride bookings error:', error);
+      console.error('Get ride bookings error:', error, error.message);
       throw new Error('Failed to get ride bookings');
     }
   }

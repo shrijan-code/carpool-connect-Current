@@ -1,12 +1,12 @@
-import { 
-  collection, 
-  doc, 
-  addDoc, 
-  getDocs, 
+import {
+  collection,
+  doc,
+  addDoc,
+  getDocs,
   getDoc,
-  query, 
-  where, 
-  orderBy, 
+  query,
+  where,
+  orderBy,
   limit,
   startAfter,
   onSnapshot,
@@ -18,7 +18,7 @@ import {
   DocumentData
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { ChatMessage, MessageThread, Delivery } from '@/types';
+import { ChatMessage, MessageThread } from '@/types';
 import { ImageService } from './image';
 import { NotificationService } from './notifications';
 
@@ -36,13 +36,13 @@ export class ChatService {
         collection(db, 'message_threads'),
         where('bookingId', '==', bookingId)
       );
-      
+
       const querySnapshot = await getDocs(q);
-      
+
       if (!querySnapshot.empty) {
         return querySnapshot.docs[0].id;
       }
-      
+
       // Create new thread
       const threadRef = await addDoc(collection(db, 'message_threads'), {
         bookingId,
@@ -53,7 +53,7 @@ export class ChatService {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
-      
+
       console.log('Created new message thread:', threadRef.id);
       return threadRef.id;
     } catch (error: any) {
@@ -64,9 +64,9 @@ export class ChatService {
 
   // Send a text message
   static async sendMessage(
-    rideId: string, 
-    senderId: string, 
-    senderName: string, 
+    rideId: string,
+    senderId: string,
+    senderName: string,
     message: string,
     bookingId?: string
   ): Promise<string> {
@@ -80,7 +80,7 @@ export class ChatService {
       console.log('Attempting to send message:', { rideId, senderId, senderName, messageLength: message.length, bookingId });
 
       let threadId: string | undefined;
-      
+
       // Create thread if bookingId is provided
       if (bookingId) {
         try {
@@ -90,7 +90,7 @@ export class ChatService {
             const bookingData = bookingDoc.data();
             const driverId = bookingData.ride?.driverId || bookingData.driverId;
             const passengerId = bookingData.passengerId;
-            
+
             if (driverId && passengerId) {
               threadId = await this.createOrGetThread(bookingId, rideId, driverId, passengerId);
             }
@@ -99,7 +99,7 @@ export class ChatService {
           console.warn('Failed to create thread, continuing without thread:', threadError);
         }
       }
-      
+
       const messageData = {
         rideId,
         bookingId: bookingId || null,
@@ -115,7 +115,7 @@ export class ChatService {
       console.log('Sending message with data:', messageData);
       const messageRef = await addDoc(collection(db, 'messages'), messageData);
       console.log('Message sent successfully with ID:', messageRef.id);
-      
+
       // Update thread with last message info (non-blocking)
       if (threadId) {
         try {
@@ -128,7 +128,7 @@ export class ChatService {
           console.warn('Failed to update thread, message still sent:', updateError);
         }
       }
-      
+
       // Send notification to other participants (non-blocking)
       if (bookingId) {
         try {
@@ -137,7 +137,7 @@ export class ChatService {
             const bookingData = bookingDoc.data();
             const driverId = bookingData.ride?.driverId || bookingData.driverId;
             const passengerId = bookingData.passengerId;
-            
+
             const recipientId = senderId === driverId ? passengerId : driverId;
             if (recipientId) {
               await NotificationService.sendNewMessageNotification(
@@ -151,7 +151,7 @@ export class ChatService {
           console.warn('Failed to send notification, message still sent:', notificationError);
         }
       }
-      
+
       return messageRef.id;
     } catch (error: any) {
       console.error('Send message error:', error);
@@ -181,7 +181,7 @@ export class ChatService {
       }
 
       let threadId: string | undefined;
-      
+
       // Create thread if bookingId is provided
       if (bookingId) {
         const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -189,7 +189,7 @@ export class ChatService {
           const bookingData = bookingDoc.data();
           const driverId = bookingData.ride?.driverId || bookingData.driverId;
           const passengerId = bookingData.passengerId;
-          
+
           if (driverId && passengerId) {
             threadId = await this.createOrGetThread(bookingId, rideId, driverId, passengerId);
           }
@@ -210,7 +210,7 @@ export class ChatService {
       };
 
       const messageRef = await addDoc(collection(db, 'messages'), messageData);
-      
+
       // Update thread with last message info
       if (threadId) {
         await updateDoc(doc(db, 'message_threads', threadId), {
@@ -219,7 +219,7 @@ export class ChatService {
           updatedAt: serverTimestamp()
         });
       }
-      
+
       return messageRef.id;
     } catch (error: any) {
       console.error('Send image message error:', error);
@@ -266,20 +266,20 @@ export class ChatService {
 
       // return in ascending time for UI
       const ordered = messages.reverse();
-      const nextCursor = querySnapshot.docs.length === pageSize 
+      const nextCursor = querySnapshot.docs.length === pageSize
         ? querySnapshot.docs[querySnapshot.docs.length - 1]
         : undefined;
 
       return { messages: ordered, nextCursor };
     } catch (error) {
       console.error('Get ride messages error:', error);
-      return [];
+      return { messages: [], nextCursor: undefined };
     }
   }
 
   // Listen to real-time messages
   static subscribeToRideMessages(
-    rideId: string, 
+    rideId: string,
     callback: (messages: ChatMessage[]) => void,
     pageSize: number = 50
   ): Unsubscribe {
@@ -316,7 +316,7 @@ export class ChatService {
 
   // Send system message
   static async sendSystemMessage(
-    rideId: string, 
+    rideId: string,
     message: string
   ): Promise<string> {
     try {
@@ -351,7 +351,7 @@ export class ChatService {
       );
 
       const querySnapshot = await getDocs(q);
-      
+
       if (querySnapshot.empty) {
         return;
       }
@@ -360,7 +360,7 @@ export class ChatService {
       querySnapshot.docs.forEach(docSnapshot => {
         const data = docSnapshot.data();
         const readBy = data.readBy || [];
-        
+
         if (!readBy.includes(userId)) {
           batch.update(doc(db, 'messages', docSnapshot.id), {
             readBy: [...readBy, userId]
@@ -388,7 +388,7 @@ export class ChatService {
 
       const querySnapshot = await getDocs(q);
       let unreadCount = 0;
-      
+
       querySnapshot.forEach(doc => {
         const data = doc.data();
         const readBy = data.readBy || [];
@@ -396,7 +396,7 @@ export class ChatService {
           unreadCount++;
         }
       });
-      
+
       return unreadCount;
     } catch (error: any) {
       console.error('Get unread message count error:', error);
@@ -411,10 +411,10 @@ export class ChatService {
         collection(db, 'message_threads'),
         where('participants', 'array-contains', userId)
       );
-      
+
       const querySnapshot = await getDocs(q);
       const threads: MessageThread[] = [];
-      
+
       querySnapshot.forEach(doc => {
         const data = doc.data();
         threads.push({
@@ -425,14 +425,14 @@ export class ChatService {
           lastMessageTime: data.lastMessageTime?.toDate?.()?.toISOString() || data.lastMessageTime
         } as MessageThread);
       });
-      
+
       // Sort by last message time
       threads.sort((a, b) => {
         const aTime = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
         const bTime = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
         return bTime - aTime;
       });
-      
+
       return threads;
     } catch (error: any) {
       console.error('Get user threads error:', error);
@@ -451,7 +451,7 @@ export class ChatService {
       orderBy('updatedAt', 'desc'),
       limit(50)
     );
-    
+
     return onSnapshot(q, (querySnapshot) => {
       const threads: MessageThread[] = [];
       querySnapshot.forEach(doc => {
@@ -464,14 +464,14 @@ export class ChatService {
           lastMessageTime: data.lastMessageTime?.toDate?.()?.toISOString() || data.lastMessageTime
         } as MessageThread);
       });
-      
+
       // Sort by last message time
       threads.sort((a, b) => {
         const aTime = a.lastMessageTime ? new Date(a.lastMessageTime).getTime() : 0;
         const bTime = b.lastMessageTime ? new Date(b.lastMessageTime).getTime() : 0;
         return bTime - aTime;
       });
-      
+
       callback(threads);
     }, (error) => {
       console.error('User threads subscription error:', error);
@@ -489,10 +489,10 @@ export class ChatService {
       where('senderId', '!=', userId),
       limit(200)
     );
-    
+
     return onSnapshot(q, (querySnapshot) => {
       let unreadCount = 0;
-      
+
       querySnapshot.forEach(doc => {
         const data = doc.data();
         const readBy = data.readBy || [];
@@ -500,188 +500,11 @@ export class ChatService {
           unreadCount++;
         }
       });
-      
+
       callback(unreadCount);
     }, (error) => {
       console.error('Unread count subscription error:', error);
       callback(0);
     });
-  }
-
-  // Send a delivery message
-  static async sendDeliveryMessage(
-    deliveryId: string,
-    senderId: string,
-    senderName: string,
-    message: string
-  ): Promise<string> {
-    try {
-      // Validate required parameters
-      if (!deliveryId || !senderId || !senderName || !message?.trim()) {
-        console.error('Missing required delivery message parameters:', { deliveryId, senderId, senderName, message: message?.trim() });
-        throw new Error('Missing required message parameters');
-      }
-
-      console.log('Sending delivery message:', { deliveryId, senderId, senderName, messageLength: message.length });
-      
-      const messageData = {
-        deliveryId,
-        senderId,
-        senderName,
-        message: message.trim(),
-        type: 'text' as const,
-        readBy: [senderId],
-        timestamp: serverTimestamp()
-      };
-
-      const messageRef = await addDoc(collection(db, 'delivery_messages'), messageData);
-      console.log('Delivery message sent successfully with ID:', messageRef.id);
-      
-      // Get delivery to find the other participant for notification
-      try {
-        const deliveryDoc = await getDoc(doc(db, 'deliveries', deliveryId));
-        if (deliveryDoc.exists()) {
-          const deliveryData = deliveryDoc.data() as Delivery;
-          const businessId = deliveryData.businessId;
-          const driverId = deliveryData.driverId;
-          
-          if (businessId && driverId) {
-            const recipientId = senderId === businessId ? driverId : businessId;
-            if (recipientId) {
-              await NotificationService.sendNewMessageNotification(
-                recipientId,
-                senderName,
-                message
-              );
-            }
-          }
-        }
-      } catch (notificationError) {
-        console.warn('Failed to send notification, message still sent:', notificationError);
-      }
-      
-      return messageRef.id;
-    } catch (error: any) {
-      console.error('Send delivery message error:', error);
-      throw new Error(`Failed to send delivery message: ${error.message}`);
-    }
-  }
-  
-  // Get delivery messages
-  static async getDeliveryMessages(
-    deliveryId: string,
-    pageSize: number = 50,
-    cursor?: QueryDocumentSnapshot<DocumentData>
-  ): Promise<{ messages: any[]; nextCursor?: QueryDocumentSnapshot<DocumentData> }> {
-    try {
-      const base = [
-        where('deliveryId', '==', deliveryId),
-        orderBy('timestamp', 'desc') as any,
-        limit(Math.max(1, Math.min(200, pageSize)))
-      ];
-
-      const q = cursor
-        ? query(collection(db, 'delivery_messages'), ...base, startAfter(cursor))
-        : query(collection(db, 'delivery_messages'), ...base);
-
-      const querySnapshot = await getDocs(q);
-      const messages: any[] = [];
-
-      querySnapshot.forEach((snap) => {
-        const data = snap.data();
-        messages.push({
-          id: snap.id,
-          deliveryId: data.deliveryId,
-          senderId: data.senderId,
-          senderName: data.senderName,
-          message: data.message,
-          timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp,
-          type: data.type || 'text',
-          readBy: data.readBy || []
-        });
-      });
-
-      // return in ascending time for UI
-      const ordered = messages.reverse();
-      const nextCursor = querySnapshot.docs.length === pageSize 
-        ? querySnapshot.docs[querySnapshot.docs.length - 1]
-        : undefined;
-
-      return { messages: ordered, nextCursor };
-    } catch (error) {
-      console.error('Get delivery messages error:', error);
-      return { messages: [] };
-    }
-  }
-
-  // Listen to real-time delivery messages
-  static subscribeToDeliveryMessages(
-    deliveryId: string, 
-    callback: (messages: any[]) => void,
-    pageSize: number = 50
-  ): Unsubscribe {
-    const q = query(
-      collection(db, 'delivery_messages'),
-      where('deliveryId', '==', deliveryId),
-      orderBy('timestamp', 'desc'),
-      limit(Math.max(1, Math.min(200, pageSize)))
-    );
-
-    return onSnapshot(q, (querySnapshot) => {
-      const messages: any[] = [];
-      querySnapshot.forEach((snap) => {
-        const data = snap.data();
-        messages.push({
-          id: snap.id,
-          deliveryId: data.deliveryId,
-          senderId: data.senderId,
-          senderName: data.senderName,
-          message: data.message,
-          timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp,
-          type: data.type || 'text',
-          readBy: data.readBy || []
-        });
-      });
-      callback(messages.reverse());
-    }, (error) => {
-      console.error('Delivery messages subscription error:', error);
-      callback([]);
-    });
-  }
-
-  // Mark delivery messages as read
-  static async markDeliveryMessagesAsRead(
-    deliveryId: string,
-    userId: string
-  ): Promise<void> {
-    try {
-      const q = query(
-        collection(db, 'delivery_messages'),
-        where('deliveryId', '==', deliveryId),
-        where('senderId', '!=', userId)
-      );
-
-      const querySnapshot = await getDocs(q);
-      
-      if (querySnapshot.empty) {
-        return;
-      }
-
-      const batch = writeBatch(db);
-      querySnapshot.docs.forEach(docSnapshot => {
-        const data = docSnapshot.data();
-        const readBy = data.readBy || [];
-        
-        if (!readBy.includes(userId)) {
-          batch.update(doc(db, 'delivery_messages', docSnapshot.id), {
-            readBy: [...readBy, userId]
-          });
-        }
-      });
-
-      await batch.commit();
-    } catch (error: any) {
-      console.error('Mark delivery messages as read error:', error);
-    }
   }
 }

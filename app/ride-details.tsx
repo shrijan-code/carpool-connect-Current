@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from '@/config/firebase';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
@@ -8,7 +10,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { RidesService } from '@/services/rides';
-import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X } from 'lucide-react-native';
+import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X, ChevronLeft } from 'lucide-react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { Booking } from '@/types';
 import { EnhancedRideTracking } from '@/components/EnhancedRideTracking';
@@ -37,53 +39,52 @@ export default function RideDetailsScreen() {
   const [isLoadingRide, setIsLoadingRide] = useState(false);
   const [rideNotFound, setRideNotFound] = useState(false);
 
-  // Load ride data
+  // Subscribe to real-time ride updates
   useEffect(() => {
-    const loadRide = async () => {
-      if (!id) {
-        setRideNotFound(true);
-        return;
-      }
+    if (!id) {
+      setRideNotFound(true);
+      return;
+    }
 
-      // First try to get from local state
-      const localRide = getRideById(id);
-      if (localRide) {
-        console.log('✅ Found ride in local state:', localRide.id);
-        setRide(localRide);
-        setRideNotFound(false);
-        return;
-      }
+    setIsLoadingRide(true);
+    console.log('🔄 Subscribing to real-time updates for ride:', id);
 
-      // If not found locally, fetch from server
-      console.log('🔍 Ride not found locally, fetching from server:', id);
-      setIsLoadingRide(true);
-      try {
-        const fetchedRide = await fetchRideById(id);
-        if (fetchedRide) {
-          console.log('✅ Successfully fetched ride from server:', fetchedRide.id);
-          setRide(fetchedRide);
+    // Subscribe to real-time updates for the ride document
+    const rideRef = doc(db, 'rides', id);
+    const unsubscribe = onSnapshot(
+      rideRef,
+      (docSnapshot) => {
+        if (docSnapshot.exists()) {
+          const rideData = { id: docSnapshot.id, ...docSnapshot.data() } as any;
+          console.log('✅ Ride updated in real-time:', rideData.id, 'status:', rideData.status);
+          setRide(rideData);
           setRideNotFound(false);
         } else {
-          console.log('❌ Ride not found on server:', id);
+          console.log('❌ Ride not found:', id);
           setRideNotFound(true);
         }
-      } catch (error) {
-        console.error('❌ Error fetching ride:', error);
+        setIsLoadingRide(false);
+      },
+      (error) => {
+        console.error('❌ Error subscribing to ride:', error);
         setRideNotFound(true);
-      } finally {
         setIsLoadingRide(false);
       }
-    };
+    );
 
-    loadRide();
-  }, [id, getRideById, fetchRideById]);
+    // Cleanup subscription on unmount
+    return () => {
+      console.log('🧹 Unsubscribing from ride updates:', id);
+      unsubscribe();
+    };
+  }, [id]);
 
   // Load bookings for this ride if user is the driver
   useEffect(() => {
     const loadRideBookings = async () => {
       if (ride && user && user.id === ride.driverId) {
         try {
-          const bookings = await RidesService.getRideBookings(ride.id);
+          const bookings = await RidesService.getRideBookings(ride.id, user.id);
           setRideBookings(bookings);
         } catch (error) {
           console.error('Failed to load ride bookings:', error);
@@ -166,11 +167,11 @@ export default function RideDetailsScreen() {
       await confirmBookingPayment(bookingId);
 
       Alert.alert(
-        '✅ Booking Confirmed!',
-        `Your booking for ${seats} seat${seats > 1 ? 's' : ''} has been confirmed!\n\n• Payment authorized\n• Driver notified`,
+        'Booking Requested',
+        `Your request for ${seats} seat${seats > 1 ? 's' : ''} has been sent!\n\n• Payment method saved\n• Awaiting driver approval`,
         [
           { text: 'View My Bookings', onPress: () => router.push('/(tabs)/rides') },
-          { text: 'OK' }
+          { text: 'Dismiss' }
         ]
       );
 
@@ -198,9 +199,18 @@ export default function RideDetailsScreen() {
       Alert.alert('Booking Accepted', 'You can now message the passenger.');
 
       // Refresh data
+      // Force a small delay to ensure Firestore propagation if running locally/slow net
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const newBookings = await RidesService.getRideBookings(ride.id, user?.id);
+      setRideBookings(newBookings);
+
+      // Also refresh the ride details to update seat counts etc
       await refreshRides();
-      const updatedBookings = await RidesService.getRideBookings(ride.id);
-      setRideBookings(updatedBookings);
+      if (ride.id) {
+        const updatedRide = await RidesService.getRideById(ride.id);
+        if (updatedRide) setRide(updatedRide);
+      }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to accept booking');
     }
@@ -230,7 +240,7 @@ export default function RideDetailsScreen() {
 
               // Refresh data
               await refreshRides();
-              const updatedBookings = await RidesService.getRideBookings(ride.id);
+              const updatedBookings = await RidesService.getRideBookings(ride.id, user?.id);
               setRideBookings(updatedBookings);
             } catch (error: any) {
               Alert.alert('Error', error.message || 'Failed to reject booking');
@@ -334,11 +344,12 @@ export default function RideDetailsScreen() {
 
   const getBookingStatusText = (status: string) => {
     switch (status) {
-      case 'confirmed': return 'Awaiting Response';
+      case 'confirmed': return 'Confirmed';
+      case 'pending_driver': return 'Awaiting Response';
       case 'accepted': return 'Accepted';
       case 'rejected': return 'Rejected';
       case 'cancelled': return 'Cancelled';
-      default: return status;
+      default: return status.replace(/_/g, ' ');
     }
   };
 
@@ -394,8 +405,29 @@ export default function RideDetailsScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{
         title: 'Ride Details',
+        headerBackVisible: false,
         headerStyle: { backgroundColor: Colors.primary },
-        headerTintColor: Colors.background
+        headerTintColor: Colors.background,
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)/rides');
+              }
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 20 }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingRight: 8
+            }}
+          >
+            <ChevronLeft size={28} color={Colors.background} />
+            <Text style={{ color: Colors.background, fontSize: 17, marginLeft: -4, fontWeight: '500' }}>Back</Text>
+          </TouchableOpacity>
+        ),
       }} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -540,7 +572,7 @@ export default function RideDetailsScreen() {
             onStatusChange={async () => {
               await refreshRides();
               if (isDriver) {
-                const updatedBookings = await RidesService.getRideBookings(ride.id);
+                const updatedBookings = await RidesService.getRideBookings(ride.id, user?.id);
                 setRideBookings(updatedBookings);
               }
             }}
@@ -566,7 +598,7 @@ export default function RideDetailsScreen() {
               onUpdated={async () => {
                 await refreshRides();
                 if (isDriver) {
-                  const updatedBookings = await RidesService.getRideBookings(ride.id);
+                  const updatedBookings = await RidesService.getRideBookings(ride.id, user?.id);
                   setRideBookings(updatedBookings);
                 }
               }}

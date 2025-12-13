@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } fr
 import { Play, Square } from 'lucide-react-native';
 import { Ride } from '@/types';
 import { RidesService } from '@/services/rides';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '@/config/firebase';
 
 interface RideDriverActionsProps {
   ride: Ride;
@@ -51,7 +53,7 @@ export default function RideDriverActions({ ride, isDriver, currentUserId, onUpd
     if (!currentUserId) return;
     Alert.alert(
       'Complete Ride?',
-      'This will notify riders and process mock payment.',
+      'This will process payments and send your payout.',
       [
         { text: 'Not yet', style: 'cancel' },
         {
@@ -60,9 +62,23 @@ export default function RideDriverActions({ ride, isDriver, currentUserId, onUpd
           onPress: async () => {
             try {
               setLoading('complete');
-              console.log('[RideDriverActions] Completing ride', ride.id);
-              await RidesService.updateRideTrackingStatus(ride.id, 'completed', currentUserId);
-              Alert.alert('Ride completed 🎉', 'Your ride is complete.');
+              console.log('[RideDriverActions] Completing ride and processing payments', ride.id);
+
+              // Use Cloud Function to properly process payments
+              const completeRideAndCharge = httpsCallable(functions, 'completeRideAndCharge');
+              const result = await completeRideAndCharge({ rideId: ride.id });
+              const data = result.data as any;
+
+              if (data.success) {
+                const summary = data.summary;
+                Alert.alert(
+                  'Ride Completed! 🎉',
+                  `${data.message}\n\nYour payout: $${(summary?.driverPayout || 0).toFixed(2)}`
+                );
+              } else {
+                throw new Error(data.message || 'Failed to complete ride');
+              }
+
               if (onUpdated) onUpdated();
             } catch (e: any) {
               console.error('[RideDriverActions] complete error', e);

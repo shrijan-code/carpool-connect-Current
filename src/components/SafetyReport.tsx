@@ -21,14 +21,12 @@ import * as ImagePicker from 'expo-image-picker';
 
 interface SafetyReportProps {
   rideId?: string;
-  deliveryId?: string;
   onClose?: () => void;
   isVisible?: boolean;
 }
 
 export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
   rideId,
-  deliveryId,
   onClose,
   isVisible = false,
 }) => {
@@ -132,7 +130,6 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
         severity,
         status: 'pending',
         ...(rideId && { rideId }),
-        ...(deliveryId && { deliveryId }),
         ...(evidencePhotos.length > 0 && {
           evidence: {
             photos: evidencePhotos,
@@ -141,16 +138,16 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
       };
 
       console.log('Submitting safety report:', report);
-      
+
       // Submit to backend service (email notification handled automatically)
       const reportId = await SafetyReportService.submitReport(report);
       console.log('Safety report submitted with ID:', reportId);
 
       // Show confirmation with email notification info
-      const emailMessage = (severity === 'critical' || severity === 'high') 
+      const emailMessage = (severity === 'critical' || severity === 'high')
         ? ' An email notification has been sent to our safety team for immediate review.'
         : ' Our safety team will review your report within 24 hours.';
-        
+
       Alert.alert(
         '✅ Report Submitted Successfully',
         `Your safety report has been submitted and will be reviewed by our safety team. We take all reports seriously and will investigate promptly.${emailMessage}`,
@@ -159,7 +156,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
             text: 'OK',
             onPress: () => {
               handleCloseReport();
-              
+
               // If critical, show immediate action options
               if (severity === 'critical') {
                 showCriticalReportActions();
@@ -172,7 +169,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
     } catch (error) {
       console.error('Failed to submit safety report:', error);
       Alert.alert(
-        'Submission Failed', 
+        'Submission Failed',
         error instanceof Error ? error.message : 'Failed to submit report. Please try again. If the problem persists, please contact support directly at shrijan.bhandari1318@gmail.com'
       );
     } finally {
@@ -220,7 +217,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
       // For Australia, use 000. For US, use 911
       const emergencyNumber = 'tel:000'; // Australian emergency number
       const canOpen = await Linking.canOpenURL(emergencyNumber);
-      
+
       if (canOpen) {
         await Linking.openURL(emergencyNumber);
         console.log('Emergency services called from safety report');
@@ -242,7 +239,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
       }
 
       setIsUploadingPhoto(true);
-      
+
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -270,7 +267,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
       }
 
       setIsUploadingPhoto(true);
-      
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -413,7 +410,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
                 <Text style={styles.evidenceSubtext}>
                   Add photos to help our safety team understand the situation better
                 </Text>
-                
+
                 <View style={styles.photoContainer}>
                   {evidencePhotos.map((photoUri, index) => (
                     <View key={index} style={styles.photoWrapper}>
@@ -426,7 +423,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
                       </TouchableOpacity>
                     </View>
                   ))}
-                  
+
                   {evidencePhotos.length < 3 && (
                     <View style={styles.addPhotoButtons}>
                       <TouchableOpacity
@@ -437,7 +434,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
                         <Camera size={20} color="#007bff" />
                         <Text style={styles.addPhotoText}>Take Photo</Text>
                       </TouchableOpacity>
-                      
+
                       <TouchableOpacity
                         style={styles.addPhotoButton}
                         onPress={() => pickPhoto()}
@@ -449,7 +446,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
                     </View>
                   )}
                 </View>
-                
+
                 {isUploadingPhoto && (
                   <Text style={styles.uploadingText}>Uploading photo...</Text>
                 )}
@@ -458,7 +455,7 @@ export const SafetyReportComponent: React.FC<SafetyReportProps> = ({
               <View style={styles.warningBox}>
                 <AlertTriangle size={20} color="#856404" />
                 <Text style={styles.warningText}>
-                  All safety reports are taken seriously and will be investigated. 
+                  All safety reports are taken seriously and will be investigated.
                   False reports may result in account suspension.
                 </Text>
               </View>

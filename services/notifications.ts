@@ -11,7 +11,7 @@ export interface InAppNotification {
   data?: any;
   read: boolean;
   createdAt: Timestamp;
-  type: 'ride_booked' | 'ride_confirmed' | 'ride_cancelled' | 'ride_completed' | 'ride_request' | 'booking_rejected' | 'booking_accepted' | 'booking_confirmed' | 'booking_declined' | 'message' | 'payment' | 'general' | 'delivery_new' | 'delivery_accepted' | 'delivery_status_update' | 'delivery_completed' | 'delivery_cancelled';
+  type: 'ride_booked' | 'ride_confirmed' | 'ride_cancelled' | 'ride_completed' | 'ride_request' | 'booking_rejected' | 'booking_accepted' | 'booking_confirmed' | 'booking_declined' | 'message' | 'payment' | 'general';
 }
 
 // Notification listeners
@@ -45,21 +45,21 @@ export class NotificationService {
         type,
         createdAt: Timestamp.now()
       };
-      
+
       const docRef = await addDoc(collection(db, 'notifications'), notificationData);
-      
+
       // Update cache with new notification
       const newNotification: InAppNotification = {
         id: docRef.id,
         ...notificationData
       };
-      
+
       if (notificationCache.has(userId)) {
         const cached = notificationCache.get(userId)!;
         const updated = [newNotification, ...cached].slice(0, 50); // Keep only latest 50
         notificationCache.set(userId, updated);
       }
-      
+
       // Update unread count cache
       const currentCount = unreadCountCache.get(userId) || 0;
       unreadCountCache.set(userId, currentCount + 1);
@@ -205,7 +205,7 @@ export class NotificationService {
       // Fallback to cached data
       const cached = notificationCache.get(userId) || [];
       callback(cached);
-      return () => {}; // Return empty unsubscribe function
+      return () => { }; // Return empty unsubscribe function
     }
   }
 
@@ -215,15 +215,15 @@ export class NotificationService {
       await updateDoc(doc(db, 'notifications', notificationId), {
         read: true
       });
-      
+
       // Update cache if userId provided
       if (userId && notificationCache.has(userId)) {
         const cached = notificationCache.get(userId)!;
-        const updated = cached.map(n => 
+        const updated = cached.map(n =>
           n.id === notificationId ? { ...n, read: true } : n
         );
         notificationCache.set(userId, updated);
-        
+
         // Update unread count cache
         const currentCount = unreadCountCache.get(userId) || 0;
         unreadCountCache.set(userId, Math.max(0, currentCount - 1));
@@ -262,7 +262,7 @@ export class NotificationService {
               count++;
             }
           });
-          
+
           unreadCountCache.set(userId, count);
           callback(count);
         } catch (error) {
@@ -272,7 +272,7 @@ export class NotificationService {
         }
       }, (error) => {
         console.error('Unread count listener error:', error);
-        
+
         // Always calculate from cached notifications
         const cached = notificationCache.get(userId) || [];
         const unreadCount = cached.filter(n => !n.read).length;
@@ -284,7 +284,7 @@ export class NotificationService {
       // Fallback to cached count
       const cached = unreadCountCache.get(userId) || 0;
       callback(cached);
-      return () => {}; // Return empty unsubscribe function
+      return () => { }; // Return empty unsubscribe function
     }
   }
 
@@ -295,10 +295,10 @@ export class NotificationService {
       if (Platform.OS === 'web') {
         await this.requestWebNotificationPermission();
       }
-      
+
       // Pre-load notifications to cache
       await this.getUserNotificationsOnce(userId, 20);
-      
+
       console.log('Notifications initialized for user:', userId);
     } catch (error) {
       console.error('Initialize notifications error:', error);
@@ -320,7 +320,7 @@ export class NotificationService {
   static triggerListeners(notification: InAppNotification) {
     notificationListeners.forEach(listener => listener(notification));
   }
-  
+
   // Clear cache for user (useful on logout)
   static clearCache(userId?: string) {
     if (userId) {
@@ -335,7 +335,7 @@ export class NotificationService {
       sessionStartByUser.clear();
     }
   }
-  
+
   // Get notifications once (no listener) for better performance
   static async getUserNotificationsOnce(
     userId: string,
@@ -349,34 +349,34 @@ export class NotificationService {
           return cached;
         }
       }
-      
+
       // Always use simple query to avoid index issues
       const simpleQ = query(
         collection(db, 'notifications'),
         where('userId', '==', userId),
         limit(limitCount)
       );
-      
+
       const snapshot = await getDocs(simpleQ);
       const notifications: InAppNotification[] = [];
-      
+
       snapshot.forEach((doc) => {
         const data = doc.data();
         if (data && data.userId === userId) {
           notifications.push({ id: doc.id, ...data } as InAppNotification);
         }
       });
-      
+
       // Sort manually by createdAt
       notifications.sort((a, b) => {
         const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
         const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
         return bTime - aTime;
       });
-      
+
       // Cache the result
       notificationCache.set(userId, notifications);
-      
+
       return notifications;
     } catch (error) {
       console.error('Get notifications once error:', error);
@@ -438,74 +438,5 @@ export class NotificationService {
       message.length > 50 ? message.substring(0, 50) + '...' : message,
       'message'
     );
-  }
-
-  // Send new delivery request notification
-  static async sendNewDeliveryNotification(
-    businessId: string,
-    pickupAddress: string,
-    dropoffAddress: string,
-    fee: number
-  ): Promise<void> {
-    await this.sendInAppNotification(
-      businessId,
-      'Delivery Request Posted',
-      `Your delivery from ${pickupAddress} to ${dropoffAddress} (${fee.toFixed(2)}) is now live`,
-      'delivery_new'
-    );
-  }
-
-  // Send delivery accepted notification
-  static async sendDeliveryAcceptedNotification(
-    businessId: string,
-    driverId: string,
-    pickupAddress: string,
-    dropoffAddress: string
-  ): Promise<void> {
-    await this.sendInAppNotification(
-      businessId,
-      'Delivery Accepted',
-      `A driver has accepted your delivery from ${pickupAddress} to ${dropoffAddress}`,
-      'delivery_accepted'
-    );
-  }
-
-  // Send delivery status update notification
-  static async sendDeliveryStatusUpdateNotification(
-    businessId: string,
-    driverId: string,
-    status: string,
-    pickupAddress: string,
-    dropoffAddress: string
-  ): Promise<void> {
-    const statusMessages = {
-      confirmed: 'Your delivery has been confirmed by the driver',
-      picked_up: 'Your items have been picked up',
-      in_transit: 'Your delivery is now in transit',
-      delivered: 'Your delivery has been completed',
-      cancelled: 'Your delivery has been cancelled'
-    };
-
-    const message = statusMessages[status as keyof typeof statusMessages] || `Delivery status updated to ${status}`;
-
-    const notificationType = status === 'delivered' ? 'delivery_completed' : status === 'cancelled' ? 'delivery_cancelled' : 'delivery_status_update';
-
-    // Notify business owner
-    await this.sendInAppNotification(
-      businessId,
-      'Delivery Update',
-      `${message} - ${pickupAddress} to ${dropoffAddress}`,
-      notificationType
-    );
-
-    // Notify driver if different from business owner
-    if (driverId && driverId !== businessId) {
-      await this.sendInAppNotification(
-        driverId,
-        'Delivery Update',
-        `Delivery status updated to ${status.replace('_', ' ')} - ${pickupAddress} to ${dropoffAddress}`,
-        notificationType
-      );
-    }
   }
 }

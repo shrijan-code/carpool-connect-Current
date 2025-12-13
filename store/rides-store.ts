@@ -3,10 +3,12 @@ import { Ride, Booking, Location, User } from '@/types';
 import { RidesService } from '@/services/rides';
 import { NotificationService } from '@/services/notifications';
 import { ChatService } from '@/services/chat';
-import { onSnapshot, collection, query, where, orderBy } from 'firebase/firestore';
+import { onSnapshot, collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import SecurityManager from '@/security/SecurityManager';
 import { debounce } from 'lodash';
+import { dataCache, CACHE_TTL, CACHE_KEYS } from '@/utils/cache';
+import { listenerManager } from '@/utils/listener-manager';
 
 interface RidesState {
   rides: Ride[];
@@ -717,6 +719,20 @@ export const useRidesStore = create<RidesState>((set, get) => ({
   },
 
   subscribeToUserRides: (userId: string) => {
+    // Prevent duplicate listeners using ListenerManager
+    const listenerKey = `user-${userId}-rides`;
+    if (listenerManager.has(listenerKey)) {
+      console.log(`[Optimization] Reusing existing rides listener for user ${userId}`);
+      return () => listenerManager.unregister(listenerKey);
+    }
+
+    // Stale-while-revalidate: Show cached data immediately if available
+    const cachedRides = dataCache.get<Ride[]>(CACHE_KEYS.userRides(userId));
+    if (cachedRides && cachedRides.length > 0) {
+      console.log('[Optimization] Showing cached rides while loading fresh data');
+      set({ rides: cachedRides });
+    }
+
     try {
       let unsubscribe: (() => void) | null = null;
 
@@ -725,11 +741,13 @@ export const useRidesStore = create<RidesState>((set, get) => ({
           ? query(
             collection(db, 'rides'),
             where('driverId', '==', userId),
-            orderBy('createdAt', 'desc')
+            orderBy('createdAt', 'desc'),
+            limit(50) // Limit to 50 most recent rides
           )
           : query(
             collection(db, 'rides'),
-            where('driverId', '==', userId)
+            where('driverId', '==', userId),
+            limit(50)
           );
 
         return onSnapshot(
@@ -750,6 +768,9 @@ export const useRidesStore = create<RidesState>((set, get) => ({
             rides.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
             console.log(`Real-time rides update: ${rides.length} rides for driver ${userId} (ordered=${useOrdered})`);
+
+            // Cache the result
+            dataCache.set(CACHE_KEYS.userRides(userId), rides, CACHE_TTL.RIDES_LIST);
             set({ rides });
           },
           (error) => {
@@ -761,6 +782,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
                 if (unsubscribe) unsubscribe();
               } catch { }
               unsubscribe = startSubscription(false);
+              listenerManager.register(listenerKey, unsubscribe);
             } else {
               set({ error: 'Failed to sync rides' });
             }
@@ -769,8 +791,10 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       };
 
       unsubscribe = startSubscription(true);
+      listenerManager.register(listenerKey, unsubscribe);
+
       return () => {
-        try { if (unsubscribe) unsubscribe(); } catch { }
+        listenerManager.unregister(listenerKey);
       };
     } catch (error) {
       console.error('Failed to create rides subscription:', error);
@@ -779,6 +803,20 @@ export const useRidesStore = create<RidesState>((set, get) => ({
   },
 
   subscribeToUserBookings: (userId: string) => {
+    // Prevent duplicate listeners using ListenerManager
+    const listenerKey = `user-${userId}-bookings`;
+    if (listenerManager.has(listenerKey)) {
+      console.log(`[Optimization] Reusing existing bookings listener for user ${userId}`);
+      return () => listenerManager.unregister(listenerKey);
+    }
+
+    // Stale-while-revalidate: Show cached data immediately if available
+    const cachedBookings = dataCache.get<Booking[]>(CACHE_KEYS.userBookings(userId));
+    if (cachedBookings && cachedBookings.length > 0) {
+      console.log('[Optimization] Showing cached bookings while loading fresh data');
+      set({ bookings: cachedBookings });
+    }
+
     try {
       let unsubscribe: (() => void) | null = null;
 
@@ -787,11 +825,13 @@ export const useRidesStore = create<RidesState>((set, get) => ({
           ? query(
             collection(db, 'bookings'),
             where('riderId', '==', userId),
-            orderBy('createdAt', 'desc')
+            orderBy('createdAt', 'desc'),
+            limit(30) // Limit to 30 most recent bookings
           )
           : query(
             collection(db, 'bookings'),
-            where('riderId', '==', userId)
+            where('riderId', '==', userId),
+            limit(30)
           );
 
         return onSnapshot(
@@ -800,10 +840,48 @@ export const useRidesStore = create<RidesState>((set, get) => ({
             try {
               const bookings: Booking[] = [];
 
+              // Collect all unique rideIds for bundled lookup
+              const rideIds = new Set<string>();
+              snapshot.docs.forEach(docSnapshot => {
+                const bookingData = docSnapshot.data();
+                if (bookingData.rideId) {
+                  rideIds.add(bookingData.rideId);
+                }
+              });
+
+              // Bundled ride lookup: Check cache first, then fetch missing
+              const ridesMap = new Map<string, any>();
+              const ridesToFetch: string[] = [];
+
+              for (const rideId of rideIds) {
+                const cachedRide = dataCache.get(CACHE_KEYS.rideDetail(rideId));
+                if (cachedRide) {
+                  ridesMap.set(rideId, cachedRide);
+                } else {
+                  ridesToFetch.push(rideId);
+                }
+              }
+
+              // Fetch missing rides in parallel (bundled)
+              if (ridesToFetch.length > 0) {
+                console.log(`[Optimization] Fetching ${ridesToFetch.length} rides (${ridesMap.size} cached)`);
+                const fetchedRides = await Promise.all(
+                  ridesToFetch.map(id => RidesService.getRideById(id))
+                );
+                fetchedRides.forEach((ride, index) => {
+                  if (ride) {
+                    ridesMap.set(ridesToFetch[index], ride);
+                    // Cache for future use
+                    dataCache.set(CACHE_KEYS.rideDetail(ridesToFetch[index]), ride, CACHE_TTL.RIDE_DETAIL);
+                  }
+                });
+              }
+
+              // Process bookings with cached rides
               for (const docSnapshot of snapshot.docs) {
                 try {
                   const bookingData = docSnapshot.data();
-                  const ride = await RidesService.getRideById(bookingData.rideId);
+                  const ride = ridesMap.get(bookingData.rideId);
 
                   if (ride) {
                     bookings.push({
@@ -835,6 +913,9 @@ export const useRidesStore = create<RidesState>((set, get) => ({
                 userId,
                 `(ordered=${useOrdered})`
               );
+
+              // Cache the result
+              dataCache.set(CACHE_KEYS.userBookings(userId), bookings, CACHE_TTL.USER_BOOKINGS);
               set({ bookings });
             } catch (snapshotError) {
               console.error('Error processing bookings snapshot:', snapshotError);
@@ -849,6 +930,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
                 if (unsubscribe) unsubscribe();
               } catch { }
               unsubscribe = startSubscription(false);
+              listenerManager.register(listenerKey, unsubscribe);
             } else {
               console.warn('Bookings subscription failed even without orderBy');
             }
@@ -857,8 +939,10 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       };
 
       unsubscribe = startSubscription(true);
+      listenerManager.register(listenerKey, unsubscribe);
+
       return () => {
-        try { if (unsubscribe) unsubscribe(); } catch { }
+        listenerManager.unregister(listenerKey);
       };
     } catch (error) {
       console.error('Failed to create bookings subscription:', error);
@@ -897,6 +981,13 @@ export const useRidesStore = create<RidesState>((set, get) => ({
 
   // Real-time subscription to all available rides
   subscribeToAvailableRides: () => {
+    // Prevent duplicate listeners
+    const listenerKey = 'available-rides';
+    if (listenerManager.has(listenerKey)) {
+      console.log('[Optimization] Reusing existing available rides listener');
+      return () => listenerManager.unregister(listenerKey);
+    }
+
     // Try compound query first, fallback to simple query if it fails
     let unsubscribe: (() => void) | null = null;
 
@@ -905,7 +996,8 @@ export const useRidesStore = create<RidesState>((set, get) => ({
         collection(db, 'rides'),
         where('status', '==', 'upcoming'),
         where('availableSeats', '>', 0),
-        orderBy('departureTime', 'asc')
+        orderBy('departureTime', 'asc'),
+        limit(50) // Limit to 50 rides to reduce reads
       );
 
       unsubscribe = onSnapshot(q, (snapshot) => {
@@ -932,13 +1024,17 @@ export const useRidesStore = create<RidesState>((set, get) => ({
           }
         });
         console.log('Real-time available rides update (future only):', rides.length, 'rides');
+
+        // Cache the results
+        dataCache.set(CACHE_KEYS.availableRides(), rides, CACHE_TTL.RIDES_LIST);
         set({ searchResults: rides });
       }, (error) => {
         console.error('Available rides subscription error:', error);
         // Don't set error state for subscription failures, just log it
       });
 
-      return unsubscribe;
+      listenerManager.register(listenerKey, unsubscribe);
+      return () => listenerManager.unregister(listenerKey);
     } catch (error) {
       console.error('Failed to create available rides subscription:', error);
 
@@ -946,7 +1042,8 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       try {
         const simpleQ = query(
           collection(db, 'rides'),
-          where('status', '==', 'upcoming')
+          where('status', '==', 'upcoming'),
+          limit(50) // Also limit fallback query
         );
 
         unsubscribe = onSnapshot(simpleQ, (snapshot) => {
@@ -979,12 +1076,16 @@ export const useRidesStore = create<RidesState>((set, get) => ({
             return new Date(aTime).getTime() - new Date(bTime).getTime();
           });
           console.log('Real-time available rides update (fallback, future only):', rides.length, 'rides');
+
+          // Cache the results
+          dataCache.set(CACHE_KEYS.availableRides(), rides, CACHE_TTL.RIDES_LIST);
           set({ searchResults: rides });
         }, (error) => {
           console.error('Fallback available rides subscription error:', error);
         });
 
-        return unsubscribe || (() => { });
+        listenerManager.register(listenerKey, unsubscribe);
+        return () => listenerManager.unregister(listenerKey);
       } catch (fallbackError) {
         console.error('Fallback subscription also failed:', fallbackError);
         return () => { };
@@ -1049,6 +1150,13 @@ export const useRidesStore = create<RidesState>((set, get) => ({
 
   // Debounced refresh functions for better performance
   refreshRides: debounce(async () => {
+    // Check cache cooldown to prevent excessive refreshes
+    if (dataCache.has(CACHE_KEYS.refreshCooldown('rides'))) {
+      console.log('[Optimization] Skipping rides refresh - cooldown active');
+      return;
+    }
+    dataCache.set(CACHE_KEYS.refreshCooldown('rides'), true, CACHE_TTL.REFRESH_COOLDOWN);
+
     const state = get();
     try {
       // If we have rides, refresh them
@@ -1064,9 +1172,16 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       console.error('Failed to refresh rides:', error);
       set({ error: 'Failed to refresh rides data' });
     }
-  }, 1000),
+  }, 3000), // Increased debounce to 3 seconds
 
   refreshBookings: debounce(async () => {
+    // Check cache cooldown to prevent excessive refreshes
+    if (dataCache.has(CACHE_KEYS.refreshCooldown('bookings'))) {
+      console.log('[Optimization] Skipping bookings refresh - cooldown active');
+      return;
+    }
+    dataCache.set(CACHE_KEYS.refreshCooldown('bookings'), true, CACHE_TTL.REFRESH_COOLDOWN);
+
     const state = get();
     try {
       // If we have bookings, refresh them
@@ -1081,7 +1196,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       console.error('Failed to refresh bookings:', error);
       set({ error: 'Failed to refresh bookings data' });
     }
-  }, 1000),
+  }, 3000), // Increased debounce to 3 seconds
 
   // Check if driver needs Stripe setup (after 10 completed rides)
   checkDriverStripeRequirement: async (driverId: string) => {

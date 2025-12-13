@@ -9,7 +9,7 @@ export interface User {
   preferredRole?: 'driver' | 'rider'; // User's current active role
   canBeDriver: boolean; // Whether user can switch to driver mode
   canBeRider: boolean; // Whether user can switch to rider mode
-  acceptDeliveries?: boolean; // Driver toggle to accept deliveries along with rides
+
   avatar?: string;
   rating: number;
   totalRides: number;
@@ -30,6 +30,13 @@ export interface User {
   stripeRequirements?: string[];
   walkingDistanceTolerance?: number; // In meters
   fcmToken?: string;
+  verification?: {
+    status: 'unverified' | 'pending' | 'verified' | 'failed';
+    sessionId?: string;
+    method?: 'stripe_identity';
+    initiatedAt?: string;
+    verifiedAt?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }
@@ -88,8 +95,6 @@ export interface Ride {
   to?: Location;
   departureTime?: string;
   availableSeats?: number;
-  // Delivery availability toggle
-  availableForDelivery?: boolean;
 }
 
 export interface RidePassenger {
@@ -204,88 +209,6 @@ export interface AdminStats {
   pendingDisputes: number;
 }
 
-export interface DeliveryItem {
-  itemId: string;
-  name: string;
-  quantity: number;
-  description?: string;
-  weight?: number;
-  dimensions?: {
-    length: number;
-    width: number;
-    height: number;
-  };
-}
-
-export interface Delivery {
-  id: string;
-  businessId: string;
-  business?: Business;
-  driverId?: string;
-  driver?: User;
-  rideId?: string;
-  ride?: Ride;
-  items: DeliveryItem[];
-  pickupLocation: Location;
-  dropoffLocation: Location;
-  packageSize: 'small' | 'medium' | 'large' | 'extra_large';
-  specialInstructions?: string;
-  priceCents: number;
-  preferredTimeWindow: {
-    start: string;
-    end: string;
-  };
-  status: 'pending' | 'matched' | 'confirmed' | 'picked_up' | 'in_transit' | 'delivered' | 'cancelled';
-  estimatedDeliveryTime?: string;
-  actualPickupTime?: string;
-  actualDeliveryTime?: string;
-  confirmedAt?: string;
-  inTransitAt?: string;
-  deliveryProof?: {
-    photoUrl?: string;
-    signature?: string;
-    recipientName?: string;
-  };
-  deliveryType?: 'riderPost';
-  availabilityId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Business {
-  id: string;
-  name: string;
-  displayName?: string;
-  email: string;
-  phone: string;
-  photoURL?: string;
-  address: string;
-  businessType: string;
-  verified: boolean;
-  rating: number;
-  totalDeliveries: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface DriverAvailability {
-  id: string;
-  driverId: string;
-  driver?: User;
-  fromLocation: Location;
-  toLocation?: Location;
-  vehicleType?: 'Bike' | 'Car' | 'Van' | 'Truck' | string;
-  capacity?: number;
-  priceExpectationCents?: number;
-  availabilityWindow?: { start: string; end: string };
-  notes?: string;
-  active: boolean;
-  contactPhone?: string;
-  deliveryType: 'driverAvailability';
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface EmergencyContact {
   id: string;
   userId: string;
@@ -303,8 +226,6 @@ export interface SafetyReport {
   reporter?: User;
   rideId?: string;
   ride?: Ride;
-  deliveryId?: string;
-  delivery?: Delivery;
   type: 'unsafe_driving' | 'harassment' | 'vehicle_issue' | 'route_deviation' | 'emergency' | 'other';
   severity: 'low' | 'medium' | 'high' | 'critical';
   description: string;

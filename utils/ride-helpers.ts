@@ -3,7 +3,158 @@
  * Consolidates ride-related calculations and logic
  */
 
-import { Ride, Booking } from '@/types';
+import { Ride, Booking, Location } from '@/types';
+
+/**
+ * Normalized ride display data interface
+ * Provides consistent field names regardless of how data is stored
+ */
+export interface RideDisplayData {
+    id: string;
+    origin: {
+        name: string;
+        address: string;
+        latitude?: number;
+        longitude?: number;
+    };
+    destination: {
+        name: string;
+        address: string;
+        latitude?: number;
+        longitude?: number;
+    };
+    departureTime: string;
+    departureDate: Date;
+    seatsAvailable: number;
+    seatsTotal: number;
+    pricePerSeat: number;
+    priceFormatted: string;
+    status: string;
+    driverId: string;
+    driver?: {
+        id?: string;
+        name: string;
+        rating?: number;
+        photoURL?: string;
+    };
+    duration?: string;
+    distance?: string;
+}
+
+/**
+ * Get normalized ride display data
+ * Handles all legacy field names and provides consistent data structure
+ * @param ride - Ride object (may have inconsistent field names)
+ * @returns Normalized RideDisplayData object
+ */
+export const getRideDisplayData = (ride: Ride): RideDisplayData => {
+    // Normalize origin location
+    const originData = ride.origin || ride.from || ({} as Location);
+    const origin = {
+        name: originData?.name || 'Unknown origin',
+        address: originData?.address || 'Address not available',
+        latitude: originData?.latitude,
+        longitude: originData?.longitude,
+    };
+
+    // Normalize destination location
+    const destData = ride.destination || ride.to || ({} as Location);
+    const destination = {
+        name: destData?.name || 'Unknown destination',
+        address: destData?.address || 'Address not available',
+        latitude: destData?.latitude,
+        longitude: destData?.longitude,
+    };
+
+    // Normalize departure time
+    const departureTimeStr = ride.departureAt || ride.departureTime || new Date().toISOString();
+    const departureDate = new Date(departureTimeStr);
+
+    // Normalize seats
+    const seatsAvailable = ride.availableSeats ?? ride.seatsAvailable ?? 0;
+    const seatsTotal = ride.seatsTotal ?? ride.vehicle?.seats ?? 4;
+
+    // Normalize price
+    const pricePerSeat = ride.pricePerSeat ?? 0;
+    const priceFormatted = `$${(pricePerSeat / 100).toFixed(2)}`;
+
+    // Normalize driver info
+    const driver = ride.driver ? {
+        id: ride.driver.id,
+        name: ride.driver.name || ride.driver.displayName || 'Unknown driver',
+        rating: ride.driver.rating,
+        photoURL: ride.driver.photoURL || ride.driver.profilePicture,
+    } : undefined;
+
+    return {
+        id: ride.id,
+        origin,
+        destination,
+        departureTime: departureTimeStr,
+        departureDate,
+        seatsAvailable: Math.max(0, seatsAvailable), // Ensure never negative
+        seatsTotal,
+        pricePerSeat,
+        priceFormatted,
+        status: ride.status || 'upcoming',
+        driverId: ride.driverId,
+        driver,
+        duration: ride.duration,
+        distance: ride.distance,
+    };
+};
+
+/**
+ * Format departure time for display
+ * @param departureTime - ISO date string
+ * @returns Formatted time string (e.g., "Mon, Dec 12 at 3:30 PM")
+ */
+export const formatDepartureTime = (departureTime: string): string => {
+    try {
+        const date = new Date(departureTime);
+        return date.toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+        }) + ' at ' + date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        });
+    } catch {
+        return 'Date unavailable';
+    }
+};
+
+/**
+ * Get short time display (e.g., "3:30 PM")
+ */
+export const formatTimeShort = (departureTime: string): string => {
+    try {
+        return new Date(departureTime).toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit',
+            hour12: true,
+        });
+    } catch {
+        return 'N/A';
+    }
+};
+
+/**
+ * Get short date display (e.g., "Dec 12")
+ */
+export const formatDateShort = (departureTime: string): string => {
+    try {
+        return new Date(departureTime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+        });
+    } catch {
+        return 'N/A';
+    }
+};
+
 
 /**
  * Calculate available seats for a ride
@@ -30,13 +181,13 @@ export const calculateAvailableSeats = (ride: Ride, bookings?: Booking[]): numbe
  * Calculate total price for booking
  * @param pricePerSeat - Price per seat in cents
  * @param seats - Number of seats
- * @param platformFee - Optional platform fee in cents (default: 100 = $1)
+ * @param platformFee - Optional platform fee in cents (default: 500 = $5)
  * @returns Object with breakdown of costs
  */
 export const calculateBookingPrice = (
     pricePerSeat: number,
     seats: number,
-    platformFee: number = 100
+    platformFee: number = 500
 ): {
     subtotal: number;
     platformFee: number;

@@ -81,11 +81,7 @@ class Logger {
         cancelled: (rideId: string, reason?: string) => this.warn('Ride cancelled', { rideId, reason }),
     };
 
-    delivery = {
-        created: (deliveryId: string) => this.info('Delivery created', { deliveryId }),
-        accepted: (deliveryId: string, driverId: string) => this.info('Delivery accepted', { deliveryId, driverId }),
-        completed: (deliveryId: string) => this.info('Delivery completed', { deliveryId }),
-    };
+
 
     safety = {
         reportCreated: (reportId: string, severity: string) => this.warn('Safety report created', { reportId, severity }),

@@ -66,6 +66,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       console.log('💳 Initializing Payment Sheet...');
       setIsLoading(true);
 
+      // PRE-CHECK: Validate seat availability BEFORE creating payment intent
+      const { RidesService } = await import('@/services/rides');
+      const currentRide = await RidesService.getRideById(ride.id);
+
+      if (!currentRide) {
+        throw new Error('Ride not found');
+      }
+
+      const availableSeats = currentRide.availableSeats || currentRide.seatsAvailable || 0;
+      if (availableSeats < seats) {
+        throw new Error(`Not enough seats available. You requested ${seats} seat${seats > 1 ? 's' : ''} but only ${availableSeats} seat${availableSeats !== 1 ? 's are' : ' is'} available. Please try a different ride or select fewer seats.`);
+      }
+
+      console.log(`✅ Seat check passed: ${availableSeats} seats available, requesting ${seats}`);
+
       // Create Payment Intent via Cloud Function
       const createPI = httpsCallable(functions, 'createPaymentIntent');
       const result = await createPI({

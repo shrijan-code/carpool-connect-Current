@@ -8,11 +8,11 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
-import { 
-  Navigation, 
-  CheckCircle, 
-  Users, 
-  MapPin, 
+import {
+  Navigation,
+  CheckCircle,
+  Users,
+  MapPin,
   Clock,
   Car,
   UserCheck,
@@ -37,11 +37,11 @@ interface EnhancedRideTrackingProps {
 type TrackingStatus = 'waiting' | 'driver_assigned' | 'pickup_confirmed' | 'passengers_onboard' | 'in_transit' | 'arrived' | 'completed';
 type PassengerStatus = 'waiting' | 'ready' | 'onboard' | 'dropped_off';
 
-export const EnhancedRideTracking: React.FC<EnhancedRideTrackingProps> = ({ 
-  ride, 
+export const EnhancedRideTracking: React.FC<EnhancedRideTrackingProps> = ({
+  ride,
   booking,
-  isDriver, 
-  onStatusChange 
+  isDriver,
+  onStatusChange
 }) => {
   const { user } = useAuthStore();
   const [currentStatus, setCurrentStatus] = useState<TrackingStatus>(ride.trackingStatus || 'waiting');
@@ -66,7 +66,7 @@ export const EnhancedRideTracking: React.FC<EnhancedRideTrackingProps> = ({
 
   const loadBookings = async () => {
     try {
-      const rideBookings = await RidesService.getRideBookings(ride.id);
+      const rideBookings = await RidesService.getRideBookings(ride.id, user?.id);
       setBookings(rideBookings.filter(b => b.status === 'confirmed'));
     } catch (error) {
       console.error('Failed to load bookings:', error);
@@ -183,7 +183,7 @@ export const EnhancedRideTracking: React.FC<EnhancedRideTrackingProps> = ({
         {statuses.map((status, index) => {
           const isActive = index <= currentIndex;
           const isCurrent = index === currentIndex;
-          
+
           return (
             <View key={status} style={styles.timelineItem}>
               <View style={[
@@ -265,12 +265,12 @@ export const EnhancedRideTracking: React.FC<EnhancedRideTrackingProps> = ({
         <View style={styles.statusHeader}>
           {getStatusIcon(isDriver ? currentStatus : passengerStatus)}
           <Text style={styles.statusTitle}>
-            {isDriver 
+            {isDriver
               ? currentStatus.replace(/_/g, ' ').toUpperCase()
               : passengerStatus.replace(/_/g, ' ').toUpperCase()}
           </Text>
         </View>
-        
+
         {ride.trackingStatus && (
           <View style={styles.statusDetails}>
             {ride.driverAssignedAt && (
@@ -312,7 +312,7 @@ export const EnhancedRideTracking: React.FC<EnhancedRideTrackingProps> = ({
             {isDriver ? 'Ride Completed Successfully' : 'Trip Completed'}
           </Text>
           <Text style={styles.completedSubtitle}>
-            {isDriver 
+            {isDriver
               ? 'All passengers have been charged and payments are being processed.'
               : 'Thank you for riding with us! Your payment has been processed.'}
           </Text>
