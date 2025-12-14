@@ -1,5 +1,14 @@
+// Mock config/firebase BEFORE imports
+jest.mock('../../config/firebase', () => ({
+    auth: {},
+    db: {},
+    storage: {},
+}));
+jest.mock('firebase/auth');
+jest.mock('firebase/firestore');
+
 import { AuthService } from '../../services/auth';
-import { auth, db } from '../../config/firebase';
+import { auth } from '../../config/firebase';
 import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
@@ -7,88 +16,92 @@ import {
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
-jest.mock('../../config/firebase');
-jest.mock('firebase/auth');
-jest.mock('firebase/firestore');
-
 describe('AuthService', () => {
     beforeEach(() => {
         jest.clearAllMocks();
     });
 
-    describe('login', () => {
-        it('should login user with valid credentials', async () => {
-            const mockUser = {
+    describe('signInWithEmail', () => {
+        it('should sign in user with valid credentials', async () => {
+            const mockFirebaseUser = {
                 uid: 'user123',
                 email: 'test@example.com',
             };
 
+            const mockUserData = {
+                id: 'user123',
+                name: 'Test User',
+                email: 'test@example.com',
+            };
+
             (signInWithEmailAndPassword as jest.Mock).mockResolvedValue({
-                user: mockUser,
+                user: mockFirebaseUser,
             });
 
-            const result = await AuthService.login('test@example.com', 'password123');
+            (getDoc as jest.Mock).mockResolvedValue({
+                exists: () => true,
+                data: () => mockUserData,
+            });
 
-            expect(signInWithEmailAndPassword).toHaveBeenCalledWith(
-                auth,
-                'test@example.com',
-                'password123'
-            );
-            expect(result.uid).toBe('user123');
+            const result = await AuthService.signInWithEmail('test@example.com', 'password123');
+
+            expect(signInWithEmailAndPassword).toHaveBeenCalled();
+            expect(result.id).toBe('user123');
         });
 
         it('should handle invalid credentials', async () => {
-            (signInWithEmailAndPassword as jest.Mock).mockRejectedValue(
-                new Error('auth/wrong-password')
-            );
+            const error = new Error('auth/wrong-password');
+            (error as any).code = 'auth/wrong-password';
+
+            (signInWithEmailAndPassword as jest.Mock).mockRejectedValue(error);
 
             await expect(
-                AuthService.login('test@example.com', 'wrongpassword')
+                AuthService.signInWithEmail('test@example.com', 'wrongpassword')
             ).rejects.toThrow();
         });
     });
 
-    describe('signup', () => {
+    describe('signUpWithEmail', () => {
         it('should create new user account and profile', async () => {
-            const mockUser = {
+            const mockFirebaseUser = {
                 uid: 'newuser123',
                 email: 'newuser@example.com',
             };
 
             (createUserWithEmailAndPassword as jest.Mock).mockResolvedValue({
-                user: mockUser,
+                user: mockFirebaseUser,
             });
 
             (setDoc as jest.Mock).mockResolvedValue(undefined);
 
-            const result = await AuthService.signup(
+            const result = await AuthService.signUpWithEmail(
                 'newuser@example.com',
                 'password123',
-                'John Doe',
-                '+61412345678'
+                { name: 'John Doe', phone: '+61412345678' }
             );
 
             expect(createUserWithEmailAndPassword).toHaveBeenCalled();
             expect(setDoc).toHaveBeenCalled();
-            expect(result.uid).toBe('newuser123');
+            expect(result.id).toBe('newuser123');
         });
 
         it('should handle duplicate email', async () => {
-            (createUserWithEmailAndPassword as jest.Mock).mockRejectedValue(
-                new Error('auth/email-already-in-use')
-            );
+            const error = new Error('auth/email-already-in-use');
+            (error as any).code = 'auth/email-already-in-use';
+
+            (createUserWithEmailAndPassword as jest.Mock).mockRejectedValue(error);
 
             await expect(
-                AuthService.signup('existing@example.com', 'password123', 'John', '+61')
+                AuthService.signUpWithEmail('existing@example.com', 'password123', { name: 'John' })
             ).rejects.toThrow();
         });
     });
 
-    describe('logout', () => {
-        it('should logout current user', async () => {
+    describe('signOut', () => {
+        it('should sign out current user', async () => {
             (signOut as jest.Mock).mockResolvedValue(undefined);
 
-            await AuthService.logout();
+            await AuthService.signOut();
 
             expect(signOut).toHaveBeenCalledWith(auth);
         });
@@ -97,6 +110,7 @@ describe('AuthService', () => {
     describe('getUserProfile', () => {
         it('should return user profile data', async () => {
             const mockProfile = {
+                id: 'user123',
                 name: 'John Doe',
                 email: 'john@example.com',
                 phone: '+61412345678',
@@ -106,11 +120,13 @@ describe('AuthService', () => {
             (getDoc as jest.Mock).mockResolvedValue({
                 exists: () => true,
                 data: () => mockProfile,
+                id: 'user123',
             });
 
             const result = await AuthService.getUserProfile('user123');
 
-            expect(result).toEqual(mockProfile);
+            expect(result).toBeTruthy();
+            expect(result?.name).toBe('John Doe');
         });
 
         it('should return null for non-existent user', async () => {

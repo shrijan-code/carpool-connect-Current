@@ -25,8 +25,20 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (res.ok) {
-                router.push('/dashboard');
-                router.refresh();
+                if (data.mfaRequired) {
+                    // Redirect to MFA verification page
+                    const params = new URLSearchParams({
+                        token: data.mfaToken,
+                        method: data.mfaMethod,
+                        totp: data.totpConfigured ? 'true' : 'false',
+                        name: data.admin.name,
+                        email: data.admin.email,
+                    });
+                    router.push(`/mfa?${params.toString()}`);
+                } else {
+                    router.push('/dashboard');
+                    router.refresh();
+                }
             } else {
                 setError(data.error || 'Login failed');
             }

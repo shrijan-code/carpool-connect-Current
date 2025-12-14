@@ -1176,6 +1176,124 @@ export class RidesService {
     }
   }
 
+  // Update ride details (Driver action - before bookings are confirmed)
+  static async updateRide(
+    rideId: string,
+    driverId: string,
+    updates: {
+      origin?: { id: string; name: string; address: string; latitude: number; longitude: number };
+      destination?: { id: string; name: string; address: string; latitude: number; longitude: number };
+      departureTime?: string;
+      pricePerSeat?: number;
+      seatsTotal?: number;
+      notes?: string;
+    }
+  ): Promise<void> {
+    try {
+      console.log('Updating ride:', rideId, 'by driver:', driverId, 'updates:', updates);
+
+      // 1. Verify the ride exists and belongs to this driver
+      const ride = await this.getRideById(rideId);
+      if (!ride) {
+        throw new Error('Ride not found');
+      }
+
+      if (ride.driverId !== driverId) {
+        throw new Error('You can only edit your own rides');
+      }
+
+      // 2. Verify ride status is 'upcoming' (not active, completed, or cancelled)
+      if (ride.status !== 'upcoming') {
+        throw new Error(`Cannot edit a ride that is ${ride.status}. Only upcoming rides can be edited.`);
+      }
+
+      // 3. Check for confirmed bookings - cannot edit if bookings exist
+      const bookings = await this.getRideBookings(rideId, driverId);
+      const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
+
+      if (confirmedBookings.length > 0) {
+        throw new Error('Cannot edit ride with confirmed bookings. Please contact passengers to cancel their bookings first.');
+      }
+
+      // 4. Validate update fields
+      const updateData: any = {
+        updatedAt: serverTimestamp()
+      };
+
+      if (updates.origin) {
+        if (!updates.origin.name || !updates.origin.address ||
+          typeof updates.origin.latitude !== 'number' || typeof updates.origin.longitude !== 'number') {
+          throw new Error('Invalid origin location data');
+        }
+        updateData.from = updates.origin;
+        updateData.origin = updates.origin;
+      }
+
+      if (updates.destination) {
+        if (!updates.destination.name || !updates.destination.address ||
+          typeof updates.destination.latitude !== 'number' || typeof updates.destination.longitude !== 'number') {
+          throw new Error('Invalid destination location data');
+        }
+        updateData.to = updates.destination;
+        updateData.destination = updates.destination;
+      }
+
+      if (updates.departureTime !== undefined) {
+        const departureDate = new Date(updates.departureTime);
+        if (isNaN(departureDate.getTime())) {
+          throw new Error('Invalid departure time');
+        }
+
+        const minDepartureTime = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
+        if (departureDate < minDepartureTime) {
+          throw new Error('Departure time must be at least 5 minutes in the future');
+        }
+
+        updateData.departureTime = updates.departureTime;
+        updateData.departureAt = updates.departureTime;
+      }
+
+      if (updates.pricePerSeat !== undefined) {
+        const price = Math.round(updates.pricePerSeat);
+        if (price <= 0) {
+          throw new Error('Price must be greater than zero');
+        }
+        if (price > 100000) { // $1000 max
+          throw new Error('Price cannot exceed $1,000');
+        }
+        updateData.pricePerSeat = price;
+      }
+
+      if (updates.seatsTotal !== undefined) {
+        const seats = Math.round(updates.seatsTotal);
+        if (seats < 1 || seats > 8) {
+          throw new Error('Available seats must be between 1 and 8');
+        }
+        updateData.seatsTotal = seats;
+        updateData.availableSeats = seats;
+        updateData.seatsAvailable = seats;
+      }
+
+      if (updates.notes !== undefined) {
+        updateData.note = updates.notes.trim().substring(0, 500); // Max 500 chars
+      }
+
+      // 5. Apply the update
+      await updateDoc(doc(db, 'rides', rideId), updateData);
+
+      // 6. Log audit trail
+      await AuditService.logAction('UPDATE_RIDE', 'ride', rideId, driverId, {
+        updatedFields: Object.keys(updates),
+        ...updates
+      });
+
+      console.log('Ride updated successfully:', rideId);
+    } catch (error: any) {
+      console.error('Update ride error:', error);
+      throw new Error(error.message || 'Failed to update ride');
+    }
+  }
+
   // Delete ride (soft delete - only if no active bookings exist)
   static async deleteRide(rideId: string, driverId: string): Promise<void> {
     try {

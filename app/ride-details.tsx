@@ -10,7 +10,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { RidesService } from '@/services/rides';
-import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X, ChevronLeft } from 'lucide-react-native';
+import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X, ChevronLeft, Edit3 } from 'lucide-react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { Booking } from '@/types';
 import { EnhancedRideTracking } from '@/components/EnhancedRideTracking';
@@ -686,6 +686,16 @@ export default function RideDetailsScreen() {
 
         {isDriver && ride.status === 'upcoming' && (
           <TouchableOpacity
+            style={styles.editButton}
+            onPress={() => router.push(`/edit-ride?id=${ride.id}`)}
+          >
+            <Edit3 size={20} color={Colors.primary} />
+            <Text style={styles.editButtonText}>Edit Ride</Text>
+          </TouchableOpacity>
+        )}
+
+        {isDriver && ride.status === 'upcoming' && (
+          <TouchableOpacity
             style={styles.deleteButton}
             onPress={handleDeleteRide}
           >
@@ -1069,5 +1079,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
     color: Colors.error,
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    marginTop: 8,
+    gap: 8,
+  },
+  editButtonText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.primary,
   },
 });

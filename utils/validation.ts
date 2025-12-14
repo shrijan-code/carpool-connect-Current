@@ -223,3 +223,39 @@ export const validateUrl = (url: string): boolean => {
         return false;
     }
 };
+
+/**
+ * Validate ride edit permissions
+ * @param ride - The ride object to check
+ * @param userId - The user attempting to edit
+ * @param hasConfirmedBookings - Whether the ride has confirmed bookings
+ * @returns Object with canEdit boolean and reason if not allowed
+ */
+export const validateRideEditPermissions = (
+    ride: { driverId: string; status: string },
+    userId: string,
+    hasConfirmedBookings: boolean
+): { canEdit: boolean; reason?: string } => {
+    // Check ownership
+    if (ride.driverId !== userId) {
+        return { canEdit: false, reason: 'You can only edit your own rides' };
+    }
+
+    // Check ride status
+    if (ride.status !== 'upcoming') {
+        return {
+            canEdit: false,
+            reason: `Cannot edit a ${ride.status} ride. Only upcoming rides can be edited.`
+        };
+    }
+
+    // Check for confirmed bookings
+    if (hasConfirmedBookings) {
+        return {
+            canEdit: false,
+            reason: 'Cannot edit ride with confirmed bookings'
+        };
+    }
+
+    return { canEdit: true };
+};

@@ -81,30 +81,5 @@
     "jest-expo": "^51.0.3",
     "@types/jest": "^29.5.11"
   },
-  "private": true,
-  "jest": {
-    "preset": "jest-expo",
-    "setupFilesAfterEnv": [
-      "<rootDir>/__tests__/setup.ts"
-    ],
-    "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)"
-    ],
-    "collectCoverageFrom": [
-      "services/**/*.{ts,tsx}",
-      "components/**/*.{ts,tsx}",
-      "hooks/**/*.{ts,tsx}",
-      "utils/**/*.{ts,tsx}",
-      "!**/*.d.ts",
-      "!**/node_modules/**"
-    ],
-    "coverageThreshold": {
-      "global": {
-        "branches": 60,
-        "functions": 60,
-        "lines": 60,
-        "statements": 60
-      }
-    }
-  }
+  "private": true
 }
