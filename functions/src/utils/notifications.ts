@@ -1,9 +1,8 @@
-/**
- * In-App Notifications Utility
- * Creates notification documents in Firestore for in-app display
- */
-
 import * as admin from "firebase-admin";
+import { Expo, ExpoPushMessage } from "expo-server-sdk";
+
+// Initialize Expo client
+const expo = new Expo();
 
 // Get Firestore instance lazily (after initializeApp is called)
 const getDb = () => admin.firestore();
@@ -28,10 +27,107 @@ export const createNotification = async (notification: NotificationData): Promis
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     console.log(`Notification created: ${notification.type} for user ${notification.userId}`);
+
+    // Also trigger push notification
+    await sendPushNotification(
+      notification.userId,
+      notification.title,
+      notification.body,
+      notification.data
+    );
+
     return docRef.id;
   } catch (error) {
     console.error("Failed to create notification:", error);
     throw error;
+  }
+};
+
+/**
+ * Send a push notification to a user via Expo
+ */
+export const sendPushNotification = async (
+  userId: string,
+  title: string,
+  body: string,
+  data?: Record<string, any>
+): Promise<void> => {
+  try {
+    const db = getDb();
+    const userDoc = await db.collection("users").doc(userId).get();
+
+    if (!userDoc.exists) {
+      console.log(`User ${userId} not found, skipping push notification`);
+      return;
+    }
+
+    const userData = userDoc.data();
+    const pushTokens: string[] = userData?.pushTokens || [];
+
+    if (pushTokens.length === 0) {
+      console.log(`No push tokens found for user ${userId}`);
+      return;
+    }
+
+    const messages: ExpoPushMessage[] = [];
+    for (const pushToken of pushTokens) {
+      // Check if the token is valid
+      if (!Expo.isExpoPushToken(pushToken)) {
+        console.error(`Push token ${pushToken} is not a valid Expo push token`);
+        continue;
+      }
+
+      messages.push({
+        to: pushToken,
+        sound: "default",
+        title,
+        body,
+        data: data || {},
+        priority: "high",
+        channelId: data?.type === "booking" ? "bookings" : "default",
+      });
+    }
+
+    if (messages.length === 0) return;
+
+    // Send the notifications
+    const chunks = expo.chunkPushNotifications(messages);
+    const tickets = [];
+
+    for (const chunk of chunks) {
+      try {
+        const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+        tickets.push(...ticketChunk);
+        console.log(`Sent ${chunk.length} push notifications to user ${userId}`);
+      } catch (error) {
+        console.error("Error sending push notification chunk:", error);
+      }
+    }
+
+    // NOTE: In a production app, you should check tickets for errors
+    // and remove invalid tokens from the database. 
+    // Implementing basic cleanup for obvious errors:
+    const invalidTokens: string[] = [];
+    tickets.forEach((ticket, index) => {
+      if (ticket.status === "error") {
+        if (ticket.details?.error === "DeviceNotRegistered") {
+          // Find the original token from the messages array
+          // Since chunking preserved order, we can map back
+          const token = (messages[index] as any).to;
+          if (token) invalidTokens.push(token);
+        }
+      }
+    });
+
+    if (invalidTokens.length > 0) {
+      console.log(`Cleaning up ${invalidTokens.length} invalid tokens for user ${userId}`);
+      await db.collection("users").doc(userId).update({
+        pushTokens: admin.firestore.FieldValue.arrayRemove(...invalidTokens)
+      });
+    }
+
+  } catch (error) {
+    console.error("Failed to send push notification:", error);
   }
 };
 

@@ -1704,6 +1704,15 @@ export const completeRideAndCharge = onCall(
 
       console.log(`🎉 Ride completed: ${successfulCharges} charges, revenue=$${(totalRevenue / 100).toFixed(2)}, driver gets=$${(driverPayout / 100).toFixed(2)}, platform=$${(platformFee / 100).toFixed(2)}`);
 
+      // Notify driver of payout
+      await createNotification({
+        userId: driverId,
+        title: "Revenue Processed! 💰",
+        body: `Ride completed. Your earnings of $${(driverPayout / 100).toFixed(2)} have been processed.`,
+        type: "payment",
+        data: { rideId, totalRevenue, driverPayout },
+      });
+
       return {
         success: true,
         message: `Ride completed. Processed ${successfulCharges} passenger(s).`,
@@ -1832,6 +1841,10 @@ export const onBookingStatusChanged = onDocumentUpdated(
 
     console.log(`Booking ${bookingId} status changed: ${before.status} -> ${newStatus}`);
 
+    // Track if we should notify the rider vs driver
+    const isNotifyRider = ["confirmed", "accepted", "declined", "rejected", "cancelled", "completed"].includes(newStatus);
+    const isNotifyDriver = ["pending_driver", "cancelled", "completed"].includes(newStatus);
+
     // Restore seats if an accepted booking is cancelled or rejected (rare)
     if (before.status === "accepted" && (newStatus === "cancelled" || newStatus === "rejected")) {
       await db.collection("rides").doc(after.rideId).update({
@@ -1867,6 +1880,26 @@ export const onBookingStatusChanged = onDocumentUpdated(
 
     // Handle different status changes
     switch (newStatus) {
+      case "pending_driver":
+        // This is a new request, notify driver
+        if (driverData.email) {
+          await sendEmail(driverData.email, "newBookingRequest", [
+            driverData.name || "Driver",
+            passengerData.name || "A rider",
+            rideDetails,
+          ]);
+        }
+        const requestNotif = notificationTemplates.newBookingRequest(passengerData.name || "A rider");
+        await createNotification({
+          userId: after.driverId,
+          title: requestNotif.title,
+          body: requestNotif.body,
+          type: "booking",
+          data: { bookingId, rideId: after.rideId },
+        });
+        break;
+
+      case "confirmed":
       case "accepted":
         // Notify passenger
         if (passengerData.email) {
@@ -1886,6 +1919,7 @@ export const onBookingStatusChanged = onDocumentUpdated(
         });
         break;
 
+      case "declined":
       case "rejected":
         // Notify passenger
         if (passengerData.email) {

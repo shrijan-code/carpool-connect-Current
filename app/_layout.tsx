@@ -12,6 +12,8 @@ import { useSettingsStore } from "@/store/settings-store";
 import { initializeStripe, STRIPE_PUBLISHABLE_KEY } from "@/services/stripe";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StripeProvider } from "@stripe/stripe-react-native";
+import { NotificationService } from "@/services/notifications";
+import { useRouter } from "expo-router";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -177,6 +179,7 @@ export default function RootLayout() {
 
   // Use fallback colors during initialization
   const { colors } = useTheme();
+  const router = useRouter();
   const fallbackColors = {
     primary: '#007AFF',
     background: '#FFFFFF',
@@ -185,6 +188,58 @@ export default function RootLayout() {
   };
   const safeColors = colors || fallbackColors;
   const styles = createStyles(safeColors);
+
+  useEffect(() => {
+    // Notification Listeners
+    let notificationListener: any;
+    let responseListener: any;
+
+    const setupNotifications = async () => {
+      // Listener for when a notification is received (foreground)
+      notificationListener = NotificationService.addNotificationReceivedListener(notification => {
+        console.log('[Notification] Received in foreground:', notification);
+        // We could show a custom in-app toast here if we want
+      });
+
+      // Listener for when a user taps on a notification
+      responseListener = NotificationService.addNotificationResponseReceivedListener(response => {
+        const data = response.notification.request.content.data;
+        console.log('[Notification] Response received:', data);
+
+        // Handle navigation based on notification data
+        if (data?.bookingId) {
+          router.push(`/booking-management?bookingId=${data.bookingId}` as any);
+        } else if (data?.rideId) {
+          router.push(`/ride-details?id=${data.rideId}` as any);
+        }
+      });
+
+      // Handle the case where the app was opened by a notification tap
+      const lastResponse = await NotificationService.getLastNotificationResponse();
+      if (lastResponse) {
+        const data = lastResponse.notification.request.content.data;
+        console.log('[Notification] App opened from:', data);
+        if (data?.bookingId) {
+          router.push(`/booking-management?bookingId=${data.bookingId}` as any);
+        } else if (data?.rideId) {
+          router.push(`/ride-details?id=${data.rideId}` as any);
+        }
+      }
+    };
+
+    if (isInitialized) {
+      setupNotifications();
+    }
+
+    return () => {
+      if (notificationListener) {
+        notificationListener.remove();
+      }
+      if (responseListener) {
+        responseListener.remove();
+      }
+    };
+  }, [isInitialized, router]);
 
   useEffect(() => {
     const initialize = async () => {
