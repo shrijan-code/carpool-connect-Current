@@ -25,7 +25,7 @@ export default function BookingManagementScreen() {
 
   const loadBookings = useCallback(async () => {
     if (!user?.id) return;
-    
+
     setLoadingBookings(true);
     try {
       // Get bookings from store
@@ -53,7 +53,7 @@ export default function BookingManagementScreen() {
 
     try {
       await cancelBooking(selectedBooking.id, selectedBooking.rideId, selectedBooking.seats, reason);
-      
+
       Alert.alert(
         'Booking Cancelled',
         'Your booking has been cancelled successfully. Refund details will be sent to your email.',
@@ -123,8 +123,9 @@ export default function BookingManagementScreen() {
     }
   };
 
+  // Allow cancelling for pending_driver, confirmed (modern), and accepted (legacy) statuses
   const canCancelBooking = (booking: Booking) => {
-    return ['pending_driver', 'requested', 'accepted'].includes(booking.status);
+    return ['pending_driver', 'requested', 'accepted', 'confirmed'].includes(booking.status);
   };
 
   const formatTime = (dateString: string) => {
@@ -148,7 +149,7 @@ export default function BookingManagementScreen() {
     const departure = new Date(departureTime);
     const diffMs = departure.getTime() - now.getTime();
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    
+
     if (diffMs < 0) return 'Departed';
     if (diffHours < 1) return 'Less than 1 hour';
     if (diffHours < 24) return `${diffHours} hours`;
@@ -156,29 +157,46 @@ export default function BookingManagementScreen() {
     return `${diffDays} days`;
   };
 
+  // Cancellation fee structure - matches utils/ride-validation.ts
   const getCancellationPolicy = (booking: Booking) => {
     if (!booking.ride?.departureAt) return null;
-    
+
     const now = new Date();
     const departure = new Date(booking.ride.departureAt);
     const hoursUntilDeparture = (departure.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
+
+    // Pending bookings have no fee
+    if (booking.status === 'pending_driver') {
+      return {
+        type: 'full',
+        message: 'Full refund (no fee for pending bookings)',
+        color: Colors.success
+      };
+    }
+
+    // Tiered fee structure for confirmed bookings
     if (hoursUntilDeparture > 24) {
       return {
         type: 'full',
-        message: 'Full refund (excluding service fees)',
+        message: '5% cancellation fee applies',
         color: Colors.success
+      };
+    } else if (hoursUntilDeparture > 12) {
+      return {
+        type: 'partial',
+        message: '25% cancellation fee applies',
+        color: Colors.warning
       };
     } else if (hoursUntilDeparture > 0) {
       return {
         type: 'partial',
-        message: '50% refund, driver compensated',
+        message: '50% cancellation fee applies',
         color: Colors.warning
       };
     } else {
       return {
         type: 'none',
-        message: 'No refund available',
+        message: 'No refund available (past departure time)',
         color: Colors.error
       };
     }
@@ -202,7 +220,7 @@ export default function BookingManagementScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen options={{ 
+      <Stack.Screen options={{
         title: 'My Bookings',
         headerStyle: { backgroundColor: Colors.primary },
         headerTintColor: Colors.background,
@@ -212,7 +230,7 @@ export default function BookingManagementScreen() {
           </TouchableOpacity>
         )
       }} />
-      
+
       <View style={styles.tabContainer}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScrollContent}>
           {[
@@ -253,7 +271,7 @@ export default function BookingManagementScreen() {
           ))}
         </ScrollView>
       </View>
-      
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Text style={[styles.title, isSmallScreen && styles.smallScreenTitle]}>Your Bookings</Text>
@@ -269,14 +287,14 @@ export default function BookingManagementScreen() {
         ) : filteredBookings.length > 0 ? (
           filteredBookings.map((booking) => {
             const policy = getCancellationPolicy(booking);
-            
+
             return (
               <Card key={booking.id} style={[styles.bookingCard, isSmallScreen && styles.smallScreenCard]}>
                 <View style={[styles.bookingHeader, isSmallScreen && styles.smallScreenHeader]}>
                   <View style={styles.statusContainer}>
                     {getStatusIcon(booking.status)}
                     <Text style={[
-                      styles.statusText, 
+                      styles.statusText,
                       { color: getStatusColor(booking.status) },
                       isSmallScreen && styles.smallScreenStatusText
                     ]}>
@@ -351,7 +369,7 @@ export default function BookingManagementScreen() {
 
                 <View style={styles.actionSection}>
                   <View style={styles.actionButtonsContainer}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.actionButton, styles.viewButton]}
                       onPress={() => {
                         if (booking.rideId) {
@@ -364,9 +382,9 @@ export default function BookingManagementScreen() {
                       <Eye size={16} color={Colors.background} />
                       <Text style={styles.actionButtonText}>View Ride Details</Text>
                     </TouchableOpacity>
-                    
+
                     {['accepted', 'confirmed'].includes(booking.status) && (
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={[styles.actionButton, styles.messageButton]}
                         onPress={() => router.push('/(tabs)/chat')}
                       >
@@ -374,9 +392,9 @@ export default function BookingManagementScreen() {
                         <Text style={styles.actionButtonText}>Contact Driver</Text>
                       </TouchableOpacity>
                     )}
-                    
+
                     {canCancelBooking(booking) && (
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={[styles.actionButton, styles.cancelButton]}
                         onPress={() => handleCancelBooking(booking)}
                         disabled={isLoading}
@@ -386,12 +404,12 @@ export default function BookingManagementScreen() {
                       </TouchableOpacity>
                     )}
                   </View>
-                  
+
                   {canCancelBooking(booking) && policy && (
                     <View style={[styles.policyInfo, isSmallScreen && styles.smallScreenPolicyInfo]}>
                       <AlertTriangle size={isSmallScreen ? 12 : 14} color={policy.color} />
                       <Text style={[
-                        styles.policyText, 
+                        styles.policyText,
                         { color: policy.color },
                         isSmallScreen && styles.smallScreenPolicyText
                       ]}>
