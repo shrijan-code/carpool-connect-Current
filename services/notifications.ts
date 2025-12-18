@@ -1,6 +1,21 @@
 import { Platform, Alert } from 'react-native';
-import { doc, updateDoc, collection, addDoc, query, where, onSnapshot, Timestamp, limit, getDocs } from 'firebase/firestore';
+import { doc, updateDoc, collection, addDoc, query, where, onSnapshot, Timestamp, limit, getDocs, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { db } from '@/config/firebase';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
+
+// Configure Expo notification handler (only on native platforms)
+if (Platform.OS !== 'web') {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+}
 
 // In-app notification interface
 export interface InAppNotification {
@@ -25,6 +40,9 @@ const unreadCountCache = new Map<string, number>();
 const firstSnapshotProcessed = new Set<string>();
 // Track session start to optionally filter very old notifications
 const sessionStartByUser = new Map<string, number>();
+
+// Store current push token for cleanup on logout
+let currentPushToken: string | null = null;
 
 export class NotificationService {
   // Send in-app notification (stored in Firestore) and update cache
@@ -449,5 +467,182 @@ export class NotificationService {
       'message',
       { rideId, senderName }
     );
+  }
+
+  // ============================================================================
+  // EXPO PUSH NOTIFICATIONS
+  // ============================================================================
+
+  /**
+   * Register for Expo push notifications and get push token
+   * @returns The Expo push token or null if registration fails
+   */
+  static async registerForPushNotificationsAsync(): Promise<string | null> {
+    // Push notifications don't work on web
+    if (Platform.OS === 'web') {
+      console.log('Push notifications not supported on web');
+      return null;
+    }
+
+    try {
+      // Check existing permission
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+
+      // Request permission if not granted
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+
+      if (finalStatus !== 'granted') {
+        console.log('Push notification permission denied');
+        return null;
+      }
+
+      // Get Expo push token
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId ??
+        (Constants as any).easConfig?.projectId;
+
+      const tokenResponse = await Notifications.getExpoPushTokenAsync({
+        projectId: projectId,
+      });
+
+      currentPushToken = tokenResponse.data;
+      console.log('Expo push token:', currentPushToken);
+
+      // Configure Android notification channels
+      if (Platform.OS === 'android') {
+        await Notifications.setNotificationChannelAsync('bookings', {
+          name: 'Bookings',
+          description: 'Notifications for booking requests and updates',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#2196F3',
+        });
+
+        await Notifications.setNotificationChannelAsync('rides', {
+          name: 'Rides',
+          description: 'Notifications for ride updates and reminders',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#4CAF50',
+        });
+      }
+
+      return currentPushToken;
+    } catch (error) {
+      console.error('Error registering for push notifications:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Save push token to user's Firestore document
+   * @param userId - Firebase user ID
+   * @param pushToken - Expo push token
+   */
+  static async savePushTokenToFirestore(userId: string, pushToken: string): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        pushTokens: arrayUnion(pushToken),
+        lastTokenUpdate: new Date().toISOString(),
+      });
+      console.log('Push token saved to Firestore for user:', userId);
+    } catch (error) {
+      console.error('Error saving push token to Firestore:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Remove push token from user's Firestore document
+   * @param userId - Firebase user ID
+   * @param pushToken - Expo push token to remove
+   */
+  static async removePushTokenFromFirestore(userId: string, pushToken: string): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userId);
+      await updateDoc(userRef, {
+        pushTokens: arrayRemove(pushToken),
+      });
+      console.log('Push token removed from Firestore');
+    } catch (error) {
+      console.error('Error removing push token:', error);
+    }
+  }
+
+  /**
+   * Initialize push notifications for a user (call on login)
+   * @param userId - Firebase user ID
+   * @returns Push token if successful
+   */
+  static async initializePushNotifications(userId: string): Promise<string | null> {
+    try {
+      const token = await this.registerForPushNotificationsAsync();
+
+      if (token && userId) {
+        await this.savePushTokenToFirestore(userId, token);
+      }
+
+      return token;
+    } catch (error) {
+      console.error('Error initializing push notifications:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Cleanup push notifications on logout
+   * @param userId - Firebase user ID
+   */
+  static async cleanupPushNotifications(userId: string): Promise<void> {
+    try {
+      if (currentPushToken && userId) {
+        await this.removePushTokenFromFirestore(userId, currentPushToken);
+      }
+
+      // Clear all notifications
+      await Notifications.dismissAllNotificationsAsync();
+      await Notifications.setBadgeCountAsync(0);
+
+      currentPushToken = null;
+      console.log('Push notifications cleaned up');
+    } catch (error) {
+      console.error('Error cleaning up push notifications:', error);
+    }
+  }
+
+  /**
+   * Get the current push token
+   */
+  static getCurrentPushToken(): string | null {
+    return currentPushToken;
+  }
+
+  /**
+   * Add listener for received notifications (app in foreground)
+   */
+  static addNotificationReceivedListener(
+    callback: (notification: Notifications.Notification) => void
+  ): Notifications.Subscription {
+    return Notifications.addNotificationReceivedListener(callback);
+  }
+
+  /**
+   * Add listener for notification responses (user tapped notification)
+   */
+  static addNotificationResponseReceivedListener(
+    callback: (response: Notifications.NotificationResponse) => void
+  ): Notifications.Subscription {
+    return Notifications.addNotificationResponseReceivedListener(callback);
+  }
+
+  /**
+   * Get last notification response (if app was opened from notification)
+   */
+  static async getLastNotificationResponse(): Promise<Notifications.NotificationResponse | null> {
+    return await Notifications.getLastNotificationResponseAsync();
   }
 }

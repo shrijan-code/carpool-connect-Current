@@ -55,8 +55,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = await AuthService.signInWithEmail(email, password);
       set({ user, isAuthenticated: true, isOnboarded: true });
 
-      // Initialize notifications
+      // Initialize in-app and push notifications
       await NotificationService.initializeForUser(user.id);
+      await NotificationService.initializePushNotifications(user.id);
     } catch (error) {
       throw error;
     }
@@ -67,8 +68,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = await AuthService.signInWithGoogle();
       set({ user, isAuthenticated: true, isOnboarded: true });
 
-      // Initialize notifications
+      // Initialize in-app and push notifications
       await NotificationService.initializeForUser(user.id);
+      await NotificationService.initializePushNotifications(user.id);
     } catch (error) {
       throw error;
     }
@@ -88,8 +90,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       set({ user, isAuthenticated: true, isOnboarded: true });
 
-      // Initialize notifications
+      // Initialize in-app and push notifications
       await NotificationService.initializeForUser(user.id);
+      await NotificationService.initializePushNotifications(user.id);
     } catch (error) {
       throw error;
     }
@@ -97,7 +100,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
+      const currentUser = get().user;
       logger.info('Logging out user');
+
+      // Clean up push notifications
+      if (currentUser) {
+        await NotificationService.cleanupPushNotifications(currentUser.id);
+        NotificationService.clearCache(currentUser.id);
+      }
 
       // Clean up all Firestore listeners to prevent memory leaks
       logger.debug('[Optimization] Cleaning up all Firestore listeners and cache on logout');
