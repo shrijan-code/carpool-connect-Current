@@ -780,10 +780,47 @@ export const getUserBookings = onCall(async (request) => {
 // ============================================================================
 // CARPOOL BOOKING FLOW - Complete Implementation
 // ============================================================================
+//
+// BOOKING STATE MACHINE:
+// ┌─────────────────────────────────────────────────────────────────────┐
+// │ pending_driver ──┬──(accept)──> confirmed ──(complete)──> completed │
+// │                  │                  │                               │
+// │                  └──(decline)──> declined                           │
+// │                  │                  │                               │
+// │                  └──(cancel)──────>│<──(cancel)────────> cancelled  │
+// └─────────────────────────────────────────────────────────────────────┘
+//
+// PAYMENT FLOW:
+// 1. Rider creates booking -> SetupIntent created (no charge yet)
+// 2. Rider adds payment method -> PaymentMethod saved
+// 3. Driver accepts booking -> Status: confirmed
+// 4. 24h before ride -> PaymentIntent with manual capture (holds funds)
+// 5. Ride completes -> Capture payment, transfer to driver
 
 /**
- * Step 1: Create a pending booking request
- * Creates booking with atomic seat reservation using transactions
+ * Step 1: Create a Pending Booking Request
+ *
+ * This function is called when a rider wants to book a seat on a ride.
+ * It performs the following operations atomically:
+ *
+ * 1. Validates the ride exists and has available seats
+ * 2. Validates the rider hasn't already booked this ride
+ * 3. Validates the ride is in the future and accepting bookings
+ * 4. Creates a booking document with status "pending_driver"
+ * 5. Atomically decrements available seats on the ride
+ * 6. Creates a Stripe SetupIntent to save payment method (no charge yet)
+ * 7. Sends notification and email to the driver
+ *
+ * @requires auth - User must be authenticated
+ * @param rideId - The ID of the ride to book
+ * @param seats - Number of seats to book (1-10)
+ * @returns { success, bookingId, clientSecret, message }
+ * @throws unauthenticated - If user is not logged in
+ * @throws invalid-argument - If rideId or seats are missing/invalid
+ * @throws not-found - If ride doesn't exist
+ * @throws permission-denied - If user tries to book their own ride
+ * @throws failed-precondition - If ride is not accepting bookings or not enough seats
+ * @throws already-exists - If user already has a pending/confirmed booking
  */
 export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMAIL_USER', 'EMAIL_PASSWORD'] }, async (request) => {
   if (!request.auth) {
@@ -1369,8 +1406,35 @@ export const getDriverBookingRequests = onCall(async (request) => {
 });
 
 /**
- * Step 2: Driver responds to booking request
- * Accepts or declines (no PaymentIntent cancellation needed with delayed authorization)
+ * Step 2: Driver Responds to Booking Request
+ *
+ * This function handles the driver's response to a pending booking request.
+ * The driver can either accept or decline the booking.
+ *
+ * ACCEPT FLOW:
+ * 1. Validates the booking is in "pending_driver" status
+ * 2. Validates the rider has saved a payment method
+ * 3. Updates booking status to "confirmed"
+ * 4. Sends notification to rider
+ *
+ * DECLINE FLOW:
+ * 1. Validates the booking is in "pending_driver" status
+ * 2. Restores the reserved seats to the ride (atomic)
+ * 3. Updates booking status to "declined"
+ * 4. Sends notification to rider
+ *
+ * NOTE: No PaymentIntent cancellation is needed because payment is not captured
+ * until 24 hours before the ride via the scheduled function.
+ *
+ * @requires auth - User must be the driver of this booking
+ * @param bookingId - The ID of the booking to respond to
+ * @param action - "accept" or "decline"
+ * @returns { success, action, message }
+ * @throws unauthenticated - If user is not logged in
+ * @throws invalid-argument - If bookingId or action is invalid
+ * @throws not-found - If booking doesn't exist
+ * @throws permission-denied - If user is not the driver
+ * @throws failed-precondition - If booking is not in pending_driver status
  */
 export const driverRespondBooking = onCall(async (request) => {
   if (!request.auth) {
@@ -1404,8 +1468,9 @@ export const driverRespondBooking = onCall(async (request) => {
         throw new HttpsError("permission-denied", "Only the driver can respond to this booking");
       }
 
-      // Can only respond to pending bookings
-      if (bookingData.status !== "pending") {
+      // Can only respond to pending_driver bookings
+      // NOTE: The booking is created with status "pending_driver" in createPendingBooking
+      if (bookingData.status !== "pending_driver") {
         throw new HttpsError("failed-precondition", `Cannot ${action} a ${bookingData.status} booking`);
       }
 
@@ -1734,8 +1799,37 @@ export const completeRideAndCharge = onCall(
 );
 
 /**
- * Cancel a booking (Rider or Driver action)
- * Restores seats if booking was confirmed/pending
+ * Cancel a Booking (Rider or Driver Action)
+ *
+ * This function handles booking cancellation by either the rider or the driver.
+ * The behavior is the same for both parties.
+ *
+ * CANCELLATION FLOW:
+ * 1. Validates user is either the rider or driver
+ * 2. Validates booking is in "pending_driver" or "confirmed" status
+ * 3. Atomically restores the reserved seats to the ride
+ * 4. Updates booking status to "cancelled" with cancelledBy field
+ * 5. Sends notification to the other party
+ *
+ * IMPORTANT: This function does NOT handle refunds. Refunds are processed by:
+ * - For pending bookings: No payment authorization exists yet
+ * - For confirmed bookings: The scheduled payment capture function handles it
+ *
+ * CANCELLATION FEES (handled elsewhere):
+ * - >24h before departure: 5% fee
+ * - 12-24h before departure: 25% fee
+ * - <12h before departure: 50% fee
+ * - After departure time: No refund
+ *
+ * @requires auth - User must be either the rider or driver
+ * @param bookingId - The ID of the booking to cancel
+ * @param reason - Optional cancellation reason
+ * @returns { success, message }
+ * @throws unauthenticated - If user is not logged in
+ * @throws invalid-argument - If bookingId is missing
+ * @throws not-found - If booking doesn't exist
+ * @throws permission-denied - If user is not the rider or driver
+ * @throws failed-precondition - If booking is not pending_driver or confirmed
  */
 export const cancelBooking = onCall(async (request) => {
   if (!request.auth) {
@@ -1773,8 +1867,9 @@ export const cancelBooking = onCall(async (request) => {
         throw new HttpsError("permission-denied", "You don't have permission to cancel this booking");
       }
 
-      // Can only cancel pending or confirmed bookings
-      if (bookingData.status !== "pending" && bookingData.status !== "confirmed") {
+      // Can only cancel pending_driver or confirmed bookings
+      // NOTE: "pending_driver" is the initial state, "confirmed" is after driver accepts
+      if (bookingData.status !== "pending_driver" && bookingData.status !== "confirmed") {
         throw new HttpsError("failed-precondition", `Cannot cancel a ${bookingData.status} booking`);
       }
 
