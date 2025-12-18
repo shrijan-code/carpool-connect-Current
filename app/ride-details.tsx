@@ -308,12 +308,31 @@ export default function RideDetailsScreen() {
     Alert.alert('Request Booking', 'How many seats would you like to request?', seatOptions);
   };
 
-  const handleDeleteRide = () => {
+  const handleDeleteRide = async () => {
     if (!user || !isDriver) return;
+
+    // Validate delete permissions
+    const { validateRideDeletePermissions } = await import('@/utils/validation');
+    const permissions = validateRideDeletePermissions(ride, user.id, rideBookings);
+
+    if (!permissions.canDelete) {
+      Alert.alert(
+        '❌ Cannot Delete Ride',
+        permissions.reason || 'This ride cannot be deleted.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // Build the confirmation message
+    let message = 'Are you sure you want to delete this ride?\n\n⚠️ This action cannot be undone.';
+    if (permissions.warning) {
+      message += `\n\n${permissions.warning}`;
+    }
 
     Alert.alert(
       '🗑️ Delete Ride',
-      'Are you sure you want to delete this ride?\n\n⚠️ This action cannot be undone.\n• All pending booking requests will be cancelled\n• Passengers will be notified',
+      message,
       [
         { text: 'Keep Ride', style: 'cancel' },
         {

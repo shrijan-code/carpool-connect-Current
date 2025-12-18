@@ -229,13 +229,13 @@ export const validateUrl = (url: string): boolean => {
  * @param ride - The ride object to check
  * @param userId - The user attempting to edit
  * @param hasConfirmedBookings - Whether the ride has confirmed bookings
- * @returns Object with canEdit boolean and reason if not allowed
+ * @returns Object with canEdit boolean, limitedEdit flag, and reason if not allowed
  */
 export const validateRideEditPermissions = (
     ride: { driverId: string; status: string },
     userId: string,
     hasConfirmedBookings: boolean
-): { canEdit: boolean; reason?: string } => {
+): { canEdit: boolean; limitedEdit?: boolean; editableFields?: string[]; reason?: string } => {
     // Check ownership
     if (ride.driverId !== userId) {
         return { canEdit: false, reason: 'You can only edit your own rides' };
@@ -249,13 +249,111 @@ export const validateRideEditPermissions = (
         };
     }
 
-    // Check for confirmed bookings
+    // Check for confirmed bookings - allow limited editing
     if (hasConfirmedBookings) {
         return {
-            canEdit: false,
-            reason: 'Cannot edit ride with confirmed bookings'
+            canEdit: true,
+            limitedEdit: true,
+            editableFields: ['notes', 'availableSeats'],
+            reason: 'Limited editing - passengers have confirmed bookings. Cannot change date, time, route, or price.'
         };
     }
 
     return { canEdit: true };
+};
+
+/**
+ * Validate ride delete permissions
+ * @param ride - The ride object to check
+ * @param userId - The user attempting to delete
+ * @param bookings - Array of bookings for this ride
+ * @returns Object with canDelete boolean, warning if applicable, and reason if not allowed
+ */
+export const validateRideDeletePermissions = (
+    ride: { driverId: string; status: string },
+    userId: string,
+    bookings: Array<{ status: string }>
+): { canDelete: boolean; warning?: string; reason?: string } => {
+    // Check ownership
+    if (ride.driverId !== userId) {
+        return { canDelete: false, reason: 'You can only delete your own rides' };
+    }
+
+    // Check ride status
+    if (ride.status !== 'upcoming') {
+        const statusMessages: Record<string, string> = {
+            'active': 'Cancel the ride instead to notify passengers.',
+            'completed': 'Completed rides are historical records.',
+            'cancelled': 'This ride has already been cancelled.'
+        };
+        return {
+            canDelete: false,
+            reason: `Cannot delete ${ride.status} rides. ${statusMessages[ride.status] || ''}`
+        };
+    }
+
+    // Check for confirmed bookings - cannot delete
+    const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
+    if (confirmedBookings.length > 0) {
+        return {
+            canDelete: false,
+            reason: `Cannot delete ride with ${confirmedBookings.length} confirmed passenger(s). Cancel the ride instead to notify them and process refunds.`
+        };
+    }
+
+    // Pending bookings - allow delete with warning
+    const pendingBookings = bookings.filter(b => b.status === 'pending_driver');
+    if (pendingBookings.length > 0) {
+        return {
+            canDelete: true,
+            warning: `This will automatically decline ${pendingBookings.length} pending booking request(s).`
+        };
+    }
+
+    return { canDelete: true };
+};
+
+/**
+ * Validate ride cancel permissions
+ * @param ride - The ride object to check
+ * @param userId - The user attempting to cancel
+ * @returns Object with canCancel boolean, warning if applicable, and reason if not allowed
+ */
+export const validateRideCancelPermissions = (
+    ride: { driverId: string; status: string; departureTime?: string; departureAt?: string },
+    userId: string
+): { canCancel: boolean; warning?: string; reason?: string } => {
+    // Check ownership
+    if (ride.driverId !== userId) {
+        return { canCancel: false, reason: 'You can only cancel your own rides' };
+    }
+
+    // Cannot cancel completed or already cancelled
+    if (ride.status === 'completed') {
+        return { canCancel: false, reason: 'Cannot cancel a completed ride.' };
+    }
+
+    if (ride.status === 'cancelled') {
+        return { canCancel: false, reason: 'This ride has already been cancelled.' };
+    }
+
+    // Check timing for warnings
+    const departureTime = new Date(ride.departureTime || ride.departureAt || Date.now());
+    const hoursUntilDeparture = (departureTime.getTime() - Date.now()) / (1000 * 60 * 60);
+
+    if (ride.status === 'active') {
+        return {
+            canCancel: true,
+            warning: 'Cancelling an active ride will issue full refunds to all passengers. This may affect your driver rating.'
+        };
+    }
+
+    if (hoursUntilDeparture < 24 && hoursUntilDeparture > 0) {
+        return {
+            canCancel: true,
+            warning: `Cancelling within 24 hours of departure (${Math.round(hoursUntilDeparture)} hours left) may affect your driver rating. All passengers will receive full refunds.`
+        };
+    }
+
+    return { canCancel: true };
 };

@@ -1024,7 +1024,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
         success: true,
         bookingId: result.bookingId,
         clientSecret: setupIntent.client_secret,
-        message: "Booking request sent to driver. Please add your payment method.",
+        message: "Booking request sent to driver. You'll be notified when they respond.",
       };
     } catch (stripeError: any) {
       // If SetupIntent creation fails, delete the booking and restore seats

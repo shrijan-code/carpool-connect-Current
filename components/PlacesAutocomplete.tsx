@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Keyboard, Platform, Modal, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Keyboard, Platform, Modal, Dimensions, TouchableWithoutFeedback } from 'react-native';
 import { Colors } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
 import { Location } from '@/types';
@@ -388,10 +388,6 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
               setShowPredictions(true);
             }
           }}
-          onBlur={() => {
-            console.log('Input blurred');
-            setTimeout(() => setShowPredictions(false), 200);
-          }}
           returnKeyType="done"
           blurOnSubmit={true}
           onSubmitEditing={() => {
@@ -399,48 +395,93 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
             Keyboard.dismiss();
           }}
         />
+        {inputValue.length > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              setInputValue('');
+              setPredictions([]);
+              setShowPredictions(false);
+              setHasSelectedFromPredictions(false);
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <X size={18} color={colors.textSecondary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {Platform.OS === 'web' && (
         <View style={styles.hiddenMapDiv} ref={(ref) => { hiddenMapDivRef.current = ref as unknown as HTMLDivElement; }} />
       )}
 
-      {showPredictions && safePredictions.length > 0 && (
-        <View style={styles.predictionsContainer}>
-          {safePredictions.map((prediction, index) => (
-            <TouchableOpacity testID={`prediction-${index}`}
-              key={`${prediction.place_id}-${index}`}
-              style={styles.predictionItem}
-              onPress={() => {
-                handlePredictionSelect(prediction);
-                Keyboard.dismiss();
-              }}
-              activeOpacity={0.7}
-            >
-              <MapPin size={16} color={colors.textSecondary} />
-              <View style={styles.predictionTextContainer}>
-                <Text style={styles.predictionText} numberOfLines={2}>
-                  {prediction.description}
-                </Text>
-                {prediction.structured_formatting && (
-                  <Text style={styles.predictionSecondaryText} numberOfLines={1}>
-                    {prediction.structured_formatting.secondary_text}
-                  </Text>
-                )}
+      {/* Modal-based predictions for reliable visibility */}
+      <Modal
+        visible={showPredictions && safePredictions.length > 0}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowPredictions(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setShowPredictions(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalContent}>
+                <View style={styles.modalHeader}>
+                  <MapPin size={20} color={colors.primary} />
+                  <TextInput
+                    style={styles.modalSearchInput}
+                    value={inputValue}
+                    onChangeText={handleTextChange}
+                    placeholder="Continue typing..."
+                    placeholderTextColor={colors.textSecondary}
+                    autoFocus={true}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    returnKeyType="search"
+                  />
+                  <TouchableOpacity
+                    onPress={() => {
+                      setShowPredictions(false);
+                      Keyboard.dismiss();
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <X size={24} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.predictionsListContainer}>
+                  {safePredictions.map((prediction, index) => (
+                    <TouchableOpacity
+                      testID={`prediction-${index}`}
+                      key={`${prediction.place_id}-${index}`}
+                      style={styles.predictionItem}
+                      onPress={() => {
+                        handlePredictionSelect(prediction);
+                        setShowPredictions(false);
+                        Keyboard.dismiss();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <MapPin size={18} color={colors.primary} />
+                      <View style={styles.predictionTextContainer}>
+                        <Text style={styles.predictionText} numberOfLines={2}>
+                          {prediction.structured_formatting?.main_text || prediction.description.split(',')[0]}
+                        </Text>
+                        <Text style={styles.predictionSecondaryText} numberOfLines={2}>
+                          {prediction.structured_formatting?.secondary_text || prediction.description}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
               </View>
-            </TouchableOpacity>
-          ))}
-        </View>
-      )}
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       {!GOOGLE_PLACES_API_KEY && (
         <Text style={styles.note}>
           Demo mode: Add EXPO_PUBLIC_GOOGLE_PLACES_API_KEY for real Australian autocomplete
-        </Text>
-      )}
-      {GOOGLE_PLACES_API_KEY && (
-        <Text style={styles.note}>
-          🇦🇺 Australian locations • Optimized with session tokens
         </Text>
       )}
       {isLoading && (
@@ -592,5 +633,53 @@ const createStyles = (colors: any) => StyleSheet.create({
   hiddenMapDiv: {
     height: 0,
     width: 0,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+    paddingTop: 100,
+    paddingHorizontal: 16,
+  },
+  modalContent: {
+    backgroundColor: colors.card,
+    borderRadius: 16,
+    maxHeight: Dimensions.get('window').height * 0.6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  modalTitle: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600' as const,
+    color: colors.text,
+    marginLeft: 12,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.background,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  predictionsListContainer: {
+    maxHeight: 400,
   },
 });

@@ -27,6 +27,8 @@ export default function EditRideScreen() {
     const [isSaving, setIsSaving] = useState(false);
     const [originalRide, setOriginalRide] = useState<Ride | null>(null);
     const [canEdit, setCanEdit] = useState(false);
+    const [limitedEdit, setLimitedEdit] = useState(false);
+    const [limitedEditReason, setLimitedEditReason] = useState<string | null>(null);
     const [editError, setEditError] = useState<string | null>(null);
 
     // Form state
@@ -71,6 +73,13 @@ export default function EditRideScreen() {
                 }
 
                 setCanEdit(true);
+
+                // Handle limited editing mode
+                if (permissions.limitedEdit) {
+                    setLimitedEdit(true);
+                    setLimitedEditReason(permissions.reason || 'Limited editing mode - some fields cannot be changed.');
+                }
+
                 setOriginalRide(ride);
 
                 // Populate form with existing data
@@ -292,27 +301,36 @@ export default function EditRideScreen() {
                 contentContainerStyle={styles.scrollContent}
             >
                 <Card style={styles.formCard}>
+                    {limitedEdit && (
+                        <View style={styles.warningBanner}>
+                            <Text style={styles.warningText}>⚠️ {limitedEditReason}</Text>
+                        </View>
+                    )}
                     <Text style={styles.sectionTitle}>Route Details</Text>
 
-                    <View style={[styles.inputGroup, styles.locationInputFirst]}>
-                        <Text style={styles.inputLabel}>From Location *</Text>
-                        <PlacesAutocomplete
-                            placeholder="Enter pickup location"
-                            onLocationSelect={setFromLocation}
-                            value={fromLocation}
-                        />
+                    <View style={[styles.inputGroup, styles.locationInputFirst, limitedEdit && styles.disabledSection]}>
+                        <Text style={styles.inputLabel}>From Location *{limitedEdit && ' (locked)'}</Text>
+                        <View pointerEvents={limitedEdit ? 'none' : 'auto'}>
+                            <PlacesAutocomplete
+                                placeholder="Enter pickup location"
+                                onLocationSelect={setFromLocation}
+                                value={fromLocation}
+                            />
+                        </View>
                         {validationErrors.fromLocation && (
                             <Text style={styles.errorText}>{validationErrors.fromLocation}</Text>
                         )}
                     </View>
 
-                    <View style={[styles.inputGroup, styles.locationInputSecond]}>
-                        <Text style={styles.inputLabel}>To Location *</Text>
-                        <PlacesAutocomplete
-                            placeholder="Enter destination"
-                            onLocationSelect={setToLocation}
-                            value={toLocation}
-                        />
+                    <View style={[styles.inputGroup, styles.locationInputSecond, limitedEdit && styles.disabledSection]}>
+                        <Text style={styles.inputLabel}>To Location *{limitedEdit && ' (locked)'}</Text>
+                        <View pointerEvents={limitedEdit ? 'none' : 'auto'}>
+                            <PlacesAutocomplete
+                                placeholder="Enter destination"
+                                onLocationSelect={setToLocation}
+                                value={toLocation}
+                            />
+                        </View>
                         {validationErrors.toLocation && (
                             <Text style={styles.errorText}>{validationErrors.toLocation}</Text>
                         )}
@@ -322,8 +340,9 @@ export default function EditRideScreen() {
                 <Card style={styles.formCard}>
                     <Text style={styles.sectionTitle}>Schedule</Text>
 
-                    <View style={styles.dateTimeRow}>
-                        <View style={[styles.inputGroup, styles.halfWidth]}>
+                    <View style={[styles.dateTimeRow, limitedEdit && styles.disabledSection]}>
+                        {limitedEdit && <Text style={styles.lockedLabel}>(Date/time locked)</Text>}
+                        <View style={[styles.inputGroup, styles.halfWidth]} pointerEvents={limitedEdit ? 'none' : 'auto'}>
                             <DateField
                                 value={departureDateTime}
                                 onChange={(date) => {
@@ -345,7 +364,7 @@ export default function EditRideScreen() {
                             />
                         </View>
 
-                        <View style={[styles.inputGroup, styles.halfWidth]}>
+                        <View style={[styles.inputGroup, styles.halfWidth]} pointerEvents={limitedEdit ? 'none' : 'auto'}>
                             <TimeField
                                 value={departureDateTime}
                                 onChange={(time) => {
@@ -672,5 +691,28 @@ const styles = StyleSheet.create({
     pickerItem: {
         color: Colors.text,
         fontSize: 18,
+    },
+    warningBanner: {
+        backgroundColor: '#FEF3C7',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#F59E0B',
+    },
+    warningText: {
+        color: '#92400E',
+        fontSize: 14,
+        fontWeight: '500' as const,
+    },
+    disabledSection: {
+        opacity: 0.6,
+    },
+    lockedLabel: {
+        color: Colors.textSecondary,
+        fontSize: 12,
+        fontStyle: 'italic' as const,
+        marginBottom: 8,
+        width: '100%',
     },
 });

@@ -193,7 +193,7 @@ export default function HomeScreen() {
     const seatOptions = [];
     for (let i = 1; i <= Math.min(availableSeats, 4); i++) {
       const totalPrice = ((pricePerSeatInCents / 100) * i).toFixed(2);
-      const platformFee = '1.00';
+      const platformFee = '5.00';
       seatOptions.push({
         text: `${i} seat${i > 1 ? 's' : ''} - ${totalPrice} (+ ${platformFee} fee)`,
         onPress: () => showBookingConfirmation(rideToBook, i, pricePerSeatInCents)
@@ -211,7 +211,7 @@ export default function HomeScreen() {
 
   const showBookingConfirmation = (ride: Ride, seats: number, pricePerSeatInCents: number) => {
     const totalAmount = (pricePerSeatInCents / 100) * seats;
-    const platformFee = 1.00;
+    const platformFee = 5.00;
     const grandTotal = totalAmount + platformFee;
 
     Alert.alert(
