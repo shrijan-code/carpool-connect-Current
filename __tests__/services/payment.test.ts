@@ -53,41 +53,37 @@ global.fetch = jest.fn(() =>
 
 describe('PaymentService Fee Calculations', () => {
     describe('calculatePlatformFee', () => {
-        it('should calculate 10% platform fee', () => {
-            expect(PaymentService.calculatePlatformFee(100)).toBe(10);
+        it('should return flat $5 platform fee', () => {
+            expect(PaymentService.calculatePlatformFee(100)).toBe(5);
             expect(PaymentService.calculatePlatformFee(50)).toBe(5);
-            expect(PaymentService.calculatePlatformFee(25)).toBe(2.5);
+            expect(PaymentService.calculatePlatformFee(25)).toBe(5);
         });
 
-        it('should handle zero amount', () => {
-            expect(PaymentService.calculatePlatformFee(0)).toBe(0);
-        });
-
-        it('should round to 2 decimal places', () => {
-            expect(PaymentService.calculatePlatformFee(33.33)).toBeCloseTo(3.33, 2);
-            expect(PaymentService.calculatePlatformFee(11.11)).toBeCloseTo(1.11, 2);
+        it('should return $5 regardless of amount', () => {
+            expect(PaymentService.calculatePlatformFee(0)).toBe(5);
+            expect(PaymentService.calculatePlatformFee(1000)).toBe(5);
         });
     });
 
     describe('calculateTotalAmount', () => {
-        it('should add platform fee to base amount', () => {
-            expect(PaymentService.calculateTotalAmount(100)).toBe(110);
+        it('should add $5 platform fee to base amount', () => {
+            expect(PaymentService.calculateTotalAmount(100)).toBe(105);
             expect(PaymentService.calculateTotalAmount(50)).toBe(55);
         });
 
-        it('should handle zero amount', () => {
-            expect(PaymentService.calculateTotalAmount(0)).toBe(0);
+        it('should add $5 even to zero amount', () => {
+            expect(PaymentService.calculateTotalAmount(0)).toBe(5);
         });
     });
 
     describe('calculateDriverPayout', () => {
-        it('should subtract platform fee from amount', () => {
-            expect(PaymentService.calculateDriverPayout(100)).toBe(90);
+        it('should subtract $5 platform fee from amount', () => {
+            expect(PaymentService.calculateDriverPayout(100)).toBe(95);
             expect(PaymentService.calculateDriverPayout(50)).toBe(45);
         });
 
-        it('should handle zero amount', () => {
-            expect(PaymentService.calculateDriverPayout(0)).toBe(0);
+        it('should result in negative for small amounts', () => {
+            expect(PaymentService.calculateDriverPayout(3)).toBe(-2);
         });
     });
 });

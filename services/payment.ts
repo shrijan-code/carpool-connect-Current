@@ -70,7 +70,7 @@ export class PaymentService {
       });
 
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to create payment intent');
       }
@@ -140,7 +140,7 @@ export class PaymentService {
       // This would call your backend to get payment methods from Stripe
       const response = await fetch(`https://your-cloud-function-url/payment-methods/${customerId}`);
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || 'Failed to get payment methods');
       }
@@ -190,9 +190,12 @@ export class PaymentService {
     }
   }
 
-  // Calculate platform fee (10% for sustainability)
-  static calculatePlatformFee(amount: number): number {
-    return Math.round(amount * 0.10 * 100) / 100;
+  // Platform fee: Flat $5 AUD
+  private static readonly PLATFORM_FEE_CENTS = 500; // $5.00 AUD
+
+  // Calculate platform fee (flat $5 AUD)
+  static calculatePlatformFee(_amount: number): number {
+    return 5.00; // Flat $5 fee
   }
 
   // Calculate total amount including fees
@@ -228,7 +231,7 @@ export class PaymentService {
       }
 
       const data = await response.json();
-      
+
       // Save to Firestore
       const paymentMethod: PaymentMethod = {
         id: data.paymentMethodId,
@@ -241,7 +244,7 @@ export class PaymentService {
       };
 
       await setDoc(doc(db, 'users', user.uid, 'paymentMethods', paymentMethod.id), paymentMethod);
-      
+
       return paymentMethod;
     } catch (error) {
       console.error('Setup Direct Debit error:', error);
@@ -300,7 +303,7 @@ export class PaymentService {
 
       if (response.ok) {
         const data = await response.json();
-        
+
         // Update transaction status
         await updateDoc(doc(db, 'payments', docRef.id), {
           status: 'completed',
@@ -371,11 +374,11 @@ export class PaymentService {
       snapshot.forEach((doc) => {
         const payment = doc.data() as PaymentTransaction;
         total += payment.driverPayout;
-        
+
         // Payments become available after 7 days
         const paymentDate = new Date(payment.completedAt || payment.createdAt);
         const daysSincePayment = (Date.now() - paymentDate.getTime()) / (1000 * 60 * 60 * 24);
-        
+
         if (daysSincePayment >= 7) {
           available += payment.driverPayout;
         } else {

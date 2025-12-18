@@ -571,7 +571,7 @@ pending_driver → confirmed → completed
 | `riderId` | string | Payer's user ID |
 | `driverId` | string | Recipient's user ID |
 | `amount` | number | Total amount |
-| `platformFee` | number | 10% platform fee |
+| `platformFee` | number | $5 flat platform fee |
 | `driverPayout` | number | Amount to driver |
 | `status` | string | `pending`, `completed`, `refunded` |
 | `stripePaymentIntentId` | string | Stripe reference |
