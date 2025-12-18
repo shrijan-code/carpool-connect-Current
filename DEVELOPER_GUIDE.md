@@ -348,13 +348,17 @@ All tests are in `__tests__/` directory:
 ```
 __tests__/
 ├── setup.ts                          # Test configuration
+├── integration/
+│   └── booking-flow.test.ts          # Integration tests (40+ tests)
 ├── services/
 │   ├── auth.test.ts                  # Authentication tests
 │   ├── chat.test.ts                  # Chat service tests (12 tests)
+│   ├── notifications.test.ts         # Notification service tests (15+ tests)
 │   ├── payment.test.ts               # Payment service tests (15+ tests)
 │   ├── rides.test.ts                 # Ride service tests
 │   ├── rides-update.test.ts
-│   └── stripe.test.ts                # Stripe integration tests
+│   ├── stripe.test.ts                # Stripe integration tests
+│   └── verification.test.ts          # User verification tests (20+ tests)
 └── utils/
     ├── booking-validation.test.ts    # Validation tests (42 tests)
     └── booking-edge-cases.test.ts    # Edge case tests (31 tests)
