@@ -1,7 +1,7 @@
 # CarpoolConnect - Complete Developer Guide
 
 > **Quick Reference** for running, testing, deploying, and configuring CarpoolConnect.
-> Last updated: December 2024
+> Last updated: December 2025
 
 ---
 
@@ -18,8 +18,12 @@
 9. [Testing](#testing)
 10. [Firebase Deployment](#firebase-deployment)
 11. [App Store & Play Store Publishing](#app-store--play-store-publishing)
-12. [Troubleshooting](#troubleshooting)
-13. [Useful Commands Cheat Sheet](#useful-commands-cheat-sheet)
+12. [Database Schema](#database-schema)
+13. [API Reference (Cloud Functions)](#api-reference-cloud-functions)
+14. [State Management Patterns](#state-management-patterns)
+15. [Coding Conventions](#coding-conventions)
+16. [Troubleshooting](#troubleshooting)
+17. [Useful Commands Cheat Sheet](#useful-commands-cheat-sheet)
 
 ---
 
@@ -345,13 +349,15 @@ All tests are in `__tests__/` directory:
 __tests__/
 ├── setup.ts                          # Test configuration
 ├── services/
-│   ├── auth.test.ts
-│   ├── rides.test.ts
+│   ├── auth.test.ts                  # Authentication tests
+│   ├── chat.test.ts                  # Chat service tests (12 tests)
+│   ├── payment.test.ts               # Payment service tests (15+ tests)
+│   ├── rides.test.ts                 # Ride service tests
 │   ├── rides-update.test.ts
-│   └── stripe.test.ts
+│   └── stripe.test.ts                # Stripe integration tests
 └── utils/
-    ├── booking-validation.test.ts    # 42 tests
-    └── booking-edge-cases.test.ts    # 31 tests
+    ├── booking-validation.test.ts    # Validation tests (42 tests)
+    └── booking-edge-cases.test.ts    # Edge case tests (31 tests)
 ```
 
 ---
@@ -483,6 +489,334 @@ Key fields to update before publishing:
     }
   }
 }
+```
+
+---
+
+## Database Schema
+
+### Firestore Collections
+
+#### `users`
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | User ID (same as auth UID) |
+| `name` | string | Display name |
+| `email` | string | Email address |
+| `phone` | string | Phone number |
+| `role` | string | `rider`, `driver`, or `both` |
+| `rating` | number | Average rating (1-5) |
+| `totalRides` | number | Total rides completed |
+| `verified` | boolean | Identity verified |
+| `stripeAccountId` | string | Stripe Connect account ID |
+| `stripeConnectCompleted` | boolean | Stripe onboarding status |
+| `createdAt` | timestamp | Account creation time |
+
+#### `rides`
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Ride ID |
+| `driverId` | string | Driver's user ID |
+| `origin` | object | `{ name, lat, lng }` |
+| `destination` | object | `{ name, lat, lng }` |
+| `departureTime` | string | ISO 8601 datetime |
+| `pricePerSeat` | number | Price in cents |
+| `availableSeats` | number | Remaining seats |
+| `totalSeats` | number | Total seats offered |
+| `status` | string | `upcoming`, `active`, `completed`, `cancelled` |
+| `notes` | string | Driver's notes |
+| `createdAt` | timestamp | Creation time |
+
+#### `bookings`
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Booking ID |
+| `rideId` | string | Associated ride ID |
+| `riderId` | string | Passenger's user ID |
+| `driverId` | string | Driver's user ID |
+| `seats` | number | Number of seats booked |
+| `amountTotal` | number | Total amount in cents |
+| `status` | string | See status flow below |
+| `paymentIntentId` | string | Stripe PaymentIntent ID |
+| `setupIntentId` | string | Stripe SetupIntent ID |
+| `cancellationReason` | string | If cancelled |
+| `createdAt` | timestamp | Booking creation time |
+
+**Booking Status Flow:**
+```
+pending_driver → confirmed → completed
+             ↘ declined
+             ↘ cancelled
+```
+
+#### `messages`
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Message ID |
+| `rideId` | string | Associated ride |
+| `threadId` | string | Thread ID |
+| `senderId` | string | Sender's user ID |
+| `senderName` | string | Sender's display name |
+| `message` | string | Message content |
+| `type` | string | `text`, `image`, `system` |
+| `imageUrl` | string | For image messages |
+| `readBy` | array | User IDs who read it |
+| `timestamp` | timestamp | Send time |
+
+#### `payments`
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Payment ID |
+| `rideId` | string | Associated ride |
+| `riderId` | string | Payer's user ID |
+| `driverId` | string | Recipient's user ID |
+| `amount` | number | Total amount |
+| `platformFee` | number | 10% platform fee |
+| `driverPayout` | number | Amount to driver |
+| `status` | string | `pending`, `completed`, `refunded` |
+| `stripePaymentIntentId` | string | Stripe reference |
+
+---
+
+## API Reference (Cloud Functions)
+
+### Booking Functions
+
+#### `createPendingBooking`
+Creates a new booking request.
+
+```typescript
+// Request
+{ rideId: string, seats: number }
+
+// Response
+{ success: true, bookingId: string, clientSecret: string }
+```
+
+#### `driverRespondBooking`
+Driver accepts or declines a booking.
+
+```typescript
+// Request
+{ bookingId: string, action: 'accept' | 'decline' }
+
+// Response
+{ success: true, message: string }
+```
+
+#### `cancelBooking`
+Cancel a booking (rider or driver).
+
+```typescript
+// Request
+{ bookingId: string, reason?: string }
+
+// Response
+{ success: true, message: string }
+```
+
+### Ride Functions
+
+#### `startRide`
+Driver starts an active ride.
+
+```typescript
+// Request
+{ rideId: string }
+
+// Response
+{ success: true }
+```
+
+#### `completeRideAndCharge`
+Complete ride and capture payment.
+
+```typescript
+// Request
+{ rideId: string }
+
+// Response
+{ success: true, paymentDetails: object }
+```
+
+### Payment Functions
+
+#### `createStripeConnectAccount`
+Create Stripe Express account for driver.
+
+```typescript
+// Response
+{ url: string, accountId: string }
+```
+
+#### `processPayment`
+Create PaymentIntent for booking.
+
+```typescript
+// Request
+{ bookingId: string, amount: number }
+
+// Response
+{ clientSecret: string, paymentId: string }
+```
+
+---
+
+## State Management Patterns
+
+### Zustand Stores
+
+The app uses **Zustand** for state management. Stores are in `store/` directory.
+
+#### Auth Store (`auth-store.ts`)
+```typescript
+// Usage
+const { user, isLoading, signIn, signOut } = useAuthStore();
+```
+
+#### Rides Store (`rides-store.ts`)
+```typescript
+// Usage
+const { 
+  rides, 
+  bookings,
+  searchRides,
+  requestBooking,
+  cancelBooking 
+} = useRidesStore();
+```
+
+### Optimistic Updates
+
+The app uses optimistic UI updates for better UX:
+
+```typescript
+// Example: Booking request
+requestBooking: async (rideId, seats) => {
+  // 1. Immediately add optimistic booking
+  const optimisticBooking = { id: `temp_${Date.now()}`, status: 'pending_driver' };
+  set({ bookings: [...get().bookings, optimisticBooking] });
+
+  // 2. Call backend
+  const result = await RidesService.createPendingBooking(rideId, seats);
+
+  // 3. Replace with real data
+  set({ bookings: get().bookings.map(b => 
+    b.id === optimisticBooking.id ? { ...b, id: result.bookingId } : b
+  )});
+}
+```
+
+### Real-time Subscriptions
+
+Use Firestore `onSnapshot` for real-time updates:
+
+```typescript
+// In store
+subscribeToRides: (userId) => {
+  const q = query(collection(db, 'rides'), where('driverId', '==', userId));
+  return onSnapshot(q, (snapshot) => {
+    const rides = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    set({ rides });
+  });
+}
+```
+
+---
+
+## Coding Conventions
+
+### File Naming
+- **Components**: PascalCase (`BookingCard.tsx`)
+- **Services**: camelCase (`auth.ts`)
+- **Stores**: kebab-case (`auth-store.ts`)
+- **Utils**: camelCase (`validation.ts`)
+- **Tests**: `*.test.ts`
+
+### TypeScript
+
+```typescript
+// ✅ Use explicit types
+const user: User | null = await getUser();
+
+// ✅ Use interfaces for objects
+interface Booking {
+  id: string;
+  status: BookingStatus;
+}
+
+// ✅ Use type guards
+function isBooking(obj: unknown): obj is Booking {
+  return typeof obj === 'object' && obj !== null && 'id' in obj;
+}
+```
+
+### Error Handling
+
+```typescript
+// ✅ Use try-catch with specific errors
+try {
+  await someAsyncOperation();
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : 'Unknown error';
+  logger.error('Operation failed', { error: message });
+  throw new Error(message);
+}
+```
+
+### Logging
+
+Use the centralized logger (`utils/logger.ts`):
+
+```typescript
+import logger from '@/utils/logger';
+
+logger.info('User logged in', { userId: user.id });
+logger.warn('Deprecated method used');
+logger.error('Payment failed', { bookingId, error: err.message });
+```
+
+### Component Structure
+
+```typescript
+// ✅ Consistent component structure
+export const MyComponent: React.FC<Props> = ({ prop1, prop2 }) => {
+  // 1. Hooks (state, context, refs)
+  const [state, setState] = useState();
+  
+  // 2. Derived values (useMemo)
+  const computed = useMemo(() => /* ... */, [dep]);
+  
+  // 3. Effects
+  useEffect(() => { /* ... */ }, []);
+  
+  // 4. Handlers
+  const handleClick = () => { /* ... */ };
+  
+  // 5. Render
+  return <View>...</View>;
+};
+```
+
+### Imports Order
+
+```typescript
+// 1. React/React Native
+import React, { useState, useEffect } from 'react';
+import { View, Text } from 'react-native';
+
+// 2. Third-party libraries
+import { useRouter } from 'expo-router';
+
+// 3. Internal imports (absolute paths)
+import { useAuthStore } from '@/store/auth-store';
+import { ChatService } from '@/services/chat';
+
+// 4. Types
+import { User, Booking } from '@/types';
+
+// 5. Constants/Config
+import { Colors } from '@/constants/colors';
 ```
 
 ---
