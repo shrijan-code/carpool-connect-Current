@@ -1,15 +1,16 @@
 import { create } from 'zustand';
-import { User } from '@/types';
+import { User, AuditLogData } from '@/types';
 import { AuthService } from '@/services/auth';
 import { NotificationService } from '@/services/notifications';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import { listenerManager } from '@/utils/listener-manager';
 import { dataCache } from '@/utils/cache';
+import { logger } from '@/utils/logger';
 
 // Audit log service for auth actions
 class AuthAuditService {
-  static async logAction(action: string, userId: string, data?: any) {
+  static async logAction(action: string, userId: string, data?: AuditLogData) {
     try {
       await addDoc(collection(db, 'audit_logs'), {
         action,
@@ -21,7 +22,7 @@ class AuthAuditService {
         createdAt: serverTimestamp()
       });
     } catch (error) {
-      console.error('Auth audit log error:', error);
+      logger.error('Auth audit log error', error);
     }
   }
 }
@@ -96,18 +97,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   logout: async () => {
     try {
-      console.log('Logging out user...');
+      logger.info('Logging out user');
 
       // Clean up all Firestore listeners to prevent memory leaks
-      console.log('[Optimization] Cleaning up all Firestore listeners and cache on logout');
+      logger.debug('[Optimization] Cleaning up all Firestore listeners and cache on logout');
       listenerManager.unregisterAll();
       dataCache.clear();
 
       await AuthService.signOut();
       set({ user: null, isAuthenticated: false, isOnboarded: false });
-      console.log('User logged out successfully');
-    } catch (error) {
-      console.error('Logout error:', error);
+      logger.info('User logged out successfully');
+    } catch (error: unknown) {
+      logger.error('Logout error', error);
       // Force logout even if there's an error - still clean up
       listenerManager.unregisterAll();
       dataCache.clear();
@@ -138,8 +139,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   completeOnboarding: async () => {
     try {
       set({ isOnboarded: true });
-    } catch (error) {
-      console.error('Onboarding completion error:', error);
+    } catch (error: unknown) {
+      logger.error('Onboarding completion error', error);
     }
   },
 
@@ -154,8 +155,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false
         });
       });
-    } catch (error) {
-      console.error('Auth initialization error:', error);
+    } catch (error: unknown) {
+      logger.error('Auth initialization error', error);
       set({ isLoading: false });
     }
   },
@@ -174,17 +175,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         throw new Error('Please enter a valid email address');
       }
 
-      console.log('Sending password reset email to:', trimmedEmail);
+      logger.info('Sending password reset email', { emailDomain: trimmedEmail.split('@')[1] });
       await AuthService.sendPasswordResetEmail(trimmedEmail);
-      console.log('Password reset email sent successfully');
+      logger.info('Password reset email sent successfully');
 
       // Log password reset attempt (without storing email for privacy)
       await AuthAuditService.logAction('PASSWORD_RESET_REQUEST', 'anonymous', {
         emailDomain: trimmedEmail.split('@')[1],
         timestamp: new Date().toISOString()
       });
-    } catch (error) {
-      console.error('Password reset error:', error);
+    } catch (error: unknown) {
+      logger.error('Password reset error', error);
       throw error;
     }
   },

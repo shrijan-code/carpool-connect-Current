@@ -10,7 +10,8 @@ import { Mail, Lock, User, Phone, Car, Users, Chrome } from 'lucide-react-native
 import { useAuthStore } from '@/store/auth-store';
 import { useTheme } from '@/hooks/useTheme';
 import { useSettingsStore } from '@/store/settings-store';
-
+import { validateEmail, validatePhone, validatePassword, validateName } from '@/utils/validation';
+import { ColorScheme } from '@/constants/colors';
 
 type AuthMode = 'login' | 'register' | 'role-select' | 'forgot-password';
 
@@ -35,34 +36,67 @@ export default function AuthScreen() {
     : ['#667eea', '#764ba2', '#f093fb'];
 
   const handleLogin = async () => {
-    if (!formData.email || !formData.password) {
-      Alert.alert('Error', 'Please fill in all fields');
+    // Validate email using shared validator
+    if (!validateEmail(formData.email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    if (!formData.password) {
+      Alert.alert('Missing Password', 'Please enter your password');
       return;
     }
 
     setLoading(true);
     try {
-      await login(formData.email, formData.password);
+      await login(formData.email.trim().toLowerCase(), formData.password);
       router.replace('/(tabs)/home');
-    } catch (error: any) {
-      Alert.alert('Login Failed', 'Invalid email or password');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Invalid email or password';
+      Alert.alert('Login Failed', errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
   const handleRegister = async () => {
-    if (!formData.name || !formData.email || !formData.phone || !formData.password) {
-      Alert.alert('Error', 'Please fill in all fields');
+    // Validate name using shared validator
+    const nameValidation = validateName(formData.name);
+    if (!nameValidation.valid) {
+      Alert.alert('Invalid Name', nameValidation.error || 'Please enter a valid name');
+      return;
+    }
+
+    // Validate email using shared validator
+    if (!validateEmail(formData.email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+
+    // Validate phone using shared validator
+    if (!validatePhone(formData.phone)) {
+      Alert.alert('Invalid Phone', 'Please enter a valid phone number (10-15 digits)');
+      return;
+    }
+
+    // Validate password using shared validator
+    const passwordValidation = validatePassword(formData.password);
+    if (!passwordValidation.valid) {
+      Alert.alert('Weak Password', passwordValidation.error || 'Please enter a stronger password');
       return;
     }
 
     setLoading(true);
     try {
-      await register({ ...formData, password: formData.password });
+      await register({
+        ...formData,
+        email: formData.email.trim().toLowerCase(),
+        password: formData.password
+      });
       router.replace('/(tabs)/home');
-    } catch (error: any) {
-      Alert.alert('Registration Failed', 'Please try again');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Please try again';
+      Alert.alert('Registration Failed', errorMessage);
     } finally {
       setLoading(false);
     }
@@ -346,18 +380,13 @@ export default function AuthScreen() {
   );
 
   const handleForgotPassword = async () => {
-    if (!formData.email || !formData.email.trim()) {
-      Alert.alert('Error', 'Please enter your email address');
+    // Validate email using shared validator
+    if (!validateEmail(formData.email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
 
     const trimmedEmail = formData.email.trim().toLowerCase();
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(trimmedEmail)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address');
-      return;
-    }
 
     setLoading(true);
     try {
@@ -378,12 +407,12 @@ export default function AuthScreen() {
           }
         ]
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Password reset error:', error);
 
       let errorMessage = 'Failed to send reset email. Please try again.';
 
-      if (error.message) {
+      if (error instanceof Error && error.message) {
         errorMessage = error.message;
       }
 
@@ -479,7 +508,7 @@ export default function AuthScreen() {
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: ColorScheme) => StyleSheet.create({
   container: {
     flex: 1,
   },
@@ -508,10 +537,10 @@ const createStyles = (colors: any) => StyleSheet.create({
     textShadowRadius: 4,
   },
   card: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.card,
     borderRadius: 28,
     padding: 36,
-    shadowColor: '#000000',
+    shadowColor: colors.shadow.color,
     shadowOffset: {
       width: 0,
       height: 12,
@@ -529,14 +558,14 @@ const createStyles = (colors: any) => StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800' as const,
-    color: '#0F172A',
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 8,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 17,
-    color: '#475569',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 40,
     lineHeight: 26,
@@ -691,7 +720,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   forgotPasswordText: {
     fontSize: 15,
     fontWeight: '600' as const,
-    color: '#6366F1',
+    color: colors.primary,
   },
   // Modern button styles matching onboarding
   modernSubmitButton: {
@@ -717,11 +746,11 @@ const createStyles = (colors: any) => StyleSheet.create({
   modernSubmitButtonText: {
     fontSize: 18,
     fontWeight: '700' as const,
-    color: '#4A5568',
+    color: colors.textSecondary,
     letterSpacing: 0.5,
   },
   modernSubmitButtonTextDisabled: {
-    color: '#94A3B8',
+    color: colors.textLight,
   },
   modernGoogleButton: {
     width: '100%',
@@ -750,7 +779,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   modernGoogleButtonText: {
     fontSize: 17,
     fontWeight: '600' as const,
-    color: '#4A5568',
+    color: colors.text,
   },
   modernSwitchButton: {
     paddingVertical: 16,
@@ -760,7 +789,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   modernSwitchButtonText: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: '#6366F1',
+    color: colors.primary,
     opacity: 0.9,
   },
 });

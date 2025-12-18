@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useLocalSearchParams } from 'expo-router';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/store/auth-store';
@@ -51,6 +52,7 @@ interface BookingWithRide {
 export default function ChatScreen() {
   const { user } = useAuthStore();
   const { rides, bookings } = useRidesStore();
+  const params = useLocalSearchParams<{ rideId?: string }>();
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [messages, setMessages] = useState<ExtendedChatMessage[]>([]);
@@ -60,10 +62,10 @@ export default function ChatScreen() {
   // Generate chat rooms from user's rides and bookings
   const generateChatRooms = useCallback(() => {
     if (!user) return [];
-    
+
     const rooms: ChatRoom[] = [];
     const seenIds = new Set<string>(); // Track unique IDs to prevent duplicates
-    
+
     // For drivers: create chat rooms with passengers who have confirmed/accepted bookings
     if (user.role === 'driver') {
       rides.forEach((ride) => {
@@ -94,8 +96,8 @@ export default function ChatScreen() {
     } else {
       // For riders: create chat rooms with drivers for confirmed bookings
       bookings.forEach((booking) => {
-        if (booking?.rideId && booking.ride?.id && booking.ride.driver?.name && 
-            booking.status === 'confirmed') {
+        if (booking?.rideId && booking.ride?.id && booking.ride.driver?.name &&
+          booking.status === 'confirmed') {
           const chatId = `rider-${booking.rideId}-${user.id}-${booking.id}`;
           if (!seenIds.has(chatId)) {
             seenIds.add(chatId);
@@ -116,7 +118,7 @@ export default function ChatScreen() {
         }
       });
     }
-    
+
     console.log('Generated chat rooms:', rooms.length, 'rooms for', user.role, user.name);
     return rooms.filter(room => room.id && room.otherUser?.name); // Filter out invalid rooms
   }, [user, rides, bookings]);
@@ -125,6 +127,16 @@ export default function ChatScreen() {
     const rooms = generateChatRooms();
     setChatRooms(rooms);
   }, [generateChatRooms]);
+
+  // Auto-select chat when navigating from notification with rideId
+  useEffect(() => {
+    if (params.rideId && chatRooms.length > 0 && !selectedChat) {
+      const matchingRoom = chatRooms.find(room => room.rideId === params.rideId);
+      if (matchingRoom) {
+        handleChatSelect(matchingRoom.id);
+      }
+    }
+  }, [params.rideId, chatRooms, selectedChat]);
 
   const handleChatSelect = (chatId: string) => {
     setSelectedChat(chatId);
@@ -145,24 +157,24 @@ export default function ChatScreen() {
       });
       return;
     }
-    
+
     const room = chatRooms.find(r => r.id === selectedChat);
     if (!room) {
       console.warn('Cannot send message: room not found', { selectedChat, availableRooms: chatRooms.length });
       return;
     }
-    
+
     // Validate user data
     if (!user.id || !user.name) {
       console.error('Cannot send message: invalid user data', { userId: user.id, userName: user.name });
       Alert.alert('Error', 'User information is incomplete. Please try logging in again.');
       return;
     }
-    
+
     const messageText = newMessage.trim();
     setNewMessage(''); // Clear immediately for better UX
     setLoading(true);
-    
+
     try {
       console.log('Sending message:', {
         messageText,
@@ -170,14 +182,14 @@ export default function ChatScreen() {
         senderId: user.id,
         senderName: user.name
       });
-      
+
       await ChatService.sendMessage(
         room.rideId,
         user.id,
         user.name,
         messageText
       );
-      
+
       console.log('Message sent successfully');
     } catch (error: any) {
       console.error('Send message error:', error);
@@ -224,7 +236,7 @@ export default function ChatScreen() {
       for (const room of chatRooms) {
         try {
           const count = await ChatService.getUnreadMessageCount(room.rideId, user.id);
-          setChatRooms(prev => prev.map(r => 
+          setChatRooms(prev => prev.map(r =>
             r.id === room.id ? { ...r, unreadCount: count } : r
           ));
         } catch (error) {
@@ -248,8 +260,8 @@ export default function ChatScreen() {
           .filter(chat => chat.id && chat.otherUser?.name) // Filter out invalid chats
           .map((chat, index) => {
             // Generate unique key for each chat room
-            const chatKey = chat.id 
-              ? `chat-${chat.id}` 
+            const chatKey = chat.id
+              ? `chat-${chat.id}`
               : `chat-fallback-${index}-${chat.rideId || 'unknown'}-${chat.otherUser?.id || 'unknown'}-${Math.random().toString(36).substr(2, 9)}`;
             return (
               <TouchableOpacity
@@ -257,34 +269,34 @@ export default function ChatScreen() {
                 onPress={() => handleChatSelect(chat.id)}
                 activeOpacity={0.8}
               >
-            <Card style={styles.chatCard}>
-              <View style={styles.chatHeader}>
-                <View style={styles.chatAvatar}>
-                  <Text style={styles.chatAvatarText}>
-                    {chat.otherUser.name.charAt(0)}
-                  </Text>
-                </View>
-                <View style={styles.chatInfo}>
-                  <View style={styles.chatTitleRow}>
-                    <Text style={styles.chatName}>{chat.otherUser.name}</Text>
-                    <Text style={styles.chatTime}>{chat.lastMessageTime}</Text>
-                  </View>
-                  <View style={styles.chatMessageRow}>
-                    <Text style={styles.chatLastMessage} numberOfLines={1}>
-                      {chat.lastMessage || 'No messages yet'}
-                    </Text>
-                    {chat.unreadCount > 0 && (
-                      <View style={styles.unreadBadge}>
-                        <Text style={styles.unreadText}>{chat.unreadCount}</Text>
+                <Card style={styles.chatCard}>
+                  <View style={styles.chatHeader}>
+                    <View style={styles.chatAvatar}>
+                      <Text style={styles.chatAvatarText}>
+                        {chat.otherUser.name.charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={styles.chatInfo}>
+                      <View style={styles.chatTitleRow}>
+                        <Text style={styles.chatName}>{chat.otherUser.name}</Text>
+                        <Text style={styles.chatTime}>{chat.lastMessageTime}</Text>
                       </View>
-                    )}
+                      <View style={styles.chatMessageRow}>
+                        <Text style={styles.chatLastMessage} numberOfLines={1}>
+                          {chat.lastMessage || 'No messages yet'}
+                        </Text>
+                        {chat.unreadCount > 0 && (
+                          <View style={styles.unreadBadge}>
+                            <Text style={styles.unreadText}>{chat.unreadCount}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.chatRole}>
+                        {chat.otherUser.role === 'driver' ? 'Driver' : 'Passenger'} • {chat.ride.from?.name || 'Unknown'} → {chat.ride.to?.name || 'Unknown'}
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.chatRole}>
-                    {chat.otherUser.role === 'driver' ? 'Driver' : 'Passenger'} • {chat.ride.from?.name || 'Unknown'} → {chat.ride.to?.name || 'Unknown'}
-                  </Text>
-                </View>
-              </View>
-            </Card>
+                </Card>
               </TouchableOpacity>
             );
           })
@@ -329,8 +341,8 @@ export default function ChatScreen() {
           </View>
         </View>
 
-        <ScrollView 
-          style={styles.messagesContainer} 
+        <ScrollView
+          style={styles.messagesContainer}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.messagesContentContainer}
           keyboardShouldPersistTaps="handled"
@@ -343,8 +355,8 @@ export default function ChatScreen() {
             .filter(message => message.id) // Filter out messages without IDs
             .map((message, index) => {
               // Generate unique key for each message
-              const messageKey = message.id 
-                ? `message-${message.id}` 
+              const messageKey = message.id
+                ? `message-${message.id}`
                 : `message-fallback-${index}-${message.senderId || 'unknown'}-${message.timestamp || Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
               return (
                 <View
@@ -354,31 +366,31 @@ export default function ChatScreen() {
                     message.isCurrentUser ? styles.currentUserMessage : styles.otherUserMessage,
                   ]}
                 >
-              <View
-                style={[
-                  styles.messageBubble,
-                  message.isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.messageText,
-                    message.isCurrentUser ? styles.currentUserText : styles.otherUserText,
-                  ]}
-                >
-                  {message.message}
-                </Text>
-              </View>
-              <Text style={styles.messageTime}>
-                {typeof message.timestamp === 'string' 
-                  ? new Date(message.timestamp).toLocaleTimeString('en-US', {
-                      hour: 'numeric',
-                      minute: '2-digit',
-                      hour12: true
-                    })
-                  : message.timestamp
-                }
-              </Text>
+                  <View
+                    style={[
+                      styles.messageBubble,
+                      message.isCurrentUser ? styles.currentUserBubble : styles.otherUserBubble,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.messageText,
+                        message.isCurrentUser ? styles.currentUserText : styles.otherUserText,
+                      ]}
+                    >
+                      {message.message}
+                    </Text>
+                  </View>
+                  <Text style={styles.messageTime}>
+                    {typeof message.timestamp === 'string'
+                      ? new Date(message.timestamp).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true
+                      })
+                      : message.timestamp
+                    }
+                  </Text>
                 </View>
               );
             })}

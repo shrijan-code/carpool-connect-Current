@@ -59,20 +59,32 @@ export const NotificationBell = React.memo(() => {
 
     setShowModal(false);
 
-    // Handle navigation based on notification type
+    // Handle navigation based on notification type with deep linking
     switch (notification.type) {
       case 'ride_booked':
       case 'ride_confirmed':
       case 'ride_cancelled':
       case 'ride_completed':
-        // Navigate to rides screen
-        router.push('/(tabs)/rides');
+        // Navigate to ride details if rideId available, otherwise to rides list
+        if (notification.data?.rideId) {
+          router.push({ pathname: '/ride-details', params: { id: notification.data.rideId } });
+        } else {
+          router.push('/(tabs)/rides');
+        }
         break;
       case 'message':
-        // Navigate to chat screen
-        router.push('/(tabs)/chat');
+        // Navigate to chat with rideId to auto-select the conversation
+        if (notification.data?.rideId) {
+          router.push({ pathname: '/(tabs)/chat', params: { rideId: notification.data.rideId } });
+        } else {
+          router.push('/(tabs)/chat');
+        }
         break;
       case 'ride_request':
+      case 'booking_accepted':
+      case 'booking_confirmed':
+      case 'booking_rejected':
+      case 'booking_declined':
         // Navigate to ride details if rideId is available
         if (notification.data?.rideId) {
           router.push({ pathname: '/ride-details', params: { id: notification.data.rideId } });
@@ -80,16 +92,8 @@ export const NotificationBell = React.memo(() => {
           router.push('/(tabs)/rides');
         }
         break;
-      case 'delivery_new':
-      case 'delivery_accepted':
-      case 'delivery_status_update':
-      case 'delivery_completed':
-      case 'delivery_cancelled':
-        // Navigate to deliveries screen
-        router.push('/(tabs)/deliveries');
-        break;
       default:
-        // Default to home screen
+        // Default to home screen (handles payment, general, and any other types)
         router.push('/(tabs)/home');
         break;
     }

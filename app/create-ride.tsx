@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Keyboard, Platform, Pressable } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, router } from 'expo-router';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -12,14 +12,19 @@ import { DateField } from '@/src/components/DateField';
 import { TimeField } from '@/src/components/TimeField';
 
 import { Colors } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { Users, DollarSign, AlertTriangle, CreditCard, CheckCircle } from 'lucide-react-native';
 import { Location, Vehicle, Ride } from '@/types';
+import { validatePrice, validateSeats, validateLocation, validateFutureDate } from '@/utils/validation';
+import { useMemo } from 'react';
 
 export default function CreateRideScreen() {
   const { user } = useAuthStore();
   const { createRide, isLoading } = useRidesStore();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
 
   const [fromLocation, setFromLocation] = useState<Location | null>(null);
@@ -64,44 +69,47 @@ export default function CreateRideScreen() {
     Keyboard.dismiss();
   };
 
-  // Validation helper
+  // Validation using shared validators
   const validateForm = () => {
     const errors: { [key: string]: string } = {};
-    const now = new Date();
-    const minDepartureTime = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
 
-    if (!fromLocation) {
-      errors.fromLocation = 'Origin location is required';
+    // Location validation using shared validator
+    if (!validateLocation(fromLocation)) {
+      errors.fromLocation = 'Origin location is required with valid coordinates';
     }
-    if (!toLocation) {
-      errors.toLocation = 'Destination location is required';
+    if (!validateLocation(toLocation)) {
+      errors.toLocation = 'Destination location is required with valid coordinates';
     }
-    if (departureDateTime < minDepartureTime) {
-      errors.departureDateTime = 'Departure must be at least 5 minutes from now';
+
+    // Date validation using shared validator
+    const dateValidation = validateFutureDate(departureDateTime, 5);
+    if (!dateValidation.valid) {
+      errors.departureDateTime = dateValidation.error || 'Invalid departure date';
     }
-    if (!pricePerSeat || parseFloat(pricePerSeat) <= 0) {
-      errors.pricePerSeat = 'Valid price per seat is required';
+
+    // Price validation using shared validator
+    const priceValidation = validatePrice(pricePerSeat);
+    if (!priceValidation.valid) {
+      errors.pricePerSeat = priceValidation.error || 'Invalid price';
     }
-    if (availableSeats < 1 || availableSeats > 8) {
-      errors.availableSeats = 'Seats must be between 1 and 8';
+
+    // Seats validation using shared validator
+    const seatsValidation = validateSeats(availableSeats);
+    if (!seatsValidation.valid) {
+      errors.availableSeats = seatsValidation.error || 'Invalid number of seats';
     }
 
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
-  // Memoized validation check to prevent re-renders
+  // Memoized validation check using shared validators
   const isFormValid = React.useMemo(() => {
-    const now = new Date();
-    const minDepartureTime = new Date(now.getTime() + 5 * 60 * 1000);
-
-    return fromLocation &&
-      toLocation &&
-      departureDateTime >= minDepartureTime &&
-      pricePerSeat &&
-      parseFloat(pricePerSeat) > 0 &&
-      availableSeats >= 1 &&
-      availableSeats <= 8;
+    return validateLocation(fromLocation) &&
+      validateLocation(toLocation) &&
+      validateFutureDate(departureDateTime, 5).valid &&
+      validatePrice(pricePerSeat).valid &&
+      validateSeats(availableSeats).valid;
   }, [fromLocation, toLocation, departureDateTime, pricePerSeat, availableSeats]);
 
   // Format date and time for display
@@ -121,7 +129,14 @@ export default function CreateRideScreen() {
     dismissKeyboard();
 
     if (!user) {
-      Alert.alert('Error', 'You must be logged in to create a ride');
+      Alert.alert(
+        'Authentication Required',
+        'Please log in to create a ride. Your session may have expired.',
+        [
+          { text: 'Go to Login', onPress: () => router.push('/auth') },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
       return;
     }
 
@@ -139,7 +154,11 @@ export default function CreateRideScreen() {
     }
 
     if (!validateForm()) {
-      Alert.alert('Validation Error', 'Please fix the errors below and try again.');
+      Alert.alert(
+        'Missing Information',
+        'Please complete all required fields:\n\n• Origin and destination locations\n• Departure date and time\n• Price per seat\n• Number of seats',
+        [{ text: 'OK' }]
+      );
       return;
     }
 
@@ -193,13 +212,34 @@ export default function CreateRideScreen() {
       setTimeout(() => {
         router.replace('/(tabs)/home');
       }, 3000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Create ride error:', error);
-      Alert.alert('Error', error.message || 'Failed to create ride. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Provide specific guidance based on error type
+      let title = 'Ride Creation Failed';
+      let message = 'Unable to create your ride. Please try again.';
+
+      if (errorMessage.includes('network') || errorMessage.includes('internet')) {
+        title = 'Connection Error';
+        message = 'Please check your internet connection and try again.';
+      } else if (errorMessage.includes('permission')) {
+        title = 'Permission Denied';
+        message = 'You may not have permission to create rides. Please ensure your account is fully set up.';
+      }
+
+      Alert.alert(
+        title,
+        message,
+        [
+          { text: 'Retry', onPress: handleCreateRide },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     }
   };
 
-  const onDateChange = (event: any, selectedDate?: Date) => {
+  const onDateChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
       const newDateTime = new Date(departureDateTime);
@@ -210,7 +250,7 @@ export default function CreateRideScreen() {
     }
   };
 
-  const onTimeChange = (event: any, selectedTime?: Date) => {
+  const onTimeChange = (event: DateTimePickerEvent, selectedTime?: Date) => {
     setShowTimePicker(false);
     if (selectedTime) {
       const newDateTime = new Date(departureDateTime);
@@ -253,8 +293,8 @@ export default function CreateRideScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{
         title: 'Create Ride',
-        headerStyle: { backgroundColor: Colors.primary },
-        headerTintColor: Colors.background
+        headerStyle: { backgroundColor: colors.primary },
+        headerTintColor: colors.background
       }} />
 
       <ScrollView
@@ -267,7 +307,7 @@ export default function CreateRideScreen() {
         {stripeRequirement?.required ? (
           <Card style={styles.errorCard}>
             <View style={styles.warningHeader}>
-              <AlertTriangle size={24} color={Colors.error} />
+              <AlertTriangle size={24} color={colors.error} />
               <Text style={styles.errorTitle}>Payment Setup Required</Text>
             </View>
             <Text style={styles.errorMessage}>
@@ -277,13 +317,13 @@ export default function CreateRideScreen() {
               title="Set Up Stripe Connect"
               onPress={() => router.push('/(tabs)/profile')}
               style={styles.errorButton}
-              leftIcon={<CreditCard size={16} color={Colors.background} />}
+              leftIcon={<CreditCard size={16} color={colors.background} />}
             />
           </Card>
         ) : stripeRequirement && !stripeRequirement.required && stripeRequirement.completedRides > 0 ? (
           <Card style={styles.infoCard}>
             <View style={styles.infoHeader}>
-              <CreditCard size={20} color={Colors.primary} />
+              <CreditCard size={20} color={colors.primary} />
               <Text style={styles.infoTitle}>Optional Payment Setup</Text>
             </View>
             <Text style={styles.infoMessage}>
@@ -301,7 +341,7 @@ export default function CreateRideScreen() {
         <Card style={styles.formCard}>
           <Text style={styles.sectionTitle}>Route Details</Text>
 
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, styles.locationInputFirst]}>
             <Text style={styles.inputLabel}>From Location *</Text>
             <PlacesAutocomplete
               placeholder="Enter pickup location"
@@ -313,7 +353,7 @@ export default function CreateRideScreen() {
             )}
           </View>
 
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, styles.locationInputSecond]}>
             <Text style={styles.inputLabel}>To Location *</Text>
             <PlacesAutocomplete
               placeholder="Enter destination"
@@ -442,7 +482,7 @@ export default function CreateRideScreen() {
               styles.createButton,
               (stripeRequirement?.required || !isFormValid) && styles.disabledButton
             ]}
-            leftIcon={<CheckCircle size={20} color={Colors.background} />}
+            leftIcon={<CheckCircle size={20} color={colors.background} />}
           />
           {stripeRequirement?.required && (
             <Text style={styles.disabledButtonText}>
@@ -533,7 +573,7 @@ export default function CreateRideScreen() {
                   key={num}
                   label={`${num} seat${num !== 1 ? 's' : ''}`}
                   value={num}
-                  color={Colors.text}
+                  color={colors.text}
                 />
               ))}
             </Picker>
@@ -544,10 +584,10 @@ export default function CreateRideScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
   },
   content: {
     flex: 1,
@@ -563,12 +603,21 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 16,
   },
   inputGroup: {
     marginBottom: 16,
     position: 'relative',
+    zIndex: 1,
+  },
+  // Higher z-index for first location input to ensure its dropdown appears above the second input
+  locationInputFirst: {
+    zIndex: 10000,
+  },
+  // Lower z-index for second location input
+  locationInputSecond: {
+    zIndex: 9000,
   },
   inputIcon: {
     position: 'absolute',
@@ -582,7 +631,7 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 8,
   },
   textArea: {
@@ -606,14 +655,14 @@ const styles = StyleSheet.create({
     marginBottom: 40,
   },
   createButton: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     paddingVertical: 16,
   },
   dateTimeButton: {
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: 12,
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     paddingHorizontal: 16,
     paddingVertical: 12,
     minHeight: 48,
@@ -623,28 +672,28 @@ const styles = StyleSheet.create({
   dateTimeLabel: {
     fontSize: 14,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 4,
   },
   dateTimeValue: {
     fontSize: 16,
-    color: Colors.text,
+    color: colors.text,
     fontWeight: '500' as const,
   },
 
   helperText: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: 4,
     fontStyle: 'italic' as const,
   },
   errorText: {
     fontSize: 12,
-    color: Colors.error,
+    color: colors.error,
     marginTop: 4,
   },
   errorBorder: {
-    borderColor: Colors.error,
+    borderColor: colors.error,
     borderWidth: 1,
   },
   pickerOverlay: {
@@ -665,14 +714,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   pickerWrapper: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 16,
     margin: 24,
     minWidth: '80%',
   },
   iosPickerWrapper: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 0,
     margin: 24,
@@ -682,7 +731,7 @@ const styles = StyleSheet.create({
   pickerDone: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: Colors.primary,
+    color: colors.primary,
   },
   pickerModal: {
     position: 'absolute',
@@ -695,7 +744,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pickerContainer: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 24,
     margin: 24,
@@ -710,14 +759,14 @@ const styles = StyleSheet.create({
   pickerTitle: {
     fontSize: 18,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
   },
   picker: {
     height: 150,
-    color: Colors.text,
+    color: colors.text,
   },
   pickerItem: {
-    color: Colors.text,
+    color: colors.text,
     fontSize: 18,
   },
   pickerDoneButton: {
@@ -727,15 +776,15 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     padding: 24,
   },
   successCard: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderRadius: 16,
     padding: 32,
     alignItems: 'center',
-    shadowColor: Colors.shadow.color,
+    shadowColor: colors.shadow.color,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -744,25 +793,25 @@ const styles = StyleSheet.create({
   successTitle: {
     fontSize: 24,
     fontWeight: '700' as const,
-    color: Colors.text,
+    color: colors.text,
     textAlign: 'center',
     marginBottom: 16,
   },
   successMessage: {
     fontSize: 18,
-    color: Colors.success,
+    color: colors.success,
     textAlign: 'center',
     marginBottom: 8,
     fontWeight: '600' as const,
   },
   successSubMessage: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
   },
   successDetails: {
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 24,
@@ -770,19 +819,19 @@ const styles = StyleSheet.create({
   },
   successDetailText: {
     fontSize: 14,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 4,
   },
   redirectText: {
     fontSize: 14,
-    color: Colors.textLight,
+    color: colors.textLight,
     fontStyle: 'italic' as const,
   },
   warningCard: {
     marginBottom: 16,
-    backgroundColor: '#fff8e1',
+    backgroundColor: colors.warningLight + '20',
     borderLeftWidth: 4,
-    borderLeftColor: Colors.warning,
+    borderLeftColor: colors.warning,
   },
   warningHeader: {
     flexDirection: 'row',
@@ -792,44 +841,44 @@ const styles = StyleSheet.create({
   warningTitle: {
     fontSize: 18,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginLeft: 12,
   },
   warningMessage: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 16,
   },
   warningButton: {
-    backgroundColor: Colors.warning,
+    backgroundColor: colors.warning,
   },
   errorCard: {
     marginBottom: 16,
-    backgroundColor: '#ffebee',
+    backgroundColor: colors.errorLight + '20',
     borderLeftWidth: 4,
-    borderLeftColor: Colors.error,
+    borderLeftColor: colors.error,
   },
   errorTitle: {
     fontSize: 18,
     fontWeight: '600' as const,
-    color: Colors.error,
+    color: colors.error,
     marginLeft: 12,
   },
   errorMessage: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 16,
   },
   errorButton: {
-    backgroundColor: Colors.error,
+    backgroundColor: colors.error,
   },
   infoCard: {
     marginBottom: 16,
-    backgroundColor: '#e3f2fd',
+    backgroundColor: colors.infoLight + '20',
     borderLeftWidth: 4,
-    borderLeftColor: Colors.primary,
+    borderLeftColor: colors.primary,
   },
   infoHeader: {
     flexDirection: 'row',
@@ -839,27 +888,27 @@ const styles = StyleSheet.create({
   infoTitle: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: Colors.primary,
+    color: colors.primary,
     marginLeft: 12,
   },
   infoMessage: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     lineHeight: 20,
     marginBottom: 16,
   },
   infoButton: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: colors.primary,
   },
   disabledButton: {
-    backgroundColor: Colors.textLight,
+    backgroundColor: colors.textLight,
     opacity: 0.6,
   },
   disabledButtonText: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     marginTop: 8,
     fontStyle: 'italic' as const,
@@ -878,26 +927,26 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontSize: 16,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginLeft: 8,
   },
   toggle: {
     width: 50,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Colors.border,
+    backgroundColor: colors.border,
     padding: 2,
     justifyContent: 'center',
   },
   toggleActive: {
-    backgroundColor: '#059669',
+    backgroundColor: colors.success,
   },
   toggleThumb: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: Colors.background,
-    shadowColor: Colors.shadow.color,
+    backgroundColor: colors.background,
+    shadowColor: colors.shadow.color,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 2,
@@ -908,7 +957,7 @@ const styles = StyleSheet.create({
   },
   toggleDescription: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: 4,
     fontStyle: 'italic' as const,
   },

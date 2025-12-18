@@ -14,7 +14,7 @@ import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { Calendar, Search, Filter, Navigation, Clock, MapPin, Map as MapIcon, List } from 'lucide-react-native';
-import { Location } from '@/types';
+import { Location, Ride } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RidesMapView from '@/components/RidesMapView';
 
@@ -83,9 +83,10 @@ export default function SearchRidesScreen() {
           ]
         );
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Search rides error:', error);
-      Alert.alert('Error', error.message || 'Failed to search rides');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to search rides';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -120,7 +121,7 @@ export default function SearchRidesScreen() {
     }
 
     // Get ride details for price calculation
-    const rideToBook = searchResults?.find((r: any) => r.id === rideId);
+    const rideToBook = searchResults?.find((r: Ride) => r.id === rideId);
     if (!rideToBook) {
       Alert.alert('Error', 'Ride not found');
       return;
@@ -148,7 +149,7 @@ export default function SearchRidesScreen() {
     );
   };
 
-  const showBookingConfirmation = (ride: any, seats: number, pricePerSeatInCents: number) => {
+  const showBookingConfirmation = (ride: Ride, seats: number, pricePerSeatInCents: number) => {
     const totalAmount = (pricePerSeatInCents / 100) * seats;
     const platformFee = 1.00;
     const grandTotal = totalAmount + platformFee;
@@ -166,7 +167,7 @@ export default function SearchRidesScreen() {
     );
   };
 
-  const processBooking = async (ride: any, seats: number) => {
+  const processBooking = async (ride: Ride, seats: number) => {
     try {
       console.log('🚗 Starting booking request for ride:', ride.id, 'user:', user?.id, 'seats:', seats);
 
@@ -189,11 +190,12 @@ export default function SearchRidesScreen() {
           { text: 'OK' }
         ]
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Booking request failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send booking request. Please try again.';
       Alert.alert(
         '❌ Booking Request Failed',
-        error.message || 'Failed to send booking request. Please try again.',
+        errorMessage,
         [{ text: 'OK' }]
       );
     }
@@ -240,7 +242,7 @@ export default function SearchRidesScreen() {
         <Card style={styles.searchCard}>
           <Text style={styles.sectionTitle}>Find Your Ride</Text>
 
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, styles.locationInputFirst]}>
             <Text style={styles.inputLabel}>From Location *</Text>
             <PlacesAutocomplete
               placeholder="Enter pickup location"
@@ -259,7 +261,7 @@ export default function SearchRidesScreen() {
             )}
           </View>
 
-          <View style={styles.inputGroup}>
+          <View style={[styles.inputGroup, styles.locationInputSecond]}>
             <Text style={styles.inputLabel}>To Location *</Text>
             <PlacesAutocomplete
               placeholder="Enter destination"
@@ -501,6 +503,15 @@ const styles = StyleSheet.create({
   inputGroup: {
     marginBottom: 16,
     position: 'relative',
+    zIndex: 1,
+  },
+  // Higher z-index for first location input to ensure its dropdown appears above the second input
+  locationInputFirst: {
+    zIndex: 10000,
+  },
+  // Lower z-index for second location input
+  locationInputSecond: {
+    zIndex: 9000,
   },
   inputLabel: {
     fontSize: 14,

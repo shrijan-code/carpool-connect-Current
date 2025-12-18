@@ -108,15 +108,9 @@ export async function verifyAdmin(email: string, password: string): Promise<Admi
                 console.log('✅ Upgraded admin password to hashed version:', adminData.email);
             }
         } else {
-            // Fallback for demo accounts without any password set
-            if (password === 'admin123') {
-                isPasswordValid = true;
-                // Set hashed password
-                const hashedPassword = await bcrypt.hash(password, 10);
-                await adminDoc.ref.update({
-                    passwordHash: hashedPassword,
-                });
-            }
+            // No password configured - account needs proper password setup
+            console.warn('Admin account has no password configured:', adminData.email);
+            return null;
         }
 
         if (!isPasswordValid) {

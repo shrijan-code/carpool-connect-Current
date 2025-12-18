@@ -190,6 +190,21 @@ export default function RootLayout() {
     const initialize = async () => {
       try {
         console.log('[RootLayout] Starting initialization...');
+        console.log('[RootLayout] Checking environment variables...');
+
+        // Debug: Check if env variables are accessible at runtime
+        if (__DEV__) {
+          const envCheck = {
+            'EXPO_PUBLIC_FIREBASE_API_KEY': process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+            'EXPO_PUBLIC_FIREBASE_PROJECT_ID': process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+            'EXPO_PUBLIC_GOOGLE_PLACES_API_KEY': process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
+          };
+
+          console.log('[RootLayout] Environment variable status:');
+          Object.entries(envCheck).forEach(([key, value]) => {
+            console.log(`  ${value ? '✓' : '✗'} ${key}: ${value ? 'Loaded' : 'Missing'}`);
+          });
+        }
 
         // First, check and clean any corrupted storage
         await cleanCorruptedStorageOnStartup();

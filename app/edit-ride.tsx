@@ -294,7 +294,7 @@ export default function EditRideScreen() {
                 <Card style={styles.formCard}>
                     <Text style={styles.sectionTitle}>Route Details</Text>
 
-                    <View style={styles.inputGroup}>
+                    <View style={[styles.inputGroup, styles.locationInputFirst]}>
                         <Text style={styles.inputLabel}>From Location *</Text>
                         <PlacesAutocomplete
                             placeholder="Enter pickup location"
@@ -306,7 +306,7 @@ export default function EditRideScreen() {
                         )}
                     </View>
 
-                    <View style={styles.inputGroup}>
+                    <View style={[styles.inputGroup, styles.locationInputSecond]}>
                         <Text style={styles.inputLabel}>To Location *</Text>
                         <PlacesAutocomplete
                             placeholder="Enter destination"
@@ -536,6 +536,15 @@ const styles = StyleSheet.create({
     inputGroup: {
         marginBottom: 16,
         position: 'relative',
+        zIndex: 1,
+    },
+    // Higher z-index for first location input to ensure its dropdown appears above the second input
+    locationInputFirst: {
+        zIndex: 10000,
+    },
+    // Lower z-index for second location input
+    locationInputSecond: {
+        zIndex: 9000,
     },
     inputIcon: {
         position: 'absolute',

@@ -47,7 +47,7 @@ export const OptimizedPlacesAutocomplete: React.FC<OptimizedPlacesAutocompletePr
   return (
     <View style={[styles.container, style]} testID={testID}>
       {label && <Text style={styles.label}>{label}</Text>}
-      
+
       <View style={[
         styles.inputContainer,
         focused && styles.inputContainerFocused,
@@ -79,7 +79,7 @@ export const OptimizedPlacesAutocomplete: React.FC<OptimizedPlacesAutocompletePr
       </View>
 
       {error && <Text style={styles.errorText}>{error}</Text>}
-      
+
       {showPredictions && predictions.length > 0 && (
         <View style={styles.predictionsContainer}>
           {predictions.map((prediction, index) => (
@@ -105,7 +105,7 @@ export const OptimizedPlacesAutocomplete: React.FC<OptimizedPlacesAutocompletePr
           ))}
         </View>
       )}
-      
+
       <Text style={styles.note}>
         🇦🇺 Australian locations • Optimized with session tokens
       </Text>
@@ -116,6 +116,8 @@ export const OptimizedPlacesAutocomplete: React.FC<OptimizedPlacesAutocompletePr
 const styles = StyleSheet.create({
   container: {
     position: 'relative',
+    zIndex: 9999,
+    elevation: 999,
   },
   label: {
     fontSize: 14,
@@ -162,24 +164,26 @@ const styles = StyleSheet.create({
     fontWeight: '600' as const,
   },
   predictionsContainer: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
     backgroundColor: Colors.background,
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderTopWidth: 0,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-    marginTop: -1,
-    maxHeight: 200,
-    zIndex: 1000,
+    borderColor: Colors.primary,
+    borderRadius: 12,
+    maxHeight: 280,
+    zIndex: 99999,
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
       },
       android: {
-        elevation: 4,
+        elevation: 999,
       },
     }),
   },
@@ -187,23 +191,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.borderLight,
+    backgroundColor: Colors.background,
+    minHeight: 60,
   },
   predictionTextContainer: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 12,
   },
   predictionText: {
-    fontSize: 14,
+    fontSize: 15,
     color: Colors.text,
-    fontWeight: '500' as const,
+    fontWeight: '600' as const,
+    lineHeight: 20,
   },
   predictionSecondaryText: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.textSecondary,
-    marginTop: 2,
+    marginTop: 4,
+    lineHeight: 18,
   },
   errorText: {
     fontSize: 12,

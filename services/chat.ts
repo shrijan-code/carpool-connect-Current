@@ -143,7 +143,8 @@ export class ChatService {
               await NotificationService.sendNewMessageNotification(
                 recipientId,
                 senderName,
-                message
+                message,
+                rideId
               );
             }
           }

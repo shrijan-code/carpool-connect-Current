@@ -11,7 +11,7 @@ export interface InAppNotification {
   data?: any;
   read: boolean;
   createdAt: Timestamp;
-  type: 'ride_booked' | 'ride_confirmed' | 'ride_cancelled' | 'ride_completed' | 'ride_request' | 'booking_rejected' | 'booking_accepted' | 'booking_confirmed' | 'booking_declined' | 'message' | 'payment' | 'general';
+  type: 'ride_booked' | 'ride_confirmed' | 'ride_cancelled' | 'ride_completed' | 'ride_request' | 'ride_status_update' | 'booking_rejected' | 'booking_accepted' | 'booking_confirmed' | 'booking_declined' | 'passenger_status_update' | 'message' | 'payment' | 'general';
 }
 
 // Notification listeners
@@ -389,13 +389,16 @@ export class NotificationService {
     driverId: string,
     riderName: string,
     pickup: string,
-    dropoff: string
+    dropoff: string,
+    rideId?: string,
+    bookingId?: string
   ): Promise<void> {
     await this.sendInAppNotification(
       driverId,
       'New Ride Request',
       `${riderName} wants to book your ride from ${pickup} to ${dropoff}`,
-      'ride_booked'
+      'ride_booked',
+      { rideId, bookingId, riderName }
     );
   }
 
@@ -403,26 +406,32 @@ export class NotificationService {
   static async sendRideConfirmationNotification(
     riderId: string,
     driverName: string,
-    pickup: string
+    pickup: string,
+    rideId?: string,
+    bookingId?: string
   ): Promise<void> {
     await this.sendInAppNotification(
       riderId,
       'Ride Confirmed',
       `${driverName} confirmed your ride. Pickup at ${pickup}`,
-      'ride_confirmed'
+      'ride_confirmed',
+      { rideId, bookingId, driverName }
     );
   }
 
   // Send ride cancellation notification
   static async sendRideCancellationNotification(
     userId: string,
-    reason: string
+    reason: string,
+    rideId?: string,
+    bookingId?: string
   ): Promise<void> {
     await this.sendInAppNotification(
       userId,
       'Ride Cancelled',
       `Your ride has been cancelled. Reason: ${reason}`,
-      'ride_cancelled'
+      'ride_cancelled',
+      { rideId, bookingId, reason }
     );
   }
 
@@ -430,13 +439,15 @@ export class NotificationService {
   static async sendNewMessageNotification(
     userId: string,
     senderName: string,
-    message: string
+    message: string,
+    rideId?: string
   ): Promise<void> {
     await this.sendInAppNotification(
       userId,
       `New message from ${senderName}`,
       message.length > 50 ? message.substring(0, 50) + '...' : message,
-      'message'
+      'message',
+      { rideId, senderName }
     );
   }
 }

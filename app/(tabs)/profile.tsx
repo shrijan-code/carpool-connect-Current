@@ -160,9 +160,16 @@ export default function ProfileScreen() {
           }
         ]
       );
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error starting Stripe setup:', error);
-      Alert.alert('Error', 'Failed to start Stripe setup. Please try again.');
+      Alert.alert(
+        'Setup Failed',
+        'Unable to start Stripe setup. Please check your internet connection and try again.',
+        [
+          { text: 'Retry', onPress: handleStripeSetup },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setIsLoadingStripe(false);
     }
@@ -204,9 +211,17 @@ export default function ProfileScreen() {
       });
       setShowEditModal(false);
       Alert.alert('Success', 'Profile updated successfully!');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update profile error:', error);
-      Alert.alert('Error', error.message || 'Failed to update profile');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert(
+        'Update Failed',
+        `Unable to save your profile changes: ${errorMessage}\n\nPlease try again.`,
+        [
+          { text: 'Retry', onPress: handleSaveProfile },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     }
   };
 
@@ -239,9 +254,17 @@ export default function ProfileScreen() {
       await updateUser(vehicleData);
       setShowVehicleModal(false);
       Alert.alert('Success', 'Vehicle details updated successfully!');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Update vehicle error:', error);
-      Alert.alert('Error', error.message || 'Failed to update vehicle details');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert(
+        'Update Failed',
+        `Unable to save vehicle details: ${errorMessage}\n\nPlease check your information and try again.`,
+        [
+          { text: 'Retry', onPress: handleSaveVehicle },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     }
   };
 
@@ -304,9 +327,17 @@ export default function ProfileScreen() {
           Alert.alert('Error', 'Failed to upload profile picture');
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload profile picture error:', error);
-      Alert.alert('Error', error.message || 'Failed to upload profile picture');
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      Alert.alert(
+        'Upload Failed',
+        `Couldn't upload your photo: ${errorMessage}\n\nMake sure the image is less than 5MB and try again.`,
+        [
+          { text: 'Retry', onPress: uploadProfilePictureFromCamera },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setUploadingProfilePicture(false);
     }
@@ -325,9 +356,17 @@ export default function ProfileScreen() {
           Alert.alert('Error', 'Failed to upload profile picture');
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload profile picture error:', error);
-      Alert.alert('Error', error.message || 'Failed to upload profile picture');
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      Alert.alert(
+        'Upload Failed',
+        `Couldn't upload your photo: ${errorMessage}\n\nMake sure the image is less than 5MB and try again.`,
+        [
+          { text: 'Retry', onPress: uploadProfilePictureFromLibrary },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setUploadingProfilePicture(false);
     }
@@ -392,9 +431,17 @@ export default function ProfileScreen() {
           Alert.alert('Error', 'Failed to upload document');
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload document error:', error);
-      Alert.alert('Error', error.message || 'Failed to upload document');
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      Alert.alert(
+        'Document Upload Failed',
+        `Couldn't upload your ${documentType} document: ${errorMessage}\n\nPlease ensure the image is clear and try again.`,
+        [
+          { text: 'Retry', onPress: () => uploadDocumentFromCamera(documentType) },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setUploadingDocument(null);
     }
@@ -425,9 +472,17 @@ export default function ProfileScreen() {
           Alert.alert('Error', 'Failed to upload document');
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Upload document error:', error);
-      Alert.alert('Error', error.message || 'Failed to upload document');
+      const errorMessage = error instanceof Error ? error.message : 'Upload failed';
+      Alert.alert(
+        'Document Upload Failed',
+        `Couldn't upload your ${documentType} document: ${errorMessage}\n\nPlease ensure the image is clear and try again.`,
+        [
+          { text: 'Retry', onPress: () => uploadDocumentFromLibrary(documentType) },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } finally {
       setUploadingDocument(null);
     }

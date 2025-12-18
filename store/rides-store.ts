@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Ride, Booking, Location, User } from '@/types';
+import { Ride, Booking, Location, User, getBookingRiderId, getErrorMessage } from '@/types';
 import { RidesService } from '@/services/rides';
 import { NotificationService } from '@/services/notifications';
 import { ChatService } from '@/services/chat';
@@ -9,6 +9,7 @@ import SecurityManager from '@/security/SecurityManager';
 import { debounce } from 'lodash';
 import { dataCache, CACHE_TTL, CACHE_KEYS } from '@/utils/cache';
 import { listenerManager } from '@/utils/listener-manager';
+import { logger } from '@/utils/logger';
 
 interface RidesState {
   rides: Ride[];
@@ -66,7 +67,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
   searchRides: async (from: Location, to: Location, date: string, walkingTolerance: number = 800) => {
     set({ isLoading: true, error: null });
     try {
-      console.log('Searching rides with Haversine filtering:', {
+      logger.info('Searching rides with Haversine filtering', {
         from: from.name,
         to: to.name,
         walkingTolerance,
@@ -94,11 +95,11 @@ export const useRidesStore = create<RidesState>((set, get) => ({
         return fromMatch && toMatch;
       });
 
-      console.log(`Found ${locationFiltered.length} rides matching location criteria`);
+      logger.info(`Found ${locationFiltered.length} rides matching location criteria`);
       set({ searchResults: locationFiltered });
-    } catch (error: any) {
-      console.error('Search rides error:', error);
-      set({ error: error.message || 'Failed to search rides', searchResults: [] });
+    } catch (error: unknown) {
+      logger.error('Search rides error', error);
+      set({ error: getErrorMessage(error), searchResults: [] });
     } finally {
       set({ isLoading: false });
     }
@@ -116,8 +117,9 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       await get().loadAvailableRides();
 
       return rideId;
-    } catch (error: any) {
-      set({ error: error.message || 'Failed to create ride' });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create ride';
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -128,7 +130,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
   prepareBookingRequest: async (rideId: string, seats: number, passenger: User) => {
     set({ isLoading: true, error: null });
     try {
-      console.log(`💳 Preparing booking for ride ${rideId} by passenger ${passenger.id}`);
+      logger.info('Preparing booking for ride', { rideId, passengerId: passenger.id });
 
       // 1. Basic Validations
       const ride = await RidesService.getRideById(rideId);
@@ -157,7 +159,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
         'pending_payment'
       );
 
-      console.log('✅ Created pending_payment booking:', bookingId);
+      logger.info('Created pending_payment booking', { bookingId });
 
       // 3. Create Payment Intent via Backend
       const { clientSecret, paymentIntentId } = await StripePaymentService.createPaymentIntent({
@@ -166,9 +168,9 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       });
 
       return { bookingId, clientSecret, paymentIntentId };
-    } catch (error: any) {
-      console.error('❌ Prepare booking failed:', error);
-      set({ error: error.message || 'Failed to prepare booking' });
+    } catch (error: unknown) {
+      logger.error('Prepare booking failed', error);
+      set({ error: getErrorMessage(error) });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -193,9 +195,9 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       // Refresh bookings
       await get().loadUserBookings(get().bookings.find(b => b.id === bookingId)?.riderId || '');
 
-    } catch (error: any) {
-      console.error('❌ Confirm booking payment failed:', error);
-      set({ error: error.message });
+    } catch (error: unknown) {
+      logger.error('Confirm booking payment failed', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to confirm payment' });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -220,14 +222,17 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       createdAt: new Date().toISOString(),
       ride: existingRide || null, // Use cached ride if available
       driverId: existingRide?.driverId || '',
-      payment: undefined
-    } as any;
+      payment: {
+        intentId: '',
+        status: 'authorized' as const
+      }
+    } as Booking; // Use full Booking type for optimistic update
 
     const currentBookings = get().bookings;
     set({ bookings: [optimisticBooking, ...currentBookings] });
 
     try {
-      console.log(`🚗 Starting booking request for ride ${rideId} by passenger ${passenger.id}`);
+      logger.info('Starting booking request for ride', { rideId, passengerId: passenger.id });
 
       // Security check: Rate limiting for booking requests
       const rateLimitCheck = await SecurityManager.checkRateLimit(passenger.id, 'booking');
@@ -304,32 +309,30 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       );
       set({ bookings: updatedBookings });
 
-      console.log('✅ Booking request prepared with PaymentIntent:', paymentIntentId);
+      logger.info('Booking request prepared with PaymentIntent', { paymentIntentId, bookingId });
 
-      // We attach clientSecret to the booking in the store so UI can access it? 
-      // Or better, return it.
-      // Since I'm editing the file, I'll update the interface return type too.
-      return { bookingId, clientSecret, paymentIntentId } as any;
+      return { bookingId, clientSecret, paymentIntentId };
 
-    } catch (error: any) {
-      console.error('❌ Booking request failed:', error);
+    } catch (error: unknown) {
+      logger.error('Booking request failed', error);
 
       // Revert optimistic update on error
       const revertedBookings = get().bookings.filter(b => b.id !== optimisticBooking.id);
       set({ bookings: revertedBookings });
 
       // Enhanced error handling with retry mechanism
-      if (error.message?.includes('already have a') || error.message?.includes('pending approval')) {
-        console.log('🔄 Force refreshing bookings due to duplicate booking error');
+      const errorMessage = error instanceof Error ? error.message : '';
+      if (errorMessage.includes('already have a') || errorMessage.includes('pending approval')) {
+        logger.info('Force refreshing bookings due to duplicate booking error');
         try {
           await get().loadUserBookings(passenger.id);
           set({ error: null });
-        } catch (refreshError) {
-          console.error('Failed to refresh bookings after duplicate error:', refreshError);
+        } catch (refreshError: unknown) {
+          logger.error('Failed to refresh bookings after duplicate error', refreshError);
         }
       }
 
-      set({ error: error.message || 'Failed to create booking request' });
+      set({ error: error instanceof Error ? error.message : 'Failed to create booking request' });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -340,7 +343,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
   acceptBooking: async (bookingId: string, driverId: string) => {
     set({ isLoading: true, error: null });
     try {
-      console.log('🚗 Driver accepting booking:', bookingId);
+      logger.info('Driver accepting booking', { bookingId, driverId });
 
       // Accept the booking and capture payment if applicable
       await RidesService.acceptBooking(bookingId, driverId);
@@ -348,10 +351,10 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       // Refresh driver's rides and bookings
       await get().loadUserRides(driverId);
 
-      console.log('✅ Booking accepted successfully');
-    } catch (error: any) {
-      console.error('❌ Accept booking failed:', error);
-      set({ error: error.message || 'Failed to accept booking' });
+      logger.info('Booking accepted successfully', { bookingId });
+    } catch (error: unknown) {
+      logger.error('Accept booking failed', error, { bookingId });
+      set({ error: getErrorMessage(error) });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -362,7 +365,7 @@ export const useRidesStore = create<RidesState>((set, get) => ({
   declineBooking: async (bookingId: string, rideId: string, seats: number, driverId: string, reason?: string) => {
     set({ isLoading: true, error: null });
     try {
-      console.log('🚗 Driver declining booking:', bookingId);
+      logger.info('Driver declining booking', { bookingId, driverId });
 
       // Decline the booking and cancel payment if applicable
       await RidesService.rejectBooking(bookingId, rideId, seats, driverId, reason);
@@ -370,10 +373,10 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       // Refresh driver's rides
       await get().loadUserRides(driverId);
 
-      console.log('✅ Booking declined successfully');
-    } catch (error: any) {
-      console.error('❌ Decline booking failed:', error);
-      set({ error: error.message || 'Failed to decline booking' });
+      logger.info('Booking declined successfully', { bookingId });
+    } catch (error: unknown) {
+      logger.error('Decline booking failed', error, { bookingId });
+      set({ error: getErrorMessage(error) });
       throw error;
     } finally {
       set({ isLoading: false });
@@ -385,8 +388,8 @@ export const useRidesStore = create<RidesState>((set, get) => ({
     try {
       const bookings = await RidesService.getDriverBookingRequests(driverId);
       return bookings.filter((booking: Booking) => booking.status === 'pending_driver');
-    } catch (error: any) {
-      console.error('Get pending booking requests error:', error);
+    } catch (error: unknown) {
+      logger.error('Get pending booking requests error', error, { driverId });
       return [];
     }
   },

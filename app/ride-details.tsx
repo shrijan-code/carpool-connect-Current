@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { RidesService } from '@/services/rides';
 import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X, ChevronLeft, Edit3 } from 'lucide-react-native';
 import { useStripe } from '@stripe/stripe-react-native';
-import { Booking } from '@/types';
+import { Booking, Ride, User, RidePassenger } from '@/types';
 import { EnhancedRideTracking } from '@/components/EnhancedRideTracking';
 import RideDriverActions from '@/components/RideDriverActions';
 import { VerificationBadge } from '@/components/VerificationBadge';
@@ -35,7 +35,7 @@ export default function RideDetailsScreen() {
   const { user } = useAuthStore();
   const [isBooking, setIsBooking] = useState(false);
   const [rideBookings, setRideBookings] = useState<Booking[]>([]);
-  const [ride, setRide] = useState<any>(null);
+  const [ride, setRide] = useState<Ride | null>(null);
   const [isLoadingRide, setIsLoadingRide] = useState(false);
   const [rideNotFound, setRideNotFound] = useState(false);
 
@@ -55,7 +55,7 @@ export default function RideDetailsScreen() {
       rideRef,
       (docSnapshot) => {
         if (docSnapshot.exists()) {
-          const rideData = { id: docSnapshot.id, ...docSnapshot.data() } as any;
+          const rideData = { id: docSnapshot.id, ...docSnapshot.data() } as Ride;
           console.log('✅ Ride updated in real-time:', rideData.id, 'status:', rideData.status);
           setRide(rideData);
           setRideNotFound(false);
@@ -119,7 +119,7 @@ export default function RideDetailsScreen() {
   }
 
   const isDriver = user?.id === ride.driverId;
-  const isBooked = ride.passengers?.some((p: any) => p.id === user?.id);
+  const isBooked = ride.passengers?.some((p: RidePassenger) => p.id === user?.id);
   const userBookings = user?.id ? getUserBookings(user.id) : [];
   const hasActiveBooking = !!userBookings.find(b => b.rideId === ride.id && (b.status === 'pending_driver' || b.status === 'confirmed'));
   const canBook = user?.role === 'rider' && !isDriver && !isBooked && !hasActiveBooking && (ride.availableSeats || ride.seatsAvailable || 0) > 0;
@@ -182,9 +182,10 @@ export default function RideDetailsScreen() {
         fetchRideById(ride.id)
       ]);
 
-    } catch (error: any) {
-      if (error.message !== 'Payment cancelled') {
-        Alert.alert('Booking Failed', error.message || 'Failed to complete booking');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to complete booking';
+      if (errorMessage !== 'Payment cancelled') {
+        Alert.alert('Booking Failed', errorMessage);
       }
     } finally {
       setIsBooking(false);
@@ -211,8 +212,9 @@ export default function RideDetailsScreen() {
         const updatedRide = await RidesService.getRideById(ride.id);
         if (updatedRide) setRide(updatedRide);
       }
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to accept booking');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to accept booking';
+      Alert.alert('Error', errorMessage);
     }
   };
 
@@ -242,8 +244,9 @@ export default function RideDetailsScreen() {
               await refreshRides();
               const updatedBookings = await RidesService.getRideBookings(ride.id, user?.id);
               setRideBookings(updatedBookings);
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to reject booking');
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to reject booking';
+              Alert.alert('Error', errorMessage);
             }
           }
         }
@@ -279,8 +282,9 @@ export default function RideDetailsScreen() {
               // Refresh data
               await refreshRides();
               await refreshBookings();
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to cancel booking');
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to cancel booking';
+              Alert.alert('Error', errorMessage);
             }
           }
         }
@@ -323,8 +327,9 @@ export default function RideDetailsScreen() {
                 'Your ride has been deleted successfully.',
                 [{ text: 'OK', onPress: () => router.back() }]
               );
-            } catch (error: any) {
-              Alert.alert('Delete Failed', error.message || 'Failed to delete ride');
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to delete ride';
+              Alert.alert('Delete Failed', errorMessage);
             }
           }
         }
@@ -530,7 +535,7 @@ export default function RideDetailsScreen() {
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Text style={styles.driverName}>{ride.driver?.name || 'Unknown Driver'}</Text>
                 {ride.driver && (
-                  <VerificationBadge user={ride.driver as any} size="small" showLabel />
+                  <VerificationBadge user={ride.driver} size="small" showLabel />
                 )}
               </View>
               <View style={styles.driverRating}>
@@ -592,7 +597,7 @@ export default function RideDetailsScreen() {
           <Card style={styles.detailsCard}>
             <Text style={styles.sectionTitle}>Driver Actions</Text>
             <RideDriverActions
-              ride={ride as any}
+              ride={ride}
               isDriver={isDriver}
               currentUserId={user?.id}
               onUpdated={async () => {
@@ -634,7 +639,7 @@ export default function RideDetailsScreen() {
         {isDriver && ride.passengers && ride.passengers.length > 0 && (
           <Card style={styles.passengersCard}>
             <Text style={styles.sectionTitle}>Confirmed Passengers ({ride.passengers.length})</Text>
-            {ride.passengers.map((passenger: any) => (
+            {ride.passengers.map((passenger: RidePassenger) => (
               <View key={`${passenger.id}-${passenger.bookingId}`} style={styles.passengerRow}>
                 <View style={styles.passengerAvatar}>
                   <Text style={styles.passengerAvatarText}>

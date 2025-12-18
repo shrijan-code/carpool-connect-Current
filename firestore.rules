@@ -39,8 +39,8 @@ service cloud.firestore {
     // RIDES - Simplified
     // ============================================================================
     match /rides/{rideId} {
-      // Anyone signed in can read rides (for browsing available rides)
-      allow read: if isRecentRequest();
+      // Signed-in users can read rides (for browsing available rides)
+      allow read: if isSignedIn() && isRecentRequest();
       
       // Drivers can create rides (they must set themselves as driver)
       allow create: if isSignedIn() && 
@@ -89,30 +89,70 @@ service cloud.firestore {
     }
 
     // ============================================================================
-    // MESSAGES - Chat functionality
+    // MESSAGES - Chat functionality with stricter access control
     // ============================================================================
     match /messages/{messageId} {
-      allow read: if isSignedIn() && isRecentRequest();
+      // Helper: Check if user is a participant in the message thread
+      // Users can read messages where they are the sender, or the message
+      // is part of a ride/booking they're involved in
+      allow read: if isSignedIn() && isRecentRequest() &&
+                    (
+                      // User is the sender
+                      resource.data.senderId == request.auth.uid ||
+                      // User is a participant in the thread
+                      (resource.data.participants != null && 
+                       request.auth.uid in resource.data.participants) ||
+                      // User is the driver or passenger on this ride/booking
+                      resource.data.driverId == request.auth.uid ||
+                      resource.data.passengerId == request.auth.uid ||
+                      resource.data.riderId == request.auth.uid
+                    );
+      
+      // Users can create messages as themselves
       allow create: if isSignedIn() && isRecentRequest() &&
                       request.resource.data.senderId == request.auth.uid;
-      allow update: if isSignedIn() && isRecentRequest();
+      
+      // Only the sender can update their messages, or participants can mark as read
+      allow update: if isSignedIn() && isRecentRequest() &&
+                      (
+                        resource.data.senderId == request.auth.uid ||
+                        // Allow marking as read by participants
+                        (resource.data.participants != null && 
+                         request.auth.uid in resource.data.participants)
+                      );
       allow delete: if false;
     }
 
-    // Message threads for organizing conversations
+    // Message threads for organizing conversations - participant access only
     match /message_threads/{threadId} {
-      allow read: if isSignedIn() && isRecentRequest();
-      allow create: if isSignedIn() && isRecentRequest();
-      allow update: if isSignedIn() && isRecentRequest();
+      allow read: if isSignedIn() && isRecentRequest() &&
+                    (resource.data.participants != null && 
+                     request.auth.uid in resource.data.participants);
+      allow create: if isSignedIn() && isRecentRequest() &&
+                      request.resource.data.participants != null &&
+                      request.auth.uid in request.resource.data.participants;
+      allow update: if isSignedIn() && isRecentRequest() &&
+                      resource.data.participants != null &&
+                      request.auth.uid in resource.data.participants;
       allow delete: if false;
     }
 
-    // Delivery messages
+    // Delivery messages - participant access only
     match /delivery_messages/{messageId} {
-      allow read: if isSignedIn() && isRecentRequest();
+      allow read: if isSignedIn() && isRecentRequest() &&
+                    (
+                      resource.data.senderId == request.auth.uid ||
+                      resource.data.businessId == request.auth.uid ||
+                      resource.data.driverId == request.auth.uid
+                    );
       allow create: if isSignedIn() && isRecentRequest() &&
                       request.resource.data.senderId == request.auth.uid;
-      allow update: if isSignedIn() && isRecentRequest();
+      allow update: if isSignedIn() && isRecentRequest() &&
+                      (
+                        resource.data.senderId == request.auth.uid ||
+                        resource.data.businessId == request.auth.uid ||
+                        resource.data.driverId == request.auth.uid
+                      );
       allow delete: if false;
     }
 

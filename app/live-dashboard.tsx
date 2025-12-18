@@ -3,16 +3,16 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshCon
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, Stack } from 'expo-router';
-import { 
-  Activity, 
-  MapPin, 
-  Clock, 
-  DollarSign, 
-  MessageCircle, 
-  Bell, 
-  CheckCircle, 
-  AlertCircle, 
-  Car, 
+import {
+  Activity,
+  MapPin,
+  Clock,
+  DollarSign,
+  MessageCircle,
+  Bell,
+  CheckCircle,
+  AlertCircle,
+  Car,
   Navigation,
   TrendingUp,
   Calendar,
@@ -50,9 +50,9 @@ interface LiveActivity {
 
 export default function LiveDashboardScreen() {
   const { user } = useAuthStore();
-  const { 
-    rides, 
-    bookings, 
+  const {
+    rides,
+    bookings,
     loadUserRides,
     loadUserBookings,
     getUserBookings,
@@ -87,7 +87,7 @@ export default function LiveDashboardScreen() {
       const totalRides = userRides.length;
       const activeRides = userRides.filter(r => r.status === 'upcoming' || r.status === 'active').length;
       const completedRides = userRides.filter(r => r.status === 'completed').length;
-      
+
       // Calculate earnings from completed rides
       const totalEarnings = userRides
         .filter(r => r.status === 'completed')
@@ -118,11 +118,11 @@ export default function LiveDashboardScreen() {
       const userBookings = getUserBookings(user.id);
       const confirmedBookings = userBookings.filter(b => b.status === 'confirmed').length;
       const pendingBookings = userBookings.filter(b => b.status === 'pending_driver').length;
-      const upcomingRides = userBookings.filter(b => 
-        b.status === 'confirmed' && 
+      const upcomingRides = userBookings.filter(b =>
+        b.status === 'confirmed' &&
         new Date(b.ride.departureAt || b.ride.departureTime || '') > new Date()
       ).length;
-      
+
       const totalSpent = userBookings
         .filter(b => b.status === 'confirmed')
         .reduce((sum, booking) => sum + (booking.amountTotal || 0), 0);
@@ -147,13 +147,13 @@ export default function LiveDashboardScreen() {
 
     if (isDriver) {
       const userRides = getUserRides(user.id, 'driver');
-      
+
       // Add recent ride activities
       userRides.slice(0, 5).forEach(ride => {
         if (ride.status === 'upcoming') {
           const departureTime = new Date(ride.departureAt || ride.departureTime || '');
           const hoursUntilDeparture = (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-          
+
           if (hoursUntilDeparture <= 24 && hoursUntilDeparture > 0) {
             activities.push({
               id: `ride-${ride.id}`,
@@ -183,7 +183,7 @@ export default function LiveDashboardScreen() {
             relatedId: booking.id
           });
         });
-        
+
         setLiveActivities([...activities, ...pendingRequests.slice(0, 3).map(booking => ({
           id: `booking-${booking.id}`,
           type: 'booking_request' as const,
@@ -198,12 +198,12 @@ export default function LiveDashboardScreen() {
     } else {
       // Rider activities
       const userBookings = getUserBookings(user.id);
-      
+
       userBookings.slice(0, 5).forEach(booking => {
         if (booking.status === 'confirmed') {
           const departureTime = new Date(booking.ride.departureAt || booking.ride.departureTime || '');
           const hoursUntilDeparture = (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-          
+
           if (hoursUntilDeparture <= 24 && hoursUntilDeparture > 0) {
             activities.push({
               id: `booking-${booking.id}`,
@@ -293,7 +293,8 @@ export default function LiveDashboardScreen() {
   const handleActivityPress = (activity: LiveActivity) => {
     if (activity.relatedId) {
       if (activity.type === 'booking_request' && isDriver) {
-        router.push('/booking-requests');
+        // Pass bookingId to highlight the specific booking request
+        router.push({ pathname: '/booking-requests', params: { bookingId: activity.relatedId } });
       } else if (activity.relatedId) {
         router.push({ pathname: '/ride-details', params: { id: activity.relatedId } });
       }
@@ -377,15 +378,15 @@ export default function LiveDashboardScreen() {
         <View style={styles.quickActionsGrid}>
           {isDriver ? (
             <>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.quickActionButton}
                 onPress={() => router.push('/create-ride')}
               >
                 <Car size={24} color={Colors.primary} />
                 <Text style={styles.quickActionText}>Create Ride</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.quickActionButton}
                 onPress={() => router.push('/booking-requests')}
               >
@@ -395,15 +396,15 @@ export default function LiveDashboardScreen() {
             </>
           ) : (
             <>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.quickActionButton}
                 onPress={() => router.push('/search-rides')}
               >
                 <MapPin size={24} color={Colors.primary} />
                 <Text style={styles.quickActionText}>Find Rides</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
+
+              <TouchableOpacity
                 style={styles.quickActionButton}
                 onPress={() => router.push('/(tabs)/rides')}
               >
@@ -412,16 +413,16 @@ export default function LiveDashboardScreen() {
               </TouchableOpacity>
             </>
           )}
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.quickActionButton}
             onPress={() => router.push('/(tabs)/chat')}
           >
             <MessageCircle size={24} color={Colors.success} />
             <Text style={styles.quickActionText}>Messages</Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[styles.quickActionButton, styles.emergencyButton]}
             onPress={handleEmergencyContact}
           >
@@ -482,7 +483,7 @@ export default function LiveDashboardScreen() {
   const renderEarningsTab = () => (
     <View style={styles.tabContent}>
       <Text style={styles.sectionTitle}>{isDriver ? 'Earnings Overview' : 'Spending Overview'}</Text>
-      
+
       <Card style={styles.earningsCard}>
         <View style={styles.earningsHeader}>
           <TrendingUp size={32} color={Colors.success} />
@@ -491,7 +492,7 @@ export default function LiveDashboardScreen() {
             <Text style={styles.earningsLabel}>{isDriver ? 'Total Earnings' : 'Total Spent'}</Text>
           </View>
         </View>
-        
+
         <View style={styles.earningsStats}>
           <View style={styles.earningsStat}>
             <Text style={styles.earningsStatValue}>{isDriver ? stats.completedRides : stats.confirmedBookings}</Text>
@@ -527,15 +528,15 @@ export default function LiveDashboardScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Stack.Screen 
+      <Stack.Screen
         options={{
           title: 'Live Dashboard',
           headerStyle: { backgroundColor: Colors.primary },
           headerTintColor: Colors.background,
           headerTitleStyle: { fontWeight: '600' }
-        }} 
+        }}
       />
-      
+
       <LinearGradient
         colors={[Colors.primary, Colors.secondary] as const}
         style={styles.header}
@@ -547,7 +548,7 @@ export default function LiveDashboardScreen() {
               {isDriver ? 'Driver' : 'Rider'} • {user?.name}
             </Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.refreshButton}
             onPress={onRefresh}
             disabled={refreshing}
@@ -585,7 +586,7 @@ export default function LiveDashboardScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.scrollView}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />

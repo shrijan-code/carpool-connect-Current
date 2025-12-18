@@ -16,17 +16,17 @@ interface UsePlacesAutocompleteOptions {
 
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
 
-export const usePlacesAutocomplete = ({ 
-  onLocationSelect, 
-  minLength = 3, 
-  debounceMs = 1500 
+export const usePlacesAutocomplete = ({
+  onLocationSelect,
+  minLength = 3,
+  debounceMs = 350
 }: UsePlacesAutocompleteOptions) => {
   const [inputValue, setInputValue] = useState<string>('');
   const [predictions, setPredictions] = useState<any[]>([]);
   const [showPredictions, setShowPredictions] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [focused, setFocused] = useState(false);
-  
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const webPlacesServiceRef = useRef<any>(null);
   const webAutocompleteServiceRef = useRef<any>(null);
@@ -95,7 +95,7 @@ export const usePlacesAutocomplete = ({
 
   const getCityCoordinates = useCallback((address: string): { lat: number; lng: number } => {
     const lowerAddress = address.toLowerCase();
-    
+
     if (lowerAddress.includes('sydney')) return { lat: -33.8688, lng: 151.2093 };
     if (lowerAddress.includes('melbourne')) return { lat: -37.8136, lng: 144.9631 };
     if (lowerAddress.includes('brisbane')) return { lat: -27.4698, lng: 153.0251 };
@@ -104,7 +104,7 @@ export const usePlacesAutocomplete = ({
     if (lowerAddress.includes('canberra')) return { lat: -35.2809, lng: 149.1300 };
     if (lowerAddress.includes('gold coast')) return { lat: -28.0167, lng: 153.4000 };
     if (lowerAddress.includes('newcastle')) return { lat: -32.9267, lng: 151.7789 };
-    
+
     // Default to Sydney
     return { lat: -33.8688, lng: 151.2093 };
   }, []);
@@ -117,12 +117,12 @@ export const usePlacesAutocomplete = ({
     }
 
     setIsLoading(true);
-    
+
     try {
       // For now, always use mock data to avoid CORS issues
       // In production, you would use a proxy server or Firebase Functions
       console.log('Searching places for:', query);
-      
+
       // Enhanced mock data with better Australian locations and full addresses
       const mockPredictions = [
         {
@@ -166,10 +166,10 @@ export const usePlacesAutocomplete = ({
           },
         },
       ];
-      
+
       // Simulate network delay
       await new Promise(resolve => setTimeout(resolve, 300));
-      
+
       setPredictions(mockPredictions.slice(0, 5));
       setShowPredictions(true);
     } catch (error) {
@@ -203,10 +203,10 @@ export const usePlacesAutocomplete = ({
     setShowPredictions(false);
     setPredictions([]);
     setIsLoading(true);
-    
+
     try {
       let location: Location;
-      
+
       if (GOOGLE_PLACES_API_KEY && !prediction.place_id.startsWith('mock_')) {
         if (Platform.OS === 'web' && window.google?.maps?.places && webPlacesServiceRef.current) {
           await new Promise<void>((resolve) => {
@@ -239,7 +239,7 @@ export const usePlacesAutocomplete = ({
           `&fields=name,formatted_address,geometry` +
           `&key=${GOOGLE_PLACES_API_KEY}` +
           `&sessiontoken=${sessionToken}`;
-          
+
         const detailsResponse = await fetch(detailsUrl);
         if (detailsResponse.ok) {
           const detailsData = await detailsResponse.json();
@@ -259,7 +259,7 @@ export const usePlacesAutocomplete = ({
           }
         }
       }
-      
+
       // Always create location with full address from prediction
       const cityCoordinates = getCityCoordinates(prediction.description);
       location = {

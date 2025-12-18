@@ -16,6 +16,7 @@ import {
 import { db } from '@/config/firebase';
 import { Ride, Booking, User } from '@/types';
 import { NotificationService } from './notifications';
+import { logger } from '@/utils/logger';
 
 // Audit log service
 class AuditService {
@@ -41,7 +42,7 @@ export class RidesService {
   // Create a new ride
   static async createRide(rideData: Partial<Ride>): Promise<string> {
     try {
-      console.log('Creating ride with data:', rideData);
+      logger.debug('Creating ride with data:', rideData);
 
       // Validate required fields
       if (!rideData.driverId || !rideData.from || !rideData.to || !rideData.departureTime) {
@@ -68,7 +69,7 @@ export class RidesService {
         updatedAt: serverTimestamp()
       });
 
-      console.log('Ride created successfully with ID:', rideRef.id);
+      logger.info('Ride created successfully with ID:', rideRef.id);
 
       // Log audit trail
       await AuditService.logAction('CREATE_RIDE', 'ride', rideRef.id, rideData.driverId!, {
@@ -183,7 +184,7 @@ export class RidesService {
         return new Date(aTime).getTime() - new Date(bTime).getTime();
       });
 
-      console.log('Loaded available rides (future only):', rides.length, deliveryOnly ? '(delivery-enabled only)' : '(all rides)');
+      logger.debug('Loaded available rides (future only):', rides.length, deliveryOnly ? '(delivery-enabled only)' : '(all rides)');
       return rides;
     } catch (error: any) {
       console.error('Get all available rides error:', error);
@@ -203,7 +204,7 @@ export class RidesService {
           limit(Math.max(1, Math.min(200, pageSize)))
         );
       } catch {
-        console.log('Using simple query for user rides due to missing index');
+        logger.debug('Using simple query for user rides due to missing index');
         q = query(
           collection(db, 'rides'),
           where('driverId', '==', userId),
@@ -227,7 +228,7 @@ export class RidesService {
       // Sort manually if needed
       rides.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      console.log('Loaded user rides for driver:', userId, '- Count:', rides.length, '(includes past and future)');
+      logger.debug('Loaded user rides for driver:', userId, '- Count:', rides.length, '(includes past and future)');
       return rides;
     } catch (error: any) {
       console.error('Get user rides error:', error);
@@ -245,7 +246,7 @@ export class RidesService {
     initialStatus: 'pending_driver' | 'pending_payment' = 'pending_driver'
   ): Promise<string> {
     try {
-      console.log('Creating booking request:', rideId, 'for passenger:', passengerId, 'seats:', seats);
+      logger.debug('Creating booking request:', rideId, 'for passenger:', passengerId, 'seats:', seats);
 
       // Validate booking data
       if (!rideId || !passengerId || !seats || seats <= 0) {
@@ -448,7 +449,7 @@ export class RidesService {
           limit(Math.max(1, Math.min(200, pageSize)))
         );
       } catch {
-        console.log('Using simple query for user bookings due to missing index');
+        logger.debug('Using simple query for user bookings due to missing index');
         q = query(
           collection(db, 'bookings'),
           where('riderId', '==', userId),
@@ -718,7 +719,7 @@ export class RidesService {
   // Accept booking (Driver action)
   static async acceptBooking(bookingId: string, driverId: string): Promise<void> {
     try {
-      console.log('Accepting booking:', bookingId, 'by driver:', driverId);
+      logger.debug('Accepting booking:', bookingId, 'by driver:', driverId);
 
       // Get booking data
       const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -881,7 +882,7 @@ export class RidesService {
     reason?: string
   ): Promise<void> {
     try {
-      console.log('Rejecting booking:', bookingId, 'by driver:', driverId);
+      logger.debug('Rejecting booking:', bookingId, 'by driver:', driverId);
 
       // Get booking data
       const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -952,7 +953,7 @@ export class RidesService {
     reason?: string
   ): Promise<void> {
     try {
-      console.log('Cancelling booking:', bookingId, 'by passenger:', passengerId);
+      logger.debug('Cancelling booking:', bookingId, 'by passenger:', passengerId);
 
       // Get booking and ride data
       const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -1190,7 +1191,7 @@ export class RidesService {
     }
   ): Promise<void> {
     try {
-      console.log('Updating ride:', rideId, 'by driver:', driverId, 'updates:', updates);
+      logger.debug('Updating ride:', rideId, 'by driver:', driverId, 'updates:', updates);
 
       // 1. Verify the ride exists and belongs to this driver
       const ride = await this.getRideById(rideId);

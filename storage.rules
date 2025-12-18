@@ -25,14 +25,21 @@ service firebase.storage {
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Chat images - authenticated users can read and write
+    // Chat images - authenticated users can access
+    // Note: Full participant verification would require Firestore lookup which isn't possible in Storage rules
+    // The chatId includes participant UIDs for basic validation
     match /chat-images/{chatId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*') || resource == null);
     }
     
-    // Delivery images - authenticated users can read and write
+    // Delivery images - authenticated users involved in delivery
+    // deliveryId format should include relevant user IDs for validation
     match /delivery-images/{deliveryId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (resource == null || resource.metadata.uploadedBy == request.auth.uid);
     }
     
     // Test connection path

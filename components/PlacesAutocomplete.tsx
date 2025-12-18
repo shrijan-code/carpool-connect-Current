@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Keyboard, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Keyboard, Platform, Modal, FlatList } from 'react-native';
 import { Colors } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { Location } from '@/types';
-import { MapPin } from 'lucide-react-native';
+import { MapPin, X, Search } from 'lucide-react-native';
 
 declare global {
   interface Window {
@@ -31,6 +32,8 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
 }) => {
   // Create unique instance ID to prevent state sharing
   const instanceId = React.useRef(Math.random().toString(36).substr(2, 9)).current;
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [inputValue, setInputValue] = useState<string>('');
   const [predictions, setPredictions] = useState<any[]>([]);
   const [showPredictions, setShowPredictions] = useState<boolean>(false);
@@ -42,8 +45,8 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
   const webAutocompleteServiceRef = useRef<any>(null);
   const hiddenMapDivRef = useRef<HTMLDivElement | null>(null);
 
-  // Optimized debouncing with longer delay and minimum length check
-  const debouncedCall = useCallback((fn: (q: string) => void, q: string, wait = 1500) => {
+  // Optimized debouncing with faster delay for better UX
+  const debouncedCall = useCallback((fn: (q: string) => void, q: string, wait = 350) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     // Only call if query is long enough to be meaningful
     if (q.length >= 3) {
@@ -59,7 +62,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
         // For web, we should use the Google Places JS SDK instead of direct API calls
         throw new Error('CORS: Use Google JS Places SDK on web');
       }
-      const response = await fetch(url, { 
+      const response = await fetch(url, {
         signal: controller.signal,
         method: 'GET',
         headers: {
@@ -78,12 +81,12 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
   useEffect(() => {
     // Only update input value if it's different from current value
     // This prevents clearing user input when they're typing
-    const newValue = value?.address && value.address.trim() !== '' 
-      ? value.address 
-      : value?.name && value.name.trim() !== '' 
-        ? value.name 
+    const newValue = value?.address && value.address.trim() !== ''
+      ? value.address
+      : value?.name && value.name.trim() !== ''
+        ? value.name
         : '';
-    
+
     // Only update if the value is actually different and not empty
     if (newValue !== inputValue && newValue !== '') {
       console.log(`[${instanceId}] Updating input value from prop:`, newValue);
@@ -135,7 +138,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
         console.error('Failed to init Google Places JS SDK:', e);
       });
 
-    return () => {};
+    return () => { };
   }, []);
 
   // Optimized Google Places API integration with session tokens
@@ -148,7 +151,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
     }
 
     setIsLoading(true);
-    
+
     try {
       if (GOOGLE_PLACES_API_KEY) {
         if (Platform.OS === 'web' && window.google?.maps?.places && webAutocompleteServiceRef.current) {
@@ -156,7 +159,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
           const request: any = {
             input: query,
             componentRestrictions: { country: 'au' },
-            types: ['geocode'],
+            // Include all place types for better results (establishments, addresses, etc.)
             sessionToken,
           };
           await new Promise<void>((resolve) => {
@@ -186,7 +189,6 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
         const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?` +
           `input=${encodeURIComponent(query)}` +
           `&key=${GOOGLE_PLACES_API_KEY}` +
-          `&types=geocode` +
           `&components=country:au` +
           `&location=${australiaCenter}` +
           `&radius=${radius}` +
@@ -212,79 +214,16 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
         }
       }
 
-      // Enhanced mock predictions with better Australian locations and structured formatting
-      const mockPredictions = [
-        { 
-          description: `${query} Street, Sydney NSW 2000, Australia`, 
-          place_id: `mock_${query}_syd_${Date.now()}`, 
-          types: ['street_address'],
-          structured_formatting: {
-            main_text: `${query} Street`,
-            secondary_text: 'Sydney NSW 2000, Australia'
-          }
-        },
-        { 
-          description: `${query} Road, Melbourne VIC 3000, Australia`, 
-          place_id: `mock_${query}_mel_${Date.now()}`, 
-          types: ['route'],
-          structured_formatting: {
-            main_text: `${query} Road`,
-            secondary_text: 'Melbourne VIC 3000, Australia'
-          }
-        },
-        { 
-          description: `${query} Avenue, Brisbane QLD 4000, Australia`, 
-          place_id: `mock_${query}_bne_${Date.now()}`, 
-          types: ['route'],
-          structured_formatting: {
-            main_text: `${query} Avenue`,
-            secondary_text: 'Brisbane QLD 4000, Australia'
-          }
-        },
-        { 
-          description: `${query} Drive, Perth WA 6000, Australia`, 
-          place_id: `mock_${query}_per_${Date.now()}`, 
-          types: ['route'],
-          structured_formatting: {
-            main_text: `${query} Drive`,
-            secondary_text: 'Perth WA 6000, Australia'
-          }
-        },
-        { 
-          description: `${query} Close, Adelaide SA 5000, Australia`, 
-          place_id: `mock_${query}_adl_${Date.now()}`, 
-          types: ['route'],
-          structured_formatting: {
-            main_text: `${query} Close`,
-            secondary_text: 'Adelaide SA 5000, Australia'
-          }
-        },
-      ];
-
-      setPredictions(mockPredictions);
-      setShowPredictions(true);
+      // If no API key or API failed, don't show fake addresses
+      // Just show empty state - the user needs a valid API key
+      console.log('No API key available or API call failed - showing no predictions');
+      setPredictions([]);
+      setShowPredictions(false);
     } catch (error) {
       console.error('Places search error:', error);
-      const fallbackPredictions = [
-        { 
-          description: `${query} Street, Sydney NSW 2000, Australia`, 
-          place_id: `fallback_${query}_syd_${Date.now()}`,
-          structured_formatting: {
-            main_text: `${query} Street`,
-            secondary_text: 'Sydney NSW 2000, Australia'
-          }
-        },
-        { 
-          description: `${query} Road, Melbourne VIC 3000, Australia`, 
-          place_id: `fallback_${query}_mel_${Date.now()}`,
-          structured_formatting: {
-            main_text: `${query} Road`,
-            secondary_text: 'Melbourne VIC 3000, Australia'
-          }
-        },
-      ];
-      setPredictions(fallbackPredictions);
-      setShowPredictions(true);
+      // Don't show fake fallback addresses - just clear predictions
+      setPredictions([]);
+      setShowPredictions(false);
     } finally {
       setIsLoading(false);
     }
@@ -294,28 +233,28 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
     console.log(`[${instanceId}] Text changed:`, text);
     setInputValue(text);
     setHasSelectedFromPredictions(false); // Reset selection flag when user types
-    
+
     // Clear predictions immediately if text is too short
     if (text.length < 3) {
       setPredictions([]);
       setShowPredictions(false);
       return;
     }
-    
-    // Use longer debounce delay to reduce API calls
-    debouncedCall(searchPlaces, text, 1500);
+
+    // Use optimized debounce delay for responsive UX
+    debouncedCall(searchPlaces, text, 350);
   };
 
   const handlePredictionSelect = async (prediction: any) => {
     console.log(`[${instanceId}] Prediction selected:`, prediction);
-    
+
     // Set the full description immediately for better UX
     setInputValue(prediction.description);
     setShowPredictions(false);
     setPredictions([]);
     setIsLoading(true);
     setHasSelectedFromPredictions(true);
-    
+
     try {
       // Always create a location with the full address from prediction
       // This ensures we have a complete address even if API calls fail
@@ -327,7 +266,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
         latitude: cityCoordinates.lat + (Math.random() - 0.5) * 0.005,
         longitude: cityCoordinates.lng + (Math.random() - 0.5) * 0.005,
       };
-      
+
       console.log(`[${instanceId}] Created location:`, location);
       onLocationSelect(location);
     } catch (error) {
@@ -346,11 +285,11 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
       setIsLoading(false);
     }
   };
-  
+
   // Enhanced helper function for comprehensive Australian city coordinates
   const getCityCoordinates = (address: string): { lat: number; lng: number } => {
     const lowerAddress = address.toLowerCase();
-    
+
     // Major cities
     if (lowerAddress.includes('sydney')) {
       return { lat: -33.8688, lng: 151.2093 };
@@ -409,18 +348,18 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
     } else if (lowerAddress.includes('act') || lowerAddress.includes('australian capital territory')) {
       return { lat: -35.2809, lng: 149.1300 }; // Canberra
     }
-    
+
     // Default to Sydney (most populous city)
     return { lat: -33.8688, lng: 151.2093 };
   };
-  
+
   // Handle error cases after hooks
   if (!onLocationSelect || typeof onLocationSelect !== 'function') {
     console.error('PlacesAutocomplete: onLocationSelect prop is required and must be a function');
     return (
       <View style={[styles.container, style]} testID="places-autocomplete">
         <View style={styles.inputContainer}>
-          <MapPin size={20} color={Colors.textSecondary} style={styles.icon} />
+          <MapPin size={20} color={colors.textSecondary} style={styles.icon} />
           <Text style={styles.errorText}>Error: Missing or invalid onLocationSelect prop</Text>
         </View>
       </View>
@@ -433,14 +372,14 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
   return (
     <View style={[styles.container, style]} testID="places-autocomplete">
       <View style={styles.inputContainer}>
-        <MapPin size={20} color={Colors.textSecondary} style={styles.icon} />
+        <MapPin size={20} color={colors.textSecondary} style={styles.icon} />
         <TextInput
           testID="places-input"
           placeholder={placeholder}
           value={inputValue}
           onChangeText={handleTextChange}
           style={styles.input}
-          placeholderTextColor={Colors.textSecondary}
+          placeholderTextColor={colors.textSecondary}
           autoCapitalize="words"
           autoCorrect={false}
           onFocus={() => {
@@ -465,7 +404,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
       {Platform.OS === 'web' && (
         <View style={styles.hiddenMapDiv} ref={(ref) => { hiddenMapDivRef.current = ref as unknown as HTMLDivElement; }} />
       )}
-      
+
       {showPredictions && safePredictions.length > 0 && (
         <View style={styles.predictionsContainer}>
           {safePredictions.map((prediction, index) => (
@@ -478,7 +417,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
               }}
               activeOpacity={0.7}
             >
-              <MapPin size={16} color={Colors.textSecondary} />
+              <MapPin size={16} color={colors.textSecondary} />
               <View style={styles.predictionTextContainer}>
                 <Text style={styles.predictionText} numberOfLines={2}>
                   {prediction.description}
@@ -493,7 +432,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
           ))}
         </View>
       )}
-      
+
       {!GOOGLE_PLACES_API_KEY && (
         <Text style={styles.note}>
           Demo mode: Add EXPO_PUBLIC_GOOGLE_PLACES_API_KEY for real Australian autocomplete
@@ -511,9 +450,12 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
   container: {
-    flex: 1,
+    position: 'relative',
+    zIndex: 9999,
+    // Ensure proper stacking context
+    elevation: 999,
   },
   autocompleteContainer: {
     flex: 1,
@@ -521,9 +463,9 @@ const styles = StyleSheet.create({
   textInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 50,
@@ -531,7 +473,7 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     fontSize: 16,
-    color: Colors.text,
+    color: colors.text,
     backgroundColor: 'transparent',
     marginLeft: 12,
   },
@@ -539,9 +481,9 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   listView: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderTopWidth: 0,
     borderBottomLeftRadius: 12,
     borderBottomRightRadius: 12,
@@ -549,19 +491,19 @@ const styles = StyleSheet.create({
     maxHeight: 200,
   },
   row: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: colors.borderLight,
   },
   separator: {
     height: 1,
-    backgroundColor: Colors.borderLight,
+    backgroundColor: colors.borderLight,
   },
   description: {
     fontSize: 14,
-    color: Colors.text,
+    color: colors.text,
   },
   poweredContainer: {
     display: 'none',
@@ -569,9 +511,9 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: 16,
     height: 50,
@@ -582,57 +524,68 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     fontSize: 16,
-    color: Colors.text,
+    color: colors.text,
     backgroundColor: 'transparent',
   },
   predictionsContainer: {
-    backgroundColor: Colors.background,
+    position: 'absolute',
+    top: 52, // Height of the input + small gap
+    left: 0,
+    right: 0,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderTopWidth: 0,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-    marginTop: -1,
-    maxHeight: 200,
-    zIndex: 1000,
+    borderColor: colors.primary,
+    borderRadius: 12,
+    maxHeight: 280,
+    zIndex: 99999,
+    elevation: 999, // High elevation for Android
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    overflow: 'hidden',
   },
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: colors.borderLight || colors.border,
+    backgroundColor: colors.card,
+    minHeight: 60, // Ensure proper touch target
   },
   predictionTextContainer: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 12,
   },
   predictionText: {
-    fontSize: 14,
-    color: Colors.text,
-    fontWeight: '500' as const,
+    fontSize: 15,
+    color: colors.text,
+    fontWeight: '600' as const,
+    lineHeight: 20,
   },
   predictionSecondaryText: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    marginTop: 2,
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 4,
+    lineHeight: 18,
   },
   note: {
     fontSize: 12,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginTop: 4,
     fontStyle: 'italic' as const,
   },
   loadingText: {
     fontSize: 12,
-    color: Colors.primary,
+    color: colors.primary,
     marginTop: 4,
     fontStyle: 'italic' as const,
   },
   errorText: {
     fontSize: 14,
-    color: Colors.error,
+    color: colors.error,
     textAlign: 'center',
     padding: 16,
   },

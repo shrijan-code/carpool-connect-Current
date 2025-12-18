@@ -141,6 +141,31 @@ export const fixSeatAvailability = onCall(async (request) => {
 export const fixSeatAvailabilityHttp = onRequest(async (req, res) => {
   console.log("🔧 Starting seat availability fix (HTTP)...");
 
+  // Authentication check - require admin token
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    res.status(401).json({ success: false, error: "Authorization required" });
+    return;
+  }
+
+  try {
+    const token = authHeader.split("Bearer ")[1];
+    const decodedToken = await admin.auth().verifyIdToken(token);
+
+    // Verify user has admin claim or is authenticated
+    // For extra security, you can require admin claim: decodedToken.admin === true
+    if (!decodedToken.uid) {
+      res.status(403).json({ success: false, error: "Forbidden" });
+      return;
+    }
+
+    console.log(`✅ Authenticated user ${decodedToken.uid} initiating seat fix`);
+  } catch (authError: any) {
+    console.error("Authentication failed:", authError.message);
+    res.status(401).json({ success: false, error: "Invalid or expired token" });
+    return;
+  }
+
   try {
     const ridesSnapshot = await db.collection("rides").get();
     console.log(`Found ${ridesSnapshot.size} rides to check`);
@@ -603,7 +628,12 @@ export const createBooking = onCall(async (request) => {
       pickupLocation: pickupLocation || rideData.origin,
       dropoffLocation: dropoffLocation || rideData.destination,
       totalPrice: totalPrice || rideData.pricePerSeat || 0,
-      notes: notes || "",
+      // Sanitize notes to prevent XSS and limit length
+      notes: (notes || "")
+        .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+        .replace(/javascript:/gi, '')
+        .replace(/on\w+\s*=/gi, '')
+        .slice(0, 500), // Limit to 500 chars
       status: "pending",
       paymentStatus: "unpaid",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),

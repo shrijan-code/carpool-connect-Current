@@ -183,7 +183,7 @@ export interface Notification {
   title: string;
   body: string;
   type: 'booking_request' | 'booking_accepted' | 'booking_rejected' | 'ride_started' | 'ride_completed' | 'message' | 'payment' | 'system';
-  data?: any;
+  data?: Record<string, unknown>;
   read: boolean;
   createdAt: string;
 }
@@ -240,4 +240,104 @@ export interface SafetyReport {
   resolution?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// ============================================================================
+// Error Handling Types
+// ============================================================================
+
+/**
+ * Standard error interface with message
+ */
+export interface ErrorWithMessage {
+  message: string;
+  code?: string;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Type guard to check if error has a message property
+ */
+export function isErrorWithMessage(error: unknown): error is ErrorWithMessage {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof (error as Record<string, unknown>).message === 'string'
+  );
+}
+
+/**
+ * Get error message from unknown error type
+ */
+export function getErrorMessage(error: unknown): string {
+  if (isErrorWithMessage(error)) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+// ============================================================================
+// Audit & Logging Types
+// ============================================================================
+
+/**
+ * Generic audit log data type
+ */
+export type AuditLogData = Record<string, unknown> | null | undefined;
+
+/**
+ * Structured audit log entry
+ */
+export interface AuditLog {
+  action: string;
+  entityType: string;
+  entityId: string;
+  userId: string;
+  data: AuditLogData;
+  timestamp: string;
+  createdAt: string;
+}
+
+// ============================================================================
+// Legacy Compatibility Types
+// ============================================================================
+
+/**
+ * Legacy booking type that used passengerId instead of riderId
+ * Used for backwards compatibility with old bookings
+ */
+export interface LegacyBooking extends Omit<Booking, 'riderId'> {
+  passengerId?: string;
+  riderId?: string;
+}
+
+/**
+ * Type guard to check if booking is legacy format
+ */
+export function isLegacyBooking(booking: Booking | LegacyBooking): booking is LegacyBooking {
+  return 'passengerId' in booking && !!booking.passengerId && !booking.riderId;
+}
+
+/**
+ * Normalize legacy booking to current format
+ */
+export function normalizeBooking(booking: Booking | LegacyBooking): Booking {
+  if (isLegacyBooking(booking)) {
+    return {
+      ...booking,
+      riderId: booking.passengerId!,
+    };
+  }
+  return booking as Booking;
+}
+
+/**
+ * Get rider ID from booking (handles both legacy and current format)
+ */
+export function getBookingRiderId(booking: Booking | LegacyBooking): string {
+  return booking.riderId || (booking as LegacyBooking).passengerId || '';
 }

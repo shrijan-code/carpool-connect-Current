@@ -5,6 +5,7 @@
 import { Platform } from 'react-native';
 import SecurityManager from './SecurityManager';
 import { auth } from '@/config/firebase';
+import type { Auth } from 'firebase/auth';
 
 interface ApiRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -29,7 +30,7 @@ export class SecureApiClient {
   private readonly maxRetries = 3;
   private requestQueue: Map<string, Promise<any>> = new Map();
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): SecureApiClient {
     if (!SecureApiClient.instance) {
@@ -39,7 +40,7 @@ export class SecureApiClient {
   }
 
   public async secureRequest<T = any>(
-    url: string, 
+    url: string,
     options: ApiRequestOptions = {}
   ): Promise<ApiResponse<T>> {
     const {
@@ -54,7 +55,7 @@ export class SecureApiClient {
     try {
       // Generate request identifier for rate limiting
       const requestId = this.generateRequestId(url, method, auth.currentUser?.uid);
-      
+
       // Check rate limiting
       const rateLimitCheck = await SecurityManager.checkRateLimit(requestId, rateLimitType);
       if (!rateLimitCheck.allowed) {
@@ -68,7 +69,7 @@ export class SecureApiClient {
 
       // Validate and sanitize request data
       const sanitizedBody = this.sanitizeRequestBody(body);
-      
+
       // Check for duplicate requests (prevent request flooding)
       const requestKey = `${method}:${url}:${JSON.stringify(sanitizedBody)}`;
       if (this.requestQueue.has(requestKey)) {
@@ -106,13 +107,13 @@ export class SecureApiClient {
   }
 
   private async executeRequest<T>(
-    url: string, 
+    url: string,
     options: Required<Omit<ApiRequestOptions, 'rateLimitType'>>
   ): Promise<ApiResponse<T>> {
     const { method, headers, body, timeout, retries } = options;
-    
+
     let lastError: Error | null = null;
-    
+
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         // Add exponential backoff for retries
@@ -146,7 +147,7 @@ export class SecureApiClient {
         // Parse response
         const contentType = response.headers.get('content-type');
         let data: T;
-        
+
         if (contentType && contentType.includes('application/json')) {
           data = await response.json();
         } else {
@@ -163,12 +164,12 @@ export class SecureApiClient {
 
       } catch (error: any) {
         lastError = error;
-        
+
         // Don't retry for certain errors
         if (error.name === 'AbortError') {
           break; // Timeout - don't retry
         }
-        
+
         if (error.message.includes('401') || error.message.includes('403')) {
           break; // Auth errors - don't retry
         }
@@ -241,8 +242,17 @@ export class SecureApiClient {
   }
 
   private generateCSRFToken(): string {
-    // Simple CSRF token generation
-    return btoa(`${Date.now()}-${Math.random()}`);
+    // Use crypto-secure random for CSRF token
+    const array = new Uint8Array(32);
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      crypto.getRandomValues(array);
+    } else {
+      // Fallback for environments without crypto
+      for (let i = 0; i < array.length; i++) {
+        array[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    return btoa(String.fromCharCode.apply(null, Array.from(array)));
   }
 
   private validateResponseData(data: any): any {
@@ -281,13 +291,13 @@ export class SecureApiClient {
       // Import Firebase functions dynamically to avoid circular dependencies
       const { getFunctions, httpsCallable } = await import('firebase/functions');
       const { functions } = await import('@/config/firebase');
-      
+
       const callable = httpsCallable(functions, functionName);
-      
+
       // Check rate limiting for Firebase calls
       const requestId = `firebase:${functionName}:${auth.currentUser?.uid || 'anonymous'}`;
       const rateLimitCheck = await SecurityManager.checkRateLimit(requestId, options.rateLimitType || 'api');
-      
+
       if (!rateLimitCheck.allowed) {
         return {
           success: false,
@@ -299,10 +309,10 @@ export class SecureApiClient {
 
       // Sanitize input data
       const sanitizedData = this.sanitizeRequestBody(data);
-      
+
       // Execute Firebase function
       const result = await callable(sanitizedData);
-      
+
       return {
         success: true,
         data: result.data as T
@@ -310,7 +320,7 @@ export class SecureApiClient {
 
     } catch (error: any) {
       console.error(`[SecureApiClient] Firebase function ${functionName} failed:`, error);
-      
+
       // Handle specific Firebase errors
       if (error.code === 'functions/unauthenticated') {
         return {
@@ -318,14 +328,14 @@ export class SecureApiClient {
           error: 'Authentication required'
         };
       }
-      
+
       if (error.code === 'functions/permission-denied') {
         return {
           success: false,
           error: 'Permission denied'
         };
       }
-      
+
       return {
         success: false,
         error: error.message || 'Firebase function call failed'

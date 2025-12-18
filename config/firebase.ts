@@ -8,10 +8,33 @@ import { Platform } from 'react-native';
 
 // Get Firebase configuration from environment variables
 const getFirebaseConfig = () => {
+  // Debug: Log environment variable status
+  if (__DEV__) {
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('🔍 [Firebase Config] Checking environment variables...');
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    const envVars = {
+      'FIREBASE_API_KEY': process.env.FIREBASE_API_KEY,
+      'EXPO_PUBLIC_FIREBASE_API_KEY': process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+      'FIREBASE_PROJECT_ID': process.env.FIREBASE_PROJECT_ID,
+      'EXPO_PUBLIC_FIREBASE_PROJECT_ID': process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+    };
+
+    Object.entries(envVars).forEach(([key, value]) => {
+      const status = value ? '✓ Loaded' : '✗ Missing';
+      const preview = value ? `(${String(value).substring(0, 20)}...)` : '';
+      console.log(`  ${status} ${key} ${preview}`);
+    });
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  }
+
   // Try to get from Expo Constants first (for production builds)
   const extra = Constants.expoConfig?.extra;
 
   if (extra?.firebase) {
+    console.log('✓ [Firebase Config] Using configuration from Expo Constants');
     return {
       apiKey: extra.firebase.apiKey,
       authDomain: extra.firebase.authDomain,
@@ -23,16 +46,51 @@ const getFirebaseConfig = () => {
     };
   }
 
-  // Fallback to process.env for development
-  return {
-    apiKey: process.env.FIREBASE_API_KEY || "AIzaSyCxwV_Va0voJxTdc8aAcqqphKIQp3FnAIo",
-    authDomain: process.env.FIREBASE_AUTH_DOMAIN || "carpoolconnect1-0.firebaseapp.com",
-    projectId: process.env.FIREBASE_PROJECT_ID || "carpoolconnect1-0",
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "carpoolconnect1-0.appspot.com",
-    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "889604849863",
-    appId: process.env.FIREBASE_APP_ID || "1:889604849863:web:8734c34781342a92197ee2",
-    measurementId: process.env.FIREBASE_MEASUREMENT_ID || "G-VMLT612MQN",
+  console.log('ℹ️  [Firebase Config] Using configuration from environment variables');
+
+  // Use environment variables - no hardcoded fallbacks for security
+  const config = {
+    apiKey: process.env.FIREBASE_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.FIREBASE_PROJECT_ID || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.FIREBASE_APP_ID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
+    measurementId: process.env.FIREBASE_MEASUREMENT_ID || process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID,
   };
+
+  // Validate required fields are present
+  if (!config.apiKey || !config.projectId) {
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('❌ [Firebase Config] CRITICAL ERROR: Missing required configuration!');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('Missing fields:');
+    if (!config.apiKey) console.error('  ✗ FIREBASE_API_KEY or EXPO_PUBLIC_FIREBASE_API_KEY');
+    if (!config.projectId) console.error('  ✗ FIREBASE_PROJECT_ID or EXPO_PUBLIC_FIREBASE_PROJECT_ID');
+    console.error('');
+    console.error('📋 Solution:');
+    console.error('  1. Ensure your .env file exists in the project root');
+    console.error('  2. Verify it contains the required Firebase variables');
+    console.error('  3. Restart the Metro bundler (npx expo start --clear)');
+    console.error('  4. Check .env.example for the correct format');
+    console.error('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+    // In development, provide helpful error; in production this would fail
+    if (__DEV__) {
+      throw new Error(
+        '🔥 Firebase configuration not found!\n\n' +
+        'Your .env file is either missing or not being loaded correctly.\n' +
+        'Check the console logs above for details.\n\n' +
+        'Required variables:\n' +
+        '  - FIREBASE_API_KEY\n' +
+        '  - FIREBASE_PROJECT_ID\n' +
+        '  - (and other Firebase config variables)\n\n' +
+        'See .env.example for the correct format.'
+      );
+    }
+  }
+
+  return config;
 };
 
 // Initialize Firebase
@@ -53,8 +111,8 @@ if (getApps().length === 0) {
 }
 
 // Initialize Firebase services
-let auth;
-let db;
+let auth: ReturnType<typeof getAuth>;
+let db: ReturnType<typeof getFirestore>;
 
 try {
   auth = getAuth(app);

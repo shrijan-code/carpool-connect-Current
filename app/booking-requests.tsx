@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack } from 'expo-router';
+import { Stack, useLocalSearchParams } from 'expo-router';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/colors';
+import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { Booking } from '@/types';
-import { Clock, User, DollarSign, Check, X } from 'lucide-react-native';
+import { Clock, User, DollarSign, Check, X, Loader } from 'lucide-react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 const isSmallScreen = screenWidth < 375;
@@ -15,8 +16,12 @@ const isSmallScreen = screenWidth < 375;
 export default function BookingRequestsScreen() {
   const { user } = useAuthStore();
   const { acceptBooking, declineBooking, getPendingBookingRequests, isLoading } = useRidesStore();
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const params = useLocalSearchParams<{ bookingId?: string }>();
   const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(true);
+  const [processingBookingId, setProcessingBookingId] = useState<string | null>(null);
 
   const loadPendingBookings = useCallback(async () => {
     if (!user?.id || user.role !== 'driver') return;
@@ -48,6 +53,7 @@ export default function BookingRequestsScreen() {
         {
           text: 'Accept',
           onPress: async () => {
+            setProcessingBookingId(booking.id);
             try {
               await acceptBooking(booking.id, user!.id);
 
@@ -56,8 +62,11 @@ export default function BookingRequestsScreen() {
                 `You've accepted ${booking.passenger?.name || 'the passenger'}'s booking.\n\n• Payment has been captured\n• Chat is now enabled\n• Passenger has been notified`,
                 [{ text: 'OK', onPress: loadPendingBookings }]
               );
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to accept booking');
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to accept booking';
+              Alert.alert('Error', errorMessage);
+            } finally {
+              setProcessingBookingId(null);
             }
           }
         }
@@ -75,6 +84,7 @@ export default function BookingRequestsScreen() {
           text: 'Decline',
           style: 'destructive',
           onPress: async () => {
+            setProcessingBookingId(booking.id);
             try {
               await declineBooking(booking.id, booking.rideId, booking.seats, user!.id, 'Declined by driver');
 
@@ -83,8 +93,11 @@ export default function BookingRequestsScreen() {
                 `You've declined ${booking.passenger?.name || 'the passenger'}'s booking.\n\n• Payment authorization cancelled\n• Passenger has been notified`,
                 [{ text: 'OK', onPress: loadPendingBookings }]
               );
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to decline booking');
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : 'Failed to decline booking';
+              Alert.alert('Error', errorMessage);
+            } finally {
+              setProcessingBookingId(null);
             }
           }
         }
@@ -126,8 +139,8 @@ export default function BookingRequestsScreen() {
     <SafeAreaView style={styles.container}>
       <Stack.Screen options={{
         title: 'Booking Requests',
-        headerStyle: { backgroundColor: Colors.primary },
-        headerTintColor: Colors.background
+        headerStyle: { backgroundColor: colors.primary },
+        headerTintColor: colors.background
       }} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -143,98 +156,117 @@ export default function BookingRequestsScreen() {
             <Text style={styles.emptyText}>Loading booking requests...</Text>
           </Card>
         ) : pendingBookings.length > 0 ? (
-          pendingBookings.map((booking) => (
-            <Card key={booking.id} style={styles.bookingCard}>
-              <View style={styles.bookingHeader}>
-                <View style={styles.passengerInfo}>
-                  <View style={styles.passengerAvatar}>
-                    <Text style={styles.passengerAvatarText}>
-                      {(booking.passenger?.name || 'P').charAt(0)}
-                    </Text>
+          pendingBookings
+            // Reorder to put highlighted booking first
+            .sort((a, b) => {
+              if (params.bookingId === a.id) return -1;
+              if (params.bookingId === b.id) return 1;
+              return 0;
+            })
+            .map((booking) => (
+              <Card key={booking.id} style={[
+                styles.bookingCard,
+                params.bookingId === booking.id && { borderColor: Colors.primary, borderWidth: 2 }
+              ]}>
+                <View style={styles.bookingHeader}>
+                  <View style={styles.passengerInfo}>
+                    <View style={styles.passengerAvatar}>
+                      <Text style={styles.passengerAvatarText}>
+                        {(booking.passenger?.name || 'P').charAt(0)}
+                      </Text>
+                    </View>
+                    <View style={styles.passengerDetails}>
+                      <Text style={styles.passengerName}>{booking.passenger?.name || 'Unknown Passenger'}</Text>
+                      <View style={styles.passengerRating}>
+                        <Text style={styles.ratingText}>⭐ {booking.passenger?.rating ?? 'N/A'}</Text>
+                        <Text style={styles.ridesCount}>• {booking.passenger?.totalRides ?? 0} rides</Text>
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.passengerDetails}>
-                    <Text style={styles.passengerName}>{booking.passenger?.name || 'Unknown Passenger'}</Text>
-                    <View style={styles.passengerRating}>
-                      <Text style={styles.ratingText}>⭐ {booking.passenger?.rating ?? 'N/A'}</Text>
-                      <Text style={styles.ridesCount}>• {booking.passenger?.totalRides ?? 0} rides</Text>
+                  <View style={styles.requestTime}>
+                    <Text style={styles.timeAgo}>{getTimeAgo(booking.createdAt)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.rideInfo}>
+                  <View style={styles.routeContainer}>
+                    <View style={styles.routePoint}>
+                      <View style={[styles.dot, styles.fromDot]} />
+                      <Text style={[
+                        styles.locationText,
+                        isSmallScreen && styles.smallScreenLocationText
+                      ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride?.origin?.name || booking.ride?.from?.name || 'Unknown'}</Text>
+                    </View>
+                    <View style={styles.routeLine} />
+                    <View style={styles.routePoint}>
+                      <View style={[styles.dot, styles.toDot]} />
+                      <Text style={[
+                        styles.locationText,
+                        isSmallScreen && styles.smallScreenLocationText
+                      ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride?.destination?.name || booking.ride?.to?.name || 'Unknown'}</Text>
+                    </View>
+                  </View>
+
+                  <View style={[styles.bookingDetails, isSmallScreen && styles.smallScreenDetails]}>
+                    <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>
+                      <Clock size={isSmallScreen ? 14 : 16} color={Colors.textSecondary} />
+                      <Text style={[
+                        styles.detailText,
+                        isSmallScreen && styles.smallScreenDetailText
+                      ]} numberOfLines={isSmallScreen ? 2 : 1}>
+                        {formatDate(booking.ride?.departureAt || booking.ride?.departureTime || '')} at {formatTime(booking.ride?.departureAt || booking.ride?.departureTime || '')}
+                      </Text>
+                    </View>
+                    <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>
+                      <User size={isSmallScreen ? 14 : 16} color={Colors.textSecondary} />
+                      <Text style={[
+                        styles.detailText,
+                        isSmallScreen && styles.smallScreenDetailText
+                      ]}>
+                        {booking.seats} seat{booking.seats !== 1 ? 's' : ''} requested
+                      </Text>
+                    </View>
+                    <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>
+                      <DollarSign size={isSmallScreen ? 14 : 16} color={Colors.textSecondary} />
+                      <Text style={[
+                        styles.detailText,
+                        isSmallScreen && styles.smallScreenDetailText
+                      ]}>
+                        ${(booking.amountTotal / 100).toFixed(2)} total
+                      </Text>
                     </View>
                   </View>
                 </View>
-                <View style={styles.requestTime}>
-                  <Text style={styles.timeAgo}>{getTimeAgo(booking.createdAt)}</Text>
-                </View>
-              </View>
 
-              <View style={styles.rideInfo}>
-                <View style={styles.routeContainer}>
-                  <View style={styles.routePoint}>
-                    <View style={[styles.dot, styles.fromDot]} />
-                    <Text style={[
-                      styles.locationText,
-                      isSmallScreen && styles.smallScreenLocationText
-                    ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride?.origin?.name || booking.ride?.from?.name || 'Unknown'}</Text>
-                  </View>
-                  <View style={styles.routeLine} />
-                  <View style={styles.routePoint}>
-                    <View style={[styles.dot, styles.toDot]} />
-                    <Text style={[
-                      styles.locationText,
-                      isSmallScreen && styles.smallScreenLocationText
-                    ]} numberOfLines={isSmallScreen ? 2 : 1}>{booking.ride?.destination?.name || booking.ride?.to?.name || 'Unknown'}</Text>
-                  </View>
+                <View style={[styles.actionButtons, isSmallScreen && styles.smallScreenActionButtons]}>
+                  {processingBookingId === booking.id ? (
+                    <View style={styles.processingContainer}>
+                      <ActivityIndicator size="small" color={Colors.primary} />
+                      <Text style={styles.processingText}>Processing...</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.declineButton, isSmallScreen && styles.smallScreenActionButton]}
+                        onPress={() => handleDeclineBooking(booking)}
+                        disabled={processingBookingId !== null}
+                      >
+                        <X size={isSmallScreen ? 14 : 16} color={Colors.error} />
+                        <Text style={[styles.actionButtonText, styles.declineButtonText, isSmallScreen && styles.smallScreenActionButtonText]}>Decline Request</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.acceptButton, isSmallScreen && styles.smallScreenActionButton]}
+                        onPress={() => handleAcceptBooking(booking)}
+                        disabled={processingBookingId !== null}
+                      >
+                        <Check size={isSmallScreen ? 14 : 16} color={Colors.background} />
+                        <Text style={[styles.actionButtonText, styles.acceptButtonText, isSmallScreen && styles.smallScreenActionButtonText]}>Accept Request</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
-
-                <View style={[styles.bookingDetails, isSmallScreen && styles.smallScreenDetails]}>
-                  <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>
-                    <Clock size={isSmallScreen ? 14 : 16} color={Colors.textSecondary} />
-                    <Text style={[
-                      styles.detailText,
-                      isSmallScreen && styles.smallScreenDetailText
-                    ]} numberOfLines={isSmallScreen ? 2 : 1}>
-                      {formatDate(booking.ride?.departureAt || booking.ride?.departureTime || '')} at {formatTime(booking.ride?.departureAt || booking.ride?.departureTime || '')}
-                    </Text>
-                  </View>
-                  <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>
-                    <User size={isSmallScreen ? 14 : 16} color={Colors.textSecondary} />
-                    <Text style={[
-                      styles.detailText,
-                      isSmallScreen && styles.smallScreenDetailText
-                    ]}>
-                      {booking.seats} seat{booking.seats !== 1 ? 's' : ''} requested
-                    </Text>
-                  </View>
-                  <View style={[styles.detailItem, isSmallScreen && styles.smallScreenDetailItem]}>
-                    <DollarSign size={isSmallScreen ? 14 : 16} color={Colors.textSecondary} />
-                    <Text style={[
-                      styles.detailText,
-                      isSmallScreen && styles.smallScreenDetailText
-                    ]}>
-                      ${(booking.amountTotal / 100).toFixed(2)} total
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <View style={[styles.actionButtons, isSmallScreen && styles.smallScreenActionButtons]}>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.declineButton, isSmallScreen && styles.smallScreenActionButton]}
-                  onPress={() => handleDeclineBooking(booking)}
-                  disabled={isLoading}
-                >
-                  <X size={isSmallScreen ? 14 : 16} color={Colors.error} />
-                  <Text style={[styles.actionButtonText, styles.declineButtonText, isSmallScreen && styles.smallScreenActionButtonText]}>Decline Request</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.acceptButton, isSmallScreen && styles.smallScreenActionButton]}
-                  onPress={() => handleAcceptBooking(booking)}
-                  disabled={isLoading}
-                >
-                  <Check size={isSmallScreen ? 14 : 16} color={Colors.background} />
-                  <Text style={[styles.actionButtonText, styles.acceptButtonText, isSmallScreen && styles.smallScreenActionButtonText]}>Accept Request</Text>
-                </TouchableOpacity>
-              </View>
-            </Card>
-          ))
+              </Card>
+            ))
         ) : (
           <Card style={styles.emptyCard}>
             <Clock size={48} color={Colors.textLight} style={styles.emptyIcon} />
@@ -249,10 +281,10 @@ export default function BookingRequestsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.surface,
+    backgroundColor: colors.surface,
   },
   content: {
     flex: 1,
@@ -264,12 +296,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: '700' as const,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   bookingCard: {
     marginBottom: 16,
@@ -290,13 +322,13 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
   passengerAvatarText: {
-    color: Colors.background,
+    color: colors.background,
     fontSize: 18,
     fontWeight: '600' as const,
   },
@@ -306,7 +338,7 @@ const styles = StyleSheet.create({
   passengerName: {
     fontSize: 18,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 2,
   },
   passengerRating: {
@@ -315,11 +347,11 @@ const styles = StyleSheet.create({
   },
   ratingText: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
   },
   ridesCount: {
     fontSize: 14,
-    color: Colors.textLight,
+    color: colors.textLight,
     marginLeft: 4,
   },
   requestTime: {
@@ -327,7 +359,7 @@ const styles = StyleSheet.create({
   },
   timeAgo: {
     fontSize: 12,
-    color: Colors.textLight,
+    color: colors.textLight,
     fontWeight: '500' as const,
   },
   rideInfo: {
@@ -347,22 +379,22 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   fromDot: {
-    backgroundColor: Colors.secondary,
+    backgroundColor: colors.secondary,
   },
   toDot: {
-    backgroundColor: Colors.primary,
+    backgroundColor: colors.primary,
   },
   routeLine: {
     width: 2,
     height: 20,
-    backgroundColor: Colors.borderLight,
+    backgroundColor: colors.borderLight,
     marginLeft: 5,
     marginVertical: 4,
   },
   locationText: {
     fontSize: isSmallScreen ? 14 : 16,
     fontWeight: '500' as const,
-    color: Colors.text,
+    color: colors.text,
     flex: 1,
   },
   smallScreenLocationText: {
@@ -385,7 +417,7 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: isSmallScreen ? 12 : 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     marginLeft: 8,
     flex: 1,
     flexWrap: 'wrap',
@@ -417,12 +449,12 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   acceptButton: {
-    backgroundColor: Colors.success,
+    backgroundColor: colors.success,
   },
   declineButton: {
-    backgroundColor: Colors.background,
+    backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: Colors.error,
+    borderColor: colors.error,
   },
   actionButtonText: {
     fontSize: isSmallScreen ? 12 : 14,
@@ -432,10 +464,10 @@ const styles = StyleSheet.create({
     fontSize: 10,
   },
   acceptButtonText: {
-    color: Colors.background,
+    color: colors.background,
   },
   declineButtonText: {
-    color: Colors.error,
+    color: colors.error,
   },
   emptyCard: {
     alignItems: 'center',
@@ -447,13 +479,26 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 18,
     fontWeight: '600' as const,
-    color: Colors.text,
+    color: colors.text,
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
-    color: Colors.textSecondary,
+    color: colors.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
+  },
+  processingContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  processingText: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '500' as const,
   },
 });
