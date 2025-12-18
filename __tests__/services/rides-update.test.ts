@@ -104,16 +104,26 @@ describe('RidesService.updateRide', () => {
             });
 
             // Mock getRideBookings with confirmed booking
+            // The function uses forEach to iterate the docs
+            const mockBookingData = {
+                rideId: 'ride123',
+                driverId: 'driver123',
+                status: 'confirmed',
+                seats: 2,
+            };
+
             const mockBookingsSnapshot = {
                 empty: false,
                 docs: [{
                     id: 'booking1',
-                    data: () => ({
-                        rideId: 'ride123',
-                        status: 'confirmed',
-                        seats: 2,
-                    }),
+                    data: () => mockBookingData,
                 }],
+                forEach: (callback: (doc: any) => void) => {
+                    callback({
+                        id: 'booking1',
+                        data: () => mockBookingData,
+                    });
+                },
             };
             (getDocs as jest.Mock).mockResolvedValue(mockBookingsSnapshot);
 
@@ -146,6 +156,17 @@ describe('RidesService.updateRide', () => {
                 RidesService.updateRide('ride123', 'driver123', { pricePerSeat: 0 })
             ).rejects.toThrow('Price must be greater than zero');
 
+            // Reset mocks for second assertion
+            (getDoc as jest.Mock).mockResolvedValueOnce({
+                exists: () => true,
+                data: () => mockRide,
+            });
+            (getDocs as jest.Mock).mockResolvedValueOnce({
+                empty: true,
+                docs: [],
+                forEach: () => { },
+            });
+
             await expect(
                 RidesService.updateRide('ride123', 'driver123', { pricePerSeat: -100 })
             ).rejects.toThrow('Price must be greater than zero');
@@ -158,9 +179,31 @@ describe('RidesService.updateRide', () => {
         });
 
         it('should reject seats outside valid range (1-8)', async () => {
+            // Reset mocks for first assertion
+            (getDoc as jest.Mock).mockResolvedValueOnce({
+                exists: () => true,
+                data: () => mockRide,
+            });
+            (getDocs as jest.Mock).mockResolvedValueOnce({
+                empty: true,
+                docs: [],
+                forEach: () => { },
+            });
+
             await expect(
                 RidesService.updateRide('ride123', 'driver123', { seatsTotal: 0 })
             ).rejects.toThrow('Available seats must be between 1 and 8');
+
+            // Reset mocks for second assertion
+            (getDoc as jest.Mock).mockResolvedValueOnce({
+                exists: () => true,
+                data: () => mockRide,
+            });
+            (getDocs as jest.Mock).mockResolvedValueOnce({
+                empty: true,
+                docs: [],
+                forEach: () => { },
+            });
 
             await expect(
                 RidesService.updateRide('ride123', 'driver123', { seatsTotal: 9 })
