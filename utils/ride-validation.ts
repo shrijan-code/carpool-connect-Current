@@ -39,25 +39,29 @@ export function canEditRide(ride: Ride, bookings: Booking[]): ValidationResult {
         };
     }
 
-    // Rule 2: Check for confirmed bookings
+    // Rule 2: Check for ANY active bookings (pending or confirmed)
+    // Once a rider has requested a booking, the driver should NOT be able to change
+    // the core ride details (location, date, time, price) as the rider made their
+    // decision based on those details.
     const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
+    const pendingBookings = bookings.filter(b => b.status === 'pending_driver');
+    const totalActiveBookings = confirmedBookings.length + pendingBookings.length;
 
-    if (confirmedBookings.length > 0) {
+    if (totalActiveBookings > 0) {
+        let reason = '';
+        if (confirmedBookings.length > 0 && pendingBookings.length > 0) {
+            reason = `Limited editing - ${confirmedBookings.length} confirmed and ${pendingBookings.length} pending booking(s). Cannot change date, time, route, or price.`;
+        } else if (confirmedBookings.length > 0) {
+            reason = `Limited editing - ${confirmedBookings.length} passenger(s) have confirmed bookings. Cannot change date, time, route, or price.`;
+        } else {
+            reason = `Limited editing - ${pendingBookings.length} pending booking request(s). Cannot change date, time, route, or price until requests are resolved.`;
+        }
+
         return {
             allowed: true,
             limitedEdit: true,
             editableFields: ['notes', 'availableSeats'], // Can only increase seats or edit notes
-            reason: `Limited editing - ${confirmedBookings.length} passenger(s) have confirmed bookings. Cannot change date, time, route, or reduce price.`
-        };
-    }
-
-    // Rule 3: Check for pending bookings (still allows full edit, but warn)
-    const pendingBookings = bookings.filter(b => b.status === 'pending_driver');
-
-    if (pendingBookings.length > 0) {
-        return {
-            allowed: true,
-            warning: `${pendingBookings.length} pending booking request(s) will see your updated ride details.`
+            reason
         };
     }
 
@@ -78,8 +82,8 @@ export function canDeleteRide(ride: Ride, bookings: Booking[]): ValidationResult
         return {
             allowed: false,
             reason: `Cannot delete ${ride.status} rides. ${ride.status === 'active' ? 'Cancel the ride instead.' :
-                    ride.status === 'completed' ? 'Completed rides are historical records.' :
-                        'This ride has already been cancelled.'
+                ride.status === 'completed' ? 'Completed rides are historical records.' :
+                    'This ride has already been cancelled.'
                 }`
         };
     }

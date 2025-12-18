@@ -228,13 +228,13 @@ export const validateUrl = (url: string): boolean => {
  * Validate ride edit permissions
  * @param ride - The ride object to check
  * @param userId - The user attempting to edit
- * @param hasConfirmedBookings - Whether the ride has confirmed bookings
+ * @param bookings - Array of bookings for this ride (or boolean for backward compatibility)
  * @returns Object with canEdit boolean, limitedEdit flag, and reason if not allowed
  */
 export const validateRideEditPermissions = (
     ride: { driverId: string; status: string },
     userId: string,
-    hasConfirmedBookings: boolean
+    bookingsOrHasConfirmed: Array<{ status: string }> | boolean
 ): { canEdit: boolean; limitedEdit?: boolean; editableFields?: string[]; reason?: string } => {
     // Check ownership
     if (ride.driverId !== userId) {
@@ -249,13 +249,41 @@ export const validateRideEditPermissions = (
         };
     }
 
-    // Check for confirmed bookings - allow limited editing
-    if (hasConfirmedBookings) {
+    // Handle both array and boolean for compatibility
+    let hasActiveBookings = false;
+    let confirmedCount = 0;
+    let pendingCount = 0;
+
+    if (typeof bookingsOrHasConfirmed === 'boolean') {
+        // Backward compatibility - old boolean parameter
+        hasActiveBookings = bookingsOrHasConfirmed;
+        confirmedCount = bookingsOrHasConfirmed ? 1 : 0;
+    } else {
+        // New array parameter - check for ANY active bookings
+        confirmedCount = bookingsOrHasConfirmed.filter(b => b.status === 'confirmed').length;
+        pendingCount = bookingsOrHasConfirmed.filter(b => b.status === 'pending_driver').length;
+        hasActiveBookings = confirmedCount > 0 || pendingCount > 0;
+    }
+
+    // Check for ANY active bookings (pending OR confirmed) - enforce limited editing
+    // Once a rider has requested a booking, the driver should NOT be able to change
+    // the core ride details (location, date, time, price) as the rider made their
+    // decision based on those details.
+    if (hasActiveBookings) {
+        let reason = '';
+        if (confirmedCount > 0 && pendingCount > 0) {
+            reason = `Limited editing - ${confirmedCount} confirmed and ${pendingCount} pending booking(s). Cannot change date, time, route, or price.`;
+        } else if (confirmedCount > 0) {
+            reason = `Limited editing - ${confirmedCount} passenger(s) have confirmed bookings. Cannot change date, time, route, or price.`;
+        } else {
+            reason = `Limited editing - ${pendingCount} pending booking request(s). Cannot change date, time, route, or price until requests are resolved.`;
+        }
+
         return {
             canEdit: true,
             limitedEdit: true,
             editableFields: ['notes', 'availableSeats'],
-            reason: 'Limited editing - passengers have confirmed bookings. Cannot change date, time, route, or price.'
+            reason
         };
     }
 

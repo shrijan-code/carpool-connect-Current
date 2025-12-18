@@ -59,12 +59,12 @@ export default function EditRideScreen() {
                     return;
                 }
 
-                // Check for confirmed bookings
+                // Get all bookings for this ride
                 const bookings = await RidesService.getRideBookings(id, user.id);
-                const hasConfirmedBookings = bookings.some(b => b.status === 'confirmed');
 
-                // Validate edit permissions
-                const permissions = validateRideEditPermissions(ride, user.id, hasConfirmedBookings);
+                // Validate edit permissions - pass full bookings array
+                // This will check for BOTH pending and confirmed bookings
+                const permissions = validateRideEditPermissions(ride, user.id, bookings);
 
                 if (!permissions.canEdit) {
                     setEditError(permissions.reason || 'Cannot edit this ride');

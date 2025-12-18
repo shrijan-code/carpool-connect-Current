@@ -494,9 +494,7 @@ export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
 const createStyles = (colors: any) => StyleSheet.create({
   container: {
     position: 'relative',
-    zIndex: 9999,
-    // Ensure proper stacking context
-    elevation: 999,
+    // Modal handles its own stacking, no need for high z-index here
   },
   autocompleteContainer: {
     flex: 1,

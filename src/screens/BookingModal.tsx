@@ -31,7 +31,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 }) => {
   const { user } = useAuthStore();
   const { requestBooking } = useRidesStore();
-  
+
   const [selectedSeats, setSelectedSeats] = useState<number>(1);
   const [isBooking, setIsBooking] = useState<boolean>(false);
   const [bookingStep, setBookingStep] = useState<'select' | 'confirm' | 'processing' | 'success'>('select');
@@ -49,8 +49,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const pricing = useMemo(() => {
     const pricePerSeat = ride.pricePerSeat || 0;
     const subtotalCents = pricePerSeat * selectedSeats;
-    const platformFeePercent = 10; // 10% platform fee
-    const platformFeeCents = Math.round(subtotalCents * (platformFeePercent / 100));
+    const platformFeeCents = 500; // $5 AUD flat platform fee (in cents)
     const totalCents = subtotalCents + platformFeeCents;
 
     return {
@@ -58,7 +57,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       subtotalCents,
       platformFeeCents,
       totalCents,
-      platformFeePercent,
     };
   }, [ride, selectedSeats]);
 
@@ -84,7 +82,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
     try {
       await requestBooking(ride.id, selectedSeats, user);
-      
+
       setBookingStep('success');
       setTimeout(() => {
         onSuccess();
@@ -94,7 +92,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     } catch (error: any) {
       console.error('Booking error:', error);
       setBookingStep('select');
-      
+
       const errorMessage = error.message || 'Failed to create booking request. Please try again.';
       Alert.alert('Booking Failed', errorMessage);
     } finally {
@@ -153,7 +151,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
       <View style={styles.pricingBreakdown}>
         <Text style={styles.pricingTitle}>Pricing Breakdown</Text>
-        
+
         <View style={styles.pricingRow}>
           <Text style={styles.pricingLabel}>
             {selectedSeats} seat{selectedSeats !== 1 ? 's' : ''} × {formatCurrency(pricing.pricePerSeat)}
@@ -165,7 +163,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
 
         <View style={styles.pricingRow}>
           <Text style={styles.pricingLabel}>
-            Platform fee ({pricing.platformFeePercent}%)
+            Platform fee ($5 flat)
           </Text>
           <Text style={styles.pricingValue}>
             {formatCurrency(pricing.platformFeeCents)}
