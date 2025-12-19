@@ -160,6 +160,59 @@ When the Beta build is confirmed stable:
 
 ---
 
+## 🛡️ 6. Backup & Recovery Strategy
+
+**Rule of Thumb:** GitHub is for Code. Google Cloud is for Data. Password Manager is for Keys.
+
+### A. Codebase Backups
+*   **Primary:** GitHub (The cloud "truth").
+*   **Secondary:** Your local machine (a clone).
+*   **Tertiary (Optional but Recommended):** A "mirror" of the GitHub repo to another service like Bitbucket or GitLab once a month. This protects you if GitHub goes down or your account is locked.
+
+### B. Database Backups (Firestore)
+Google data centers are resilient, but they don't protect against **you** accidentally deleting a collection.
+
+1.  **Automated Daily Exports:**
+    Configure a Google Cloud Scheduler job to run `gcloud firestore export` every night.
+    *   **Destination:** A private Google Cloud Storage (GCS) Bucket.
+    *   **Retention:** Set the bucket lifecycle to delete files older than 30 days to save costs.
+
+2.  **Point-in-Time Recovery (PITR):**
+    Enable PITR in Firestore settings. This allows you to "undo" writes from the last 7 days.
+
+### C. Environment Configs (The "Keys to the Castle")
+Your `.env` files and `keys` are NOT in GitHub. **If you lose these, you cannot deploy.**
+
+*   **Where to store:** A secure password manager (1Password, LastPass, Bitwarden) as a "Secure Note".
+*   **What to store:**
+    *   Content of `.env.production`
+    *   Content of `.env.development`
+    *   Stripe Secret Keys
+    *   Apple Developer Signing Certificates (`.p12` files) - **Critical for iOS updates**
+    *   Android Keystore (`.keystore` file) - **Critical for Android updates**
+
+---
+
+## 🐙 7. Source Control Standards (GitHub)
+
+### Branch Protection Rules
+Go to **GitHub Settings > Branches** and add rules for `main` and `dev`:
+
+1.  **Require Pull Request reviews:** Prevent pushing directly to `main`. Require at least 1 approval.
+2.  **Require status checks to pass:** Ensure tests pass (CI) before merging.
+3.  **Include administrators:** even YOU should follow the rules.
+
+### Recommended Branch Structure
+
+| Branch | Protection | Purpose |
+|--------|------------|---------|
+| `main` | **Strict** | Production code. ONLY merge from `dev`. Never push directly. |
+| `dev`  | **Moderate** | Staging code. Merge features here. |
+| `feat/*` | None | Feature work. Delete after merging. |
+| `fix/*` | None | Bug fixes. Delete after merging. |
+
+---
+
 ## ✅ Deployment Checklist
 
 - [ ] **Domain:** Purchased and accessible.
