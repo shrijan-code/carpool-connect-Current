@@ -123,10 +123,10 @@ function Hero() {
 // Stats Section
 function Stats() {
   const stats = [
-    { value: '50K+', label: 'Active Users' },
-    { value: '100K+', label: 'Rides Shared' },
-    { value: '500T', label: 'CO₂ Saved' },
-    { value: '$2M+', label: 'Saved on Fuel' },
+    { value: '50K+', label: 'Target Users' },
+    { value: '100K+', label: 'Projected Rides' },
+    { value: '500T', label: 'CO₂ Savings Goal' },
+    { value: '$2M+', label: 'Fuel Savings Goal' },
   ];
 
   return (

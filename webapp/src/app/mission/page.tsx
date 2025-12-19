@@ -40,10 +40,10 @@ function Navbar() {
 
 export default function MissionPage() {
     const impacts = [
-        { icon: '🌳', value: '10,000+', label: 'Trees Worth of CO₂ Saved' },
-        { icon: '🚗', value: '50K+', label: 'Cars Off the Road' },
-        { icon: '💵', value: '$500K+', label: 'Saved by Our Community' },
-        { icon: '🤝', value: '100K+', label: 'Connections Made' },
+        { icon: '🌳', value: '10,000+', label: 'Annual CO₂ Goal (Tonnes)' },
+        { icon: '🚗', value: '50K+', label: 'Cars Off Road (Goal)' },
+        { icon: '💵', value: '$500K+', label: 'Projected Community Savings' },
+        { icon: '🤝', value: '100K+', label: 'Future Connections' },
     ];
 
     const goals = [
@@ -95,7 +95,7 @@ export default function MissionPage() {
                     <div className="glass rounded-3xl p-12 relative overflow-hidden">
                         <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--primary)] opacity-10 blur-3xl" />
                         <h2 className="text-3xl md:text-4xl font-bold mb-8">
-                            Why We <span className="gradient-text">Created CarpoolConnect</span>
+                            Why We Are <span className="gradient-text">Creating CarpoolConnect</span>
                         </h2>
                         <div className="space-y-6 text-lg text-[var(--text-secondary)] leading-relaxed">
                             <p>
@@ -109,14 +109,14 @@ export default function MissionPage() {
                                 largest sources of personal carbon emissions.
                             </p>
                             <p>
-                                <strong className="text-white">Our Solution:</strong> CarpoolConnect bridges this gap by connecting
-                                drivers with empty seats to passengers heading the same way. It&apos;s a win-win-win:
+                                <strong className="text-white">Our Solution:</strong> CarpoolConnect is designed to bridge this gap by connecting
+                                drivers with empty seats to passengers heading the same way. It will be a win-win-win:
                                 drivers earn money, passengers save money, and the planet gets a break.
                             </p>
                             <p>
                                 <strong className="text-white">The Vision:</strong> We envision a future where sharing rides is the
                                 norm, not the exception. Where communities are stronger because neighbors help
-                                each other commute. Where we&apos;ve significantly reduced our collective carbon footprint.
+                                each other commute. Where we significantly reduce our collective carbon footprint.
                             </p>
                         </div>
                     </div>
@@ -127,7 +127,7 @@ export default function MissionPage() {
             <section className="py-24 relative">
                 <div className="max-w-6xl mx-auto px-6">
                     <h2 className="text-3xl md:text-4xl font-bold text-center mb-16">
-                        Our <span className="gradient-text">Impact</span>
+                        Projected <span className="gradient-text">Impact</span>
                     </h2>
                     <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                         {impacts.map((impact, i) => (
