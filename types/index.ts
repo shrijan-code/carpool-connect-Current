@@ -113,12 +113,16 @@ export interface Booking {
   passenger: User;
   seats: number;
   amountTotal: number; // in cents
-  status: 'pending_driver' | 'confirmed' | 'declined' | 'cancelled_by_rider' | 'cancelled_by_driver' | 'refunded';
+  status: 'pending_driver' | 'confirmed' | 'declined' | 'cancelled_by_rider' | 'cancelled_by_driver' | 'refunded' | 'expired' | 'payment_failed';
   passengerStatus?: 'waiting' | 'ready' | 'onboard' | 'dropped_off';
   payment: {
     intentId: string;
     latestChargeId?: string;
-    status: 'authorized' | 'captured' | 'cancelled' | 'refunded';
+    status: 'authorized' | 'captured' | 'cancelled' | 'refunded' | 'authorization_failed' | 'permanently_failed';
+    authorizationRetries?: number;
+    lastRetryAt?: string;
+    lastRetryError?: string;
+    failedAt?: string;
   };
   createdAt: string;
   updatedAt?: string;
@@ -128,6 +132,9 @@ export interface Booking {
   cancellationReason?: string;
   cancelledBy?: string;
   rejectedBy?: string;
+  // Expiry tracking
+  expiredAt?: string;
+  expiredReason?: string;
   // Passenger tracking timestamps
   passengerReadyAt?: string;
   passengerOnboardAt?: string;
@@ -192,11 +199,11 @@ export interface PaymentMethod {
   id: string;
   userId: string;
   stripePaymentMethodId: string;
-  type: 'card';
+  type: 'card' | 'bank_account';
   last4: string;
   brand: string;
-  expiryMonth: number;
-  expiryYear: number;
+  expiryMonth?: number;  // Only for cards
+  expiryYear?: number;   // Only for cards
   isDefault: boolean;
 }
 

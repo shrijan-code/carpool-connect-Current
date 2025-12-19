@@ -5,6 +5,7 @@ import { doc, updateDoc, getDoc, addDoc, collection, serverTimestamp } from 'fir
 import { db, functions } from '@/config/firebase';
 import { httpsCallable } from 'firebase/functions';
 import { User } from '@/types';
+import { stripeCircuitBreaker, CircuitBreakerOpenError } from '@/utils/circuit-breaker';
 
 // Stripe Configuration
 export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51HMiYNDuXA4vn5QKRFRjdRH71bcNVlaxgaB459LlIuyAre8qUVEb53vf4haYuAKm2nVPxGssxvxaKN9Eb00kXF1n000Hg6HieO';
@@ -160,6 +161,7 @@ export class StripePaymentService {
   /**
    * Create a payment intent for a ride booking
    * This handles the platform fee and transfer to the driver's connected account
+   * Protected by circuit breaker to prevent cascading failures
    */
   static async createPaymentIntent({
     amount, // In cents
@@ -169,27 +171,23 @@ export class StripePaymentService {
     bookingId: string;
     // Driver ID is handled by backend logic
   }): Promise<{ clientSecret: string; paymentIntentId: string }> {
-    try {
+    // Wrap with circuit breaker
+    return stripeCircuitBreaker.execute(async () => {
       console.log('Creating payment intent via Firebase Functions:', { amount, bookingId });
 
       const processPayment = httpsCallable(functions, 'processPayment');
       const response = await processPayment({
         bookingId,
-        amount: amount / 100, // Backend expects dollars? Checking index.ts...
-        // index.ts: amount = request.data.amount; ... math.round(amount * 100)
-        // So backend expects DOLLARS (or major unit).
-        // Frontend 'amount' is passed as cents in `processRidePayment` (lines 300, 305).
-        // Wait, line 305 passed `amount: amountCents`.
-        // If I pass cents to backend, backend multiplies by 100 -> wrong.
-        // I must pass DOLLARS to backend.
+        amount: amount / 100, // Backend expects dollars
       });
 
       const result = response.data as any;
 
       if (!result.success && result.status !== 'requires_payment_method') {
-        // status is usually 'requires_payment_method' for fresh PI
-        // verifying backend response... 
-        // it returns { success: false, status: ..., clientSecret: ... } for incomplete payments (normal flow)
+        // Only throw if it's a real error, not just an incomplete payment
+        if (result.error) {
+          throw new Error(result.error);
+        }
       }
 
       console.log('Payment intent created:', result.paymentId);
@@ -198,17 +196,22 @@ export class StripePaymentService {
         clientSecret: result.clientSecret,
         paymentIntentId: result.paymentId,
       };
-    } catch (error: any) {
+    }).catch((error: any) => {
+      // Re-throw circuit breaker errors with user-friendly message
+      if (error instanceof CircuitBreakerOpenError) {
+        throw new Error('Payment service is temporarily unavailable. Please try again in a few minutes.');
+      }
       console.error('Error creating payment intent:', error);
       throw new Error(error.message || 'Failed to create payment intent');
-    }
+    });
   }
 
   /**
    * Capture a pre-authorized payment
+   * Protected by circuit breaker to prevent cascading failures
    */
   static async capturePayment(paymentIntentId: string, bookingId: string): Promise<void> {
-    try {
+    return stripeCircuitBreaker.execute(async () => {
       console.log('Capturing payment:', paymentIntentId);
       const capturePaymentFn = httpsCallable(functions, 'capturePayment');
       const response = await capturePaymentFn({ paymentIntentId, bookingId });
@@ -218,10 +221,13 @@ export class StripePaymentService {
         throw new Error('Capture failed on server');
       }
       console.log('Payment captured successfully');
-    } catch (error: any) {
+    }).catch((error: any) => {
+      if (error instanceof CircuitBreakerOpenError) {
+        throw new Error('Payment service is temporarily unavailable. Please try again in a few minutes.');
+      }
       console.error('Error capturing payment:', error);
       throw new Error(error.message || 'Failed to capture payment');
-    }
+    });
   }
 
   /**

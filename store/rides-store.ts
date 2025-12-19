@@ -6,6 +6,7 @@ import { ChatService } from '@/services/chat';
 import { onSnapshot, collection, query, where, orderBy, limit } from 'firebase/firestore';
 import { db } from '@/config/firebase';
 import SecurityManager from '@/security/SecurityManager';
+import { CarpoolBookingService } from '@/services/carpool-booking';
 import { debounce } from 'lodash';
 import { dataCache, CACHE_TTL, CACHE_KEYS } from '@/utils/cache';
 import { listenerManager } from '@/utils/listener-manager';
@@ -465,9 +466,9 @@ export const useRidesStore = create<RidesState>((set, get) => ({
     try {
       console.log(`🚫 Cancelling booking ${bookingId} with type: ${cancellationType}`);
 
-      // For now, use the existing service method
-      // In a real implementation, this would call the new cancellation service
-      await RidesService.cancelBooking(bookingId, rideId, seats);
+      // Use Firebase callable function for proper transactional cancellation with refund processing
+      const result = await CarpoolBookingService.cancelBooking({ bookingId, reason });
+      logger.info('🎫 Cancellation result:', result);
 
       const ride = await RidesService.getRideById(rideId);
       if (ride) {

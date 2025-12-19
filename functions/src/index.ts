@@ -6,6 +6,7 @@
 import * as admin from "firebase-admin";
 import { onRequest, onCall, HttpsError } from "firebase-functions/v2/https";
 import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { sendEmail } from "./utils/email";
 import { createNotification, notificationTemplates } from "./utils/notifications";
 import * as functions from "firebase-functions";
@@ -1242,6 +1243,8 @@ export const authorizeUpcomingRidePayments = onRequest(
                 rideId,
                 riderId: bookingData.riderId,
               },
+            }, {
+              idempotencyKey: `authorize_${bookingDoc.id}_${rideId}`,
             });
 
             if (paymentIntent.status === "requires_capture") {
@@ -1690,7 +1693,9 @@ export const completeRideAndCharge = onCall(
           }
 
           // Capture the authorized payment
-          const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId);
+          const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId, {}, {
+            idempotencyKey: `capture_${bookingDoc.id}`,
+          });
 
           if (paymentIntent.status === "succeeded") {
             await bookingDoc.ref.update({
@@ -1743,6 +1748,8 @@ export const completeRideAndCharge = onCall(
               rideId,
               driverId,
             },
+          }, {
+            idempotencyKey: `transfer_${rideId}_${driverId}`,
           });
           payoutId = transfer.id;
           console.log(`💰 Driver payout processed: $${(driverPayout / 100).toFixed(2)} to ${driverData.stripeAccountId}`);
@@ -1809,13 +1816,15 @@ export const completeRideAndCharge = onCall(
  * 2. Validates booking is in "pending_driver" or "confirmed" status
  * 3. Atomically restores the reserved seats to the ride
  * 4. Updates booking status to "cancelled" with cancelledBy field
- * 5. Sends notification to the other party
+ * 5. Processes Stripe refund/cancellation based on payment state
+ * 6. Sends notification to the other party
  *
- * IMPORTANT: This function does NOT handle refunds. Refunds are processed by:
- * - For pending bookings: No payment authorization exists yet
- * - For confirmed bookings: The scheduled payment capture function handles it
+ * PAYMENT HANDLING:
+ * - For pending bookings: Cancel SetupIntent if exists (no funds held)
+ * - For authorized payments: Cancel PaymentIntent (releases hold)
+ * - For captured payments: Process refund minus cancellation fee
  *
- * CANCELLATION FEES (handled elsewhere):
+ * CANCELLATION FEES (applied to captured payments):
  * - >24h before departure: 5% fee
  * - 12-24h before departure: 25% fee
  * - <12h before departure: 50% fee
@@ -1824,14 +1833,14 @@ export const completeRideAndCharge = onCall(
  * @requires auth - User must be either the rider or driver
  * @param bookingId - The ID of the booking to cancel
  * @param reason - Optional cancellation reason
- * @returns { success, message }
+ * @returns { success, message, refund? }
  * @throws unauthenticated - If user is not logged in
  * @throws invalid-argument - If bookingId is missing
  * @throws not-found - If booking doesn't exist
  * @throws permission-denied - If user is not the rider or driver
  * @throws failed-precondition - If booking is not pending_driver or confirmed
  */
-export const cancelBooking = onCall(async (request) => {
+export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be logged in");
   }
@@ -1847,8 +1856,10 @@ export const cancelBooking = onCall(async (request) => {
     console.log(`🚫 Cancelling booking ${bookingId} by user ${userId}`);
 
     let bookingData: any;
+    let rideData: any;
     let cancelledBy: string;
 
+    // Transaction to update booking and restore seats
     await db.runTransaction(async (transaction) => {
       const bookingRef = db.collection("bookings").doc(bookingId);
       const bookingDoc = await transaction.get(bookingRef);
@@ -1868,15 +1879,18 @@ export const cancelBooking = onCall(async (request) => {
       }
 
       // Can only cancel pending_driver or confirmed bookings
-      // NOTE: "pending_driver" is the initial state, "confirmed" is after driver accepts
       if (bookingData.status !== "pending_driver" && bookingData.status !== "confirmed") {
         throw new HttpsError("failed-precondition", `Cannot cancel a ${bookingData.status} booking`);
       }
 
       cancelledBy = isRider ? "rider" : "driver";
 
-      // Restore seats to the ride
+      // Get ride data for departure time
       const rideRef = db.collection("rides").doc(bookingData.rideId);
+      const rideDoc = await transaction.get(rideRef);
+      rideData = rideDoc.exists ? rideDoc.data() : null;
+
+      // Restore seats to the ride
       transaction.update(rideRef, {
         seatsAvailable: admin.firestore.FieldValue.increment(bookingData.seats),
         availableSeats: admin.firestore.FieldValue.increment(bookingData.seats),
@@ -1895,6 +1909,126 @@ export const cancelBooking = onCall(async (request) => {
       console.log(`✅ Booking cancelled, ${bookingData.seats} seats restored`);
     });
 
+    // =========================================================================
+    // STRIPE REFUND/CANCELLATION PROCESSING
+    // =========================================================================
+    let refundResult: { status: string; amount?: number; fee?: number } | null = null;
+
+    const paymentIntentId = bookingData.payment?.paymentIntentId;
+    const setupIntentId = bookingData.payment?.setupIntentId;
+    const paymentStatus = bookingData.payment?.status;
+
+    if (paymentIntentId || setupIntentId) {
+      const stripe = getStripe();
+
+      try {
+        if (paymentStatus === "authorized" && paymentIntentId) {
+          // Payment was authorized but not captured - cancel to release the hold
+          console.log(`💳 Cancelling authorized PaymentIntent ${paymentIntentId}`);
+          await stripe.paymentIntents.cancel(paymentIntentId, {
+            cancellation_reason: "requested_by_customer",
+          }, {
+            idempotencyKey: `cancel_pi_${bookingId}`,
+          });
+
+          // Update booking with refund info
+          await db.collection("bookings").doc(bookingId).update({
+            "payment.status": "cancelled",
+            "payment.cancelledAt": admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          refundResult = { status: "hold_released" };
+          console.log(`✅ PaymentIntent cancelled, hold released`);
+
+        } else if (paymentStatus === "captured" && paymentIntentId) {
+          // Payment was captured - need to process refund with cancellation fee
+          console.log(`💳 Processing refund for captured PaymentIntent ${paymentIntentId}`);
+
+          // Calculate cancellation fee based on time to departure
+          const departureTime = rideData?.departureTime
+            ? new Date(rideData.departureTime)
+            : null;
+          const now = new Date();
+          const hoursUntilDeparture = departureTime
+            ? (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+            : 999; // If no departure time, assume >24h
+
+          let feePercentage: number;
+          if (hoursUntilDeparture < 0) {
+            // After departure - no refund
+            feePercentage = 100;
+          } else if (hoursUntilDeparture < 12) {
+            feePercentage = 50;
+          } else if (hoursUntilDeparture < 24) {
+            feePercentage = 25;
+          } else {
+            feePercentage = 5;
+          }
+
+          const totalAmount = bookingData.amountTotal || 0;
+          const cancellationFee = Math.round(totalAmount * (feePercentage / 100));
+          const refundAmount = totalAmount - cancellationFee;
+
+          if (refundAmount > 0) {
+            const refund = await stripe.refunds.create({
+              payment_intent: paymentIntentId,
+              amount: refundAmount,
+              reason: "requested_by_customer",
+            }, {
+              idempotencyKey: `refund_${bookingId}`,
+            });
+
+            // Update booking with refund info
+            await db.collection("bookings").doc(bookingId).update({
+              "payment.status": "refunded",
+              "payment.refundId": refund.id,
+              "payment.refundAmount": refundAmount,
+              "payment.cancellationFee": cancellationFee,
+              "payment.refundedAt": admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            refundResult = {
+              status: "refunded",
+              amount: refundAmount / 100,
+              fee: cancellationFee / 100,
+            };
+            console.log(`✅ Refund processed: $${(refundAmount / 100).toFixed(2)} (fee: $${(cancellationFee / 100).toFixed(2)})`);
+          } else {
+            // No refund (after departure or 100% fee)
+            await db.collection("bookings").doc(bookingId).update({
+              "payment.status": "no_refund",
+              "payment.cancellationFee": totalAmount,
+              "payment.refundedAt": admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            refundResult = {
+              status: "no_refund",
+              amount: 0,
+              fee: totalAmount / 100,
+            };
+            console.log(`⚠️ No refund - cancellation fee is 100%`);
+          }
+
+        } else if (setupIntentId && !paymentIntentId) {
+          // Only SetupIntent exists (pending booking) - no payment to cancel
+          console.log(`ℹ️ Booking had only SetupIntent, no payment to cancel`);
+          refundResult = { status: "no_payment" };
+        }
+
+      } catch (stripeError: any) {
+        // Log but don't throw - booking is cancelled, payment team can reconcile
+        console.error(`⚠️ Stripe cancellation/refund error for ${bookingId}:`, stripeError);
+
+        // Update booking to note the refund failure
+        await db.collection("bookings").doc(bookingId).update({
+          "payment.refundError": stripeError.message || "Unknown error",
+          "payment.refundFailedAt": admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        refundResult = { status: "refund_failed" };
+      }
+    }
+
     // Notify the other party
     const notificationUserId = cancelledBy === "rider" ? bookingData.driverId : bookingData.riderId;
     const cancelledNotif = notificationTemplates.bookingCancelled(cancelledBy);
@@ -1910,6 +2044,7 @@ export const cancelBooking = onCall(async (request) => {
     return {
       success: true,
       message: "Booking cancelled successfully",
+      refund: refundResult,
     };
   } catch (error: any) {
     console.error("❌ Cancel booking error:", error);
@@ -1917,6 +2052,7 @@ export const cancelBooking = onCall(async (request) => {
     throw new HttpsError("internal", error.message || "Failed to cancel booking");
   }
 });
+
 
 // ============================================================================
 // BOOKING STATUS CHANGE TRIGGERS - Notifications
@@ -3152,7 +3288,13 @@ export const updateExpiredRides = onRequest(
 // STRIPE PAYMENT INTENT (FOR RIDERS)
 // ============================================================================
 
-export const createPaymentIntent = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
+export const createPaymentIntent = onCall({
+  secrets: ["STRIPE_SECRET_KEY"],
+  // Set timeout to 30 seconds (default is 60, we want faster failure)
+  timeoutSeconds: 30,
+}, async (request) => {
+  const startTime = Date.now();
+
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "User must be logged in");
   }
@@ -3169,7 +3311,7 @@ export const createPaymentIntent = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, as
   try {
     const stripe = getStripe();
 
-    // 1. Get or Create Stripe Customer
+    // 1. Get or Create Stripe Customer (required sequentially)
     const userRef = db.collection("users").doc(userId);
     const userDoc = await userRef.get();
     let customerId = userDoc.data()?.stripeCustomerId;
@@ -3183,32 +3325,36 @@ export const createPaymentIntent = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, as
         metadata: { firebaseUID: userId },
       });
       customerId = customer.id;
-      await userRef.set({ stripeCustomerId: customerId }, { merge: true });
+      // Fire-and-forget Firestore write (don't await)
+      userRef.set({ stripeCustomerId: customerId }, { merge: true })
+        .catch(err => console.error("Background customer save failed:", err));
     }
 
-    // 2. Create Ephemeral Key (for Payment Sheet to allow saving cards)
-    // Required for setup_future_usage
-    // Using 2023-10-16 to match the stripe instance version
-    const ephemeralKey = await stripe.ephemeralKeys.create(
-      { customer: customerId },
-      { apiVersion: "2023-10-16" }
-    );
+    // 2. Create Ephemeral Key and Payment Intent IN PARALLEL
+    // This is the key optimization - these two operations don't depend on each other
+    const [ephemeralKey, paymentIntent] = await Promise.all([
+      stripe.ephemeralKeys.create(
+        { customer: customerId },
+        { apiVersion: "2023-10-16" }
+      ),
+      stripe.paymentIntents.create({
+        amount: parseInt(amount),
+        currency: currency,
+        customer: customerId,
+        setup_future_usage: 'off_session', // Save card for future use
+        capture_method: 'manual', // Authorize only
+        metadata: {
+          userId,
+          rideId,
+          bookingId: bookingId || 'new_booking',
+          seats: String(seats),
+        },
+        description: `Carpool Ride: ${seats} seat(s)`,
+      }),
+    ]);
 
-    // 3. Create Payment Intent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: parseInt(amount),
-      currency: currency,
-      customer: customerId,
-      setup_future_usage: 'off_session', // Save card for future use
-      capture_method: 'manual', // Authorize only
-      metadata: {
-        userId,
-        rideId,
-        bookingId: bookingId || 'new_booking', // might be new
-        seats: String(seats),
-      },
-      description: `Carpool Ride: ${seats} seat(s)`,
-    });
+    const duration = Date.now() - startTime;
+    console.log(`✅ Payment intent created in ${duration}ms`);
 
     return {
       paymentIntentId: paymentIntent.id,
@@ -3218,8 +3364,269 @@ export const createPaymentIntent = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, as
     };
 
   } catch (error: any) {
-    console.error("Error creating payment intent:", error);
+    const duration = Date.now() - startTime;
+    console.error(`Error creating payment intent (${duration}ms):`, error);
     throw new HttpsError("internal", error.message || "Failed to create payment intent");
+  }
+});
+
+// ============================================================================
+// SCHEDULED CLEANUP FUNCTIONS
+// ============================================================================
+
+/**
+ * Cleanup expired pending bookings
+ * Runs every hour to expire booking requests that drivers haven't responded to within 48 hours.
+ * This prevents seat deadlock where seats remain locked indefinitely.
+ */
+export const cleanupExpiredBookings = onSchedule("every 1 hours", async () => {
+  console.log("🧹 Starting expired bookings cleanup...");
+
+  const now = new Date();
+  // Expire bookings older than 48 hours
+  const cutoffTime = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+  try {
+    // Find all pending_driver bookings older than cutoff
+    const expiredBookingsSnapshot = await db
+      .collection("bookings")
+      .where("status", "==", "pending_driver")
+      .where("createdAt", "<", cutoffTime)
+      .get();
+
+    if (expiredBookingsSnapshot.empty) {
+      console.log("✅ No expired bookings found");
+      return;
+    }
+
+    console.log(`📋 Found ${expiredBookingsSnapshot.size} expired bookings to process`);
+
+    let expiredCount = 0;
+    let errorCount = 0;
+
+    for (const bookingDoc of expiredBookingsSnapshot.docs) {
+      try {
+        const bookingData = bookingDoc.data();
+        const bookingId = bookingDoc.id;
+        const rideId = bookingData.rideId;
+        const seats = bookingData.seats || 1;
+        const riderId = bookingData.riderId || bookingData.passengerId;
+        const driverId = bookingData.driverId;
+
+        await db.runTransaction(async (transaction) => {
+          // Get current booking state
+          const bookingRef = db.collection("bookings").doc(bookingId);
+          const currentBookingDoc = await transaction.get(bookingRef);
+
+          if (!currentBookingDoc.exists) {
+            console.log(`⚠️ Booking ${bookingId} no longer exists`);
+            return;
+          }
+
+          const currentBookingData = currentBookingDoc.data();
+
+          // Only process if still in pending_driver state (avoid race conditions)
+          if (currentBookingData?.status !== "pending_driver") {
+            console.log(`⚠️ Booking ${bookingId} status changed to ${currentBookingData?.status}`);
+            return;
+          }
+
+          // Get ride to restore seats
+          const rideRef = db.collection("rides").doc(rideId);
+          const rideDoc = await transaction.get(rideRef);
+
+          if (rideDoc.exists) {
+            const rideData = rideDoc.data();
+            const currentSeats = rideData?.availableSeats ?? rideData?.seatsAvailable ?? 0;
+            const totalSeats = rideData?.totalSeats ?? rideData?.seatsTotal ?? 4;
+            // Restore seats but don't exceed total
+            const newSeats = Math.min(currentSeats + seats, totalSeats);
+
+            transaction.update(rideRef, {
+              availableSeats: newSeats,
+              seatsAvailable: newSeats,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+
+          // Mark booking as expired
+          transaction.update(bookingRef, {
+            status: "expired",
+            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+            expiredReason: "Driver did not respond within 48 hours",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+
+        // Send notifications outside transaction
+        if (riderId) {
+          await createNotification({
+            userId: riderId,
+            title: "Booking Request Expired",
+            body: "Your booking request expired because the driver did not respond within 48 hours. Please try booking another ride.",
+            type: "booking",
+            data: { bookingId, rideId },
+          });
+        }
+
+        if (driverId) {
+          await createNotification({
+            userId: driverId,
+            title: "Booking Request Expired",
+            body: "A booking request expired because it wasn't responded to within 48 hours.",
+            type: "booking",
+            data: { bookingId, rideId },
+          });
+        }
+
+        expiredCount++;
+        console.log(`✅ Expired booking ${bookingId}`);
+      } catch (bookingError) {
+        errorCount++;
+        console.error(`❌ Error expiring booking ${bookingDoc.id}:`, bookingError);
+      }
+    }
+
+    console.log(`🧹 Cleanup complete: ${expiredCount} expired, ${errorCount} errors`);
+  } catch (error) {
+    console.error("❌ Fatal error in cleanupExpiredBookings:", error);
+    throw error;
+  }
+});
+
+/**
+ * Retry failed payment authorizations
+ * Runs every hour to retry payment authorizations that failed, up to 3 attempts.
+ * After 3 failures, marks booking as payment_failed and auto-cancels.
+ */
+export const retryFailedPaymentAuthorizations = onSchedule("every 1 hours", async () => {
+  console.log("💳 Starting failed payment authorization retry...");
+
+  const MAX_RETRIES = 3;
+
+  try {
+    // Find bookings with failed authorization that haven't exceeded retry limit
+    const failedAuthSnapshot = await db
+      .collection("bookings")
+      .where("status", "==", "confirmed")
+      .where("payment.status", "==", "authorization_failed")
+      .get();
+
+    if (failedAuthSnapshot.empty) {
+      console.log("✅ No failed authorizations to retry");
+      return;
+    }
+
+    console.log(`📋 Found ${failedAuthSnapshot.size} failed authorizations to process`);
+
+    const stripe = getStripe();
+    let retryCount = 0;
+    let failedPermanentlyCount = 0;
+
+    for (const bookingDoc of failedAuthSnapshot.docs) {
+      const bookingData = bookingDoc.data();
+      const bookingId = bookingDoc.id;
+      const currentRetries = bookingData.payment?.authorizationRetries || 0;
+
+      if (currentRetries >= MAX_RETRIES) {
+        // Max retries reached - mark as permanently failed
+        console.log(`❌ Booking ${bookingId} exceeded max retries (${MAX_RETRIES})`);
+
+        await db.runTransaction(async (transaction) => {
+          const bookingRef = db.collection("bookings").doc(bookingId);
+          const rideRef = db.collection("rides").doc(bookingData.rideId);
+
+          const rideDoc = await transaction.get(rideRef);
+          if (rideDoc.exists) {
+            const rideData = rideDoc.data();
+            const currentSeats = rideData?.availableSeats ?? 0;
+            const totalSeats = rideData?.totalSeats ?? 4;
+            const newSeats = Math.min(currentSeats + (bookingData.seats || 1), totalSeats);
+
+            transaction.update(rideRef, {
+              availableSeats: newSeats,
+              seatsAvailable: newSeats,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+
+          transaction.update(bookingRef, {
+            status: "payment_failed",
+            "payment.status": "permanently_failed",
+            "payment.failedAt": admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+
+        // Notify rider
+        const riderId = bookingData.riderId || bookingData.passengerId;
+        if (riderId) {
+          await createNotification({
+            userId: riderId,
+            title: "Payment Failed - Booking Cancelled",
+            body: "We couldn't authorize your payment after multiple attempts. Your booking has been cancelled. Please update your payment method and try again.",
+            type: "payment",
+            data: { bookingId, rideId: bookingData.rideId },
+          });
+        }
+
+        failedPermanentlyCount++;
+        continue;
+      }
+
+      // Attempt retry
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: bookingData.amountTotal,
+          currency: "aud",
+          customer: bookingData.payment.customerId,
+          payment_method: bookingData.payment.paymentMethodId,
+          confirm: true,
+          capture_method: "manual",
+          metadata: {
+            bookingId,
+            rideId: bookingData.rideId,
+            riderId: bookingData.riderId,
+            retryAttempt: String(currentRetries + 1),
+          },
+        }, {
+          idempotencyKey: `retry_auth_${bookingId}_${currentRetries + 1}`,
+        });
+
+        if (paymentIntent.status === "requires_capture") {
+          // Success!
+          await bookingDoc.ref.update({
+            "payment.status": "authorized",
+            "payment.intentId": paymentIntent.id,
+            "payment.authorizedAt": admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          console.log(`✅ Successfully re-authorized booking ${bookingId}`);
+          retryCount++;
+        } else {
+          // Still failing
+          await bookingDoc.ref.update({
+            "payment.authorizationRetries": currentRetries + 1,
+            "payment.lastRetryAt": admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (stripeError: any) {
+        console.error(`❌ Retry failed for booking ${bookingId}:`, stripeError.message);
+        await bookingDoc.ref.update({
+          "payment.authorizationRetries": currentRetries + 1,
+          "payment.lastRetryAt": admin.firestore.FieldValue.serverTimestamp(),
+          "payment.lastRetryError": stripeError.message,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    }
+
+    console.log(`💳 Retry complete: ${retryCount} successful, ${failedPermanentlyCount} permanently failed`);
+  } catch (error) {
+    console.error("❌ Fatal error in retryFailedPaymentAuthorizations:", error);
+    throw error;
   }
 });
 

@@ -438,51 +438,77 @@ export default function RidesScreen() {
           ))}
         </View>
       ) : (
-        <View style={styles.filterPillsContainer} testID="bookings-filter-pills">
-          {(['pending', 'confirmed', 'declined', 'all'] as BookingFilter[]).map((filter) => (
-            <TouchableOpacity
-              key={filter}
-              style={styles.modernFilterPill}
-              onPress={() => setBookingFilter(filter)}
-              accessibilityRole="button"
-              testID={`bookings-filter-${filter}`}
-              activeOpacity={0.8}
-            >
-              {bookingFilter === filter ? (
-                <LinearGradient
-                  colors={colors.gradient.cyberpunk}
-                  style={styles.modernFilterPillGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                >
-                  <Text style={styles.modernActiveFilterText}>
-                    {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                  </Text>
-                  {getBookingFilterCount(filter) > 0 && (
-                    <View style={styles.modernActiveFilterCount}>
-                      <Text style={styles.modernActiveFilterCountText}>
-                        {getBookingFilterCount(filter)}
-                      </Text>
-                    </View>
-                  )}
-                </LinearGradient>
-              ) : (
-                <View style={styles.modernInactiveFilterPill}>
-                  <Text style={styles.modernFilterText}>
-                    {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
-                  </Text>
-                  {getBookingFilterCount(filter) > 0 && (
-                    <View style={styles.modernFilterCount}>
-                      <Text style={styles.modernFilterCountText}>
-                        {getBookingFilterCount(filter)}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </TouchableOpacity>
-          ))}
-        </View>
+        /* Only show booking filter pills for RIDERS - drivers only see pending requests */
+        user?.role !== 'driver' ? (
+          <View style={styles.filterPillsContainer} testID="bookings-filter-pills">
+            {(['pending', 'confirmed', 'declined', 'all'] as BookingFilter[]).map((filter) => (
+              <TouchableOpacity
+                key={filter}
+                style={styles.modernFilterPill}
+                onPress={() => setBookingFilter(filter)}
+                accessibilityRole="button"
+                testID={`bookings-filter-${filter}`}
+                activeOpacity={0.8}
+              >
+                {bookingFilter === filter ? (
+                  <LinearGradient
+                    colors={colors.gradient.cyberpunk}
+                    style={styles.modernFilterPillGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Text style={styles.modernActiveFilterText}>
+                      {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    </Text>
+                    {getBookingFilterCount(filter) > 0 && (
+                      <View style={styles.modernActiveFilterCount}>
+                        <Text style={styles.modernActiveFilterCountText}>
+                          {getBookingFilterCount(filter)}
+                        </Text>
+                      </View>
+                    )}
+                  </LinearGradient>
+                ) : (
+                  <View style={styles.modernInactiveFilterPill}>
+                    <Text style={styles.modernFilterText}>
+                      {filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    </Text>
+                    {getBookingFilterCount(filter) > 0 && (
+                      <View style={styles.modernFilterCount}>
+                        <Text style={styles.modernFilterCountText}>
+                          {getBookingFilterCount(filter)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          /* For drivers, show a simple header indicating pending requests count */
+          <View style={styles.filterPillsContainer} testID="driver-pending-header">
+            <View style={[styles.modernFilterPill]}>
+              <LinearGradient
+                colors={colors.gradient.cyberpunk}
+                style={styles.modernFilterPillGradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <Text style={styles.modernActiveFilterText}>
+                  Pending Requests
+                </Text>
+                {driverPendingRequests.length > 0 && (
+                  <View style={styles.modernActiveFilterCount}>
+                    <Text style={styles.modernActiveFilterCountText}>
+                      {driverPendingRequests.length}
+                    </Text>
+                  </View>
+                )}
+              </LinearGradient>
+            </View>
+          </View>
+        )
       )}
 
       <ScrollView

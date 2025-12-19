@@ -1,4 +1,4 @@
-import { 
+import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signOut,
@@ -9,12 +9,12 @@ import {
   signInWithPopup,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { 
-  doc, 
-  setDoc, 
-  getDoc, 
+import {
+  doc,
+  setDoc,
+  getDoc,
   updateDoc,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '@/config/firebase';
 import { User } from '@/types';
@@ -39,14 +39,14 @@ export class AuthService {
         projectId: auth.app.options.projectId,
         authDomain: auth.app.options.authDomain
       });
-      
+
       await sendPasswordResetEmail(auth, email);
       console.log('AuthService: Password reset email sent successfully');
     } catch (error: any) {
       console.error('AuthService: Password reset error:', error);
       console.error('AuthService: Error code:', error.code);
       console.error('AuthService: Error message:', error.message);
-      
+
       // Handle specific Firebase Auth errors
       switch (error.code) {
         case 'auth/user-not-found':
@@ -102,26 +102,26 @@ export class AuthService {
       }
 
       const userCredential = await signInWithEmailAndPassword(auth, sanitizedEmail, password);
-      
+
       // Record successful login
       await SecurityManager.recordSuccessfulLogin(sanitizedEmail);
-      
+
       let user = await this.getUserProfile(userCredential.user.uid);
       if (!user) {
         console.log('User profile not found after sign-in. Creating default profile...');
         user = await this.createUserFromFirebaseUser(userCredential.user);
       }
-      
+
       return user;
     } catch (error: any) {
       console.error('Sign in error:', error);
-      
+
       // Record failed login attempt for brute force protection
       if (email) {
         const sanitizedEmail = SecurityManager.sanitizeInput(email.toLowerCase().trim());
         await SecurityManager.recordFailedLogin(sanitizedEmail);
       }
-      
+
       // Handle specific Firebase Auth errors with security context
       switch (error.code) {
         case 'auth/user-not-found':
@@ -138,8 +138,8 @@ export class AuthService {
   }
 
   static async signUpWithEmail(
-    email: string, 
-    password: string, 
+    email: string,
+    password: string,
     userData: Partial<User>
   ): Promise<User> {
     try {
@@ -182,32 +182,46 @@ export class AuthService {
         // Check if current domain is authorized
         const currentDomain = window.location.hostname;
         console.log('Current domain:', currentDomain);
-        
+
         // Web implementation using popup
         const provider = new GoogleAuthProvider();
         provider.addScope('profile');
         provider.addScope('email');
-        
+
         const userCredential = await signInWithPopup(auth, provider);
-        
+
         // Check if user profile exists, create if not
         let user = await this.getUserProfile(userCredential.user.uid);
         if (!user) {
           user = await this.createUserFromFirebaseUser(userCredential.user);
         }
-        
+
         return user;
       } else {
         // Mobile implementation using AuthSession
         const redirectUri = AuthSession.makeRedirectUri();
         console.log('Redirect URI:', redirectUri);
 
+        // Get OAuth client IDs from environment variables
+        const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS;
+        const androidClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID;
+        const webClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB;
+
+        const clientId = Platform.select({
+          ios: iosClientId,
+          android: androidClientId,
+          default: webClientId,
+        });
+
+        if (!clientId) {
+          throw new Error(
+            `Google Sign-In not configured for ${Platform.OS}. ` +
+            `Please set EXPO_PUBLIC_GOOGLE_CLIENT_ID_${Platform.OS.toUpperCase()} environment variable.`
+          );
+        }
+
         const request = new AuthSession.AuthRequest({
-          clientId: Platform.select({
-            ios: '889604849863-your-ios-client-id.apps.googleusercontent.com', 
-            android: '889604849863-your-android-client-id.apps.googleusercontent.com',
-            default: '889604849863-web:8734c34781342a92197ee2.apps.googleusercontent.com',
-          }),
+          clientId,
           scopes: ['openid', 'profile', 'email'],
           redirectUri,
           responseType: AuthSession.ResponseType.IdToken,
@@ -220,13 +234,13 @@ export class AuthService {
         if (result.type === 'success' && result.params.id_token) {
           const credential = GoogleAuthProvider.credential(result.params.id_token);
           const userCredential = await signInWithCredential(auth, credential);
-          
+
           // Check if user profile exists, create if not
           let user = await this.getUserProfile(userCredential.user.uid);
           if (!user) {
             user = await this.createUserFromFirebaseUser(userCredential.user);
           }
-          
+
           return user;
         } else {
           throw new Error('Google sign in was cancelled');
@@ -234,7 +248,7 @@ export class AuthService {
       }
     } catch (error: any) {
       console.error('Google sign in error:', error);
-      
+
       // Provide specific error messages for common issues
       if (error.code === 'auth/unauthorized-domain') {
         const currentDomain = Platform.OS === 'web' ? window.location.hostname : 'mobile';
@@ -247,7 +261,7 @@ export class AuthService {
       } else if (error.code === 'auth/popup-closed-by-user') {
         throw new Error('Sign-in was cancelled.');
       }
-      
+
       throw new Error(error.message || 'Failed to sign in with Google');
     }
   }

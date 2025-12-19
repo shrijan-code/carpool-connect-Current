@@ -63,3 +63,54 @@ export function formatTotalPrice(pricePerSeatInCents: number, seats: number): st
   const totalInCents = calculateTotalPrice(pricePerSeatInCents, seats);
   return formatPrice(totalInCents);
 }
+
+// =============================================================================
+// PLATFORM FEE CONFIGURATION
+// =============================================================================
+
+/**
+ * Platform service fee in cents ($5.00)
+ * This fee covers payment processing, insurance, and platform maintenance
+ */
+export const PLATFORM_FEE_CENTS = 500;
+
+/**
+ * Platform fee formatted as string
+ */
+export const PLATFORM_FEE_DISPLAY = formatPrice(PLATFORM_FEE_CENTS);
+
+/**
+ * Calculate total with platform fee
+ * @param ridePriceInCents - Base ride price in cents
+ * @returns Total including platform fee in cents
+ */
+export function calculateTotalWithFee(ridePriceInCents: number): number {
+  return ridePriceInCents + PLATFORM_FEE_CENTS;
+}
+
+/**
+ * Format booking total with fee breakdown
+ * @param pricePerSeatInCents - Price per seat in cents
+ * @param seats - Number of seats
+ * @returns Object with ride price, fee, and total
+ */
+export function getBookingPriceBreakdown(pricePerSeatInCents: number, seats: number): {
+  ridePrice: string;
+  ridePriceCents: number;
+  platformFee: string;
+  platformFeeCents: number;
+  total: string;
+  totalCents: number;
+} {
+  const ridePriceCents = calculateTotalPrice(pricePerSeatInCents, seats);
+  const totalCents = calculateTotalWithFee(ridePriceCents);
+
+  return {
+    ridePrice: formatPrice(ridePriceCents),
+    ridePriceCents,
+    platformFee: PLATFORM_FEE_DISPLAY,
+    platformFeeCents: PLATFORM_FEE_CENTS,
+    total: formatPrice(totalCents),
+    totalCents,
+  };
+}

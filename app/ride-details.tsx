@@ -16,7 +16,7 @@ import { Booking, Ride, User, RidePassenger } from '@/types';
 import { EnhancedRideTracking } from '@/components/EnhancedRideTracking';
 import RideDriverActions from '@/components/RideDriverActions';
 import { VerificationBadge } from '@/components/VerificationBadge';
-import { formatPrice, formatTotalPrice } from '@/utils/price';
+import { formatPrice, formatTotalPrice, getBookingPriceBreakdown, PLATFORM_FEE_DISPLAY } from '@/utils/price';
 
 export default function RideDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -297,9 +297,9 @@ export default function RideDetailsScreen() {
     const availableSeats = ride.availableSeats || ride.seatsAvailable || 0;
     const pricePerSeatInCents = Math.round(ride.pricePerSeat);
     for (let i = 1; i <= Math.min(availableSeats, 4); i++) {
-      const totalPrice = formatTotalPrice(pricePerSeatInCents, i);
+      const breakdown = getBookingPriceBreakdown(pricePerSeatInCents, i);
       seatOptions.push({
-        text: `${i} seat${i > 1 ? 's' : ''} - ${totalPrice} (+ $5.00 fee)`,
+        text: `${i} seat${i > 1 ? 's' : ''} - ${breakdown.total} (${breakdown.ridePrice} + ${PLATFORM_FEE_DISPLAY} fee)`,
         onPress: () => handleBookRide(i)
       });
     }

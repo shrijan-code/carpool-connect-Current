@@ -62,9 +62,14 @@ service cloud.firestore {
     // BOOKINGS - Simplified with flexible permissions
     // ============================================================================
     match /bookings/{bookingId} {
-      // Allow read if user is involved in the booking (rider or driver)
-      // Also allow reads for duplicate checking (signed in users can query their own bookings)
-      allow read: if isSignedIn() && isRecentRequest();
+      // Allow read only if user is involved in the booking (rider or driver)
+      // This prevents unauthorized users from viewing other users' booking details
+      allow read: if isSignedIn() && isRecentRequest() &&
+                    (
+                      resource.data.riderId == request.auth.uid ||
+                      resource.data.passengerId == request.auth.uid ||
+                      resource.data.driverId == request.auth.uid
+                    );
       
       // Riders can create bookings
       allow create: if isSignedIn() &&
@@ -276,6 +281,14 @@ service cloud.firestore {
       allow delete: if isSignedIn() && 
                       isRecentRequest() &&
                       resource.data.userId == request.auth.uid;
+    }
+    
+    // ============================================================================
+    // WEBHOOK EVENT DEDUPLICATION - Cloud Functions Only
+    // ============================================================================
+    match /processed_webhook_events/{eventId} {
+      // No client access - only Cloud Functions can read/write
+      allow read, write: if false;
     }
     
     // Default deny all other paths

@@ -56,29 +56,46 @@ export function CancellationModal({
   const finalReason = selectedReason === 'Other' ? customReason : selectedReason;
 
   const getCancellationPolicy = () => {
-    if (!booking.ride?.departureAt) return null;
-    
+    // Check both departureAt and departureTime fields
+    const departureTimeStr = booking.ride?.departureAt || booking.ride?.departureTime;
+    if (!departureTimeStr) return null;
+
     const now = new Date();
-    const departure = new Date(booking.ride.departureAt);
+    const departure = new Date(departureTimeStr);
     const hoursUntilDeparture = (departure.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
-    if (hoursUntilDeparture > 24) {
+
+    // Policy aligned with backend (cancelBooking cloud function)
+    if (hoursUntilDeparture < 0) {
+      // Past departure time
       return {
-        type: 'full',
-        message: 'Full refund (excluding service fees)',
-        color: Colors.success
+        type: 'none',
+        feePercent: 100,
+        message: 'No refund available (ride has departed)',
+        color: Colors.error
       };
-    } else if (hoursUntilDeparture > 0) {
+    } else if (hoursUntilDeparture < 12) {
+      // Less than 12 hours
       return {
         type: 'partial',
-        message: '50% refund, driver compensated',
+        feePercent: 50,
+        message: '50% cancellation fee applies',
+        color: Colors.error
+      };
+    } else if (hoursUntilDeparture < 24) {
+      // 12-24 hours
+      return {
+        type: 'partial',
+        feePercent: 25,
+        message: '25% cancellation fee applies',
         color: Colors.warning
       };
     } else {
+      // More than 24 hours
       return {
-        type: 'none',
-        message: 'No refund available',
-        color: Colors.error
+        type: 'full',
+        feePercent: 5,
+        message: '95% refund (5% service fee)',
+        color: Colors.success
       };
     }
   };
@@ -145,7 +162,7 @@ export function CancellationModal({
             )}
 
             <Text style={styles.sectionTitle}>Reason for cancellation:</Text>
-            
+
             <View style={styles.reasonsList}>
               {reasons.map((reason) => (
                 <TouchableOpacity
@@ -204,7 +221,7 @@ export function CancellationModal({
             >
               <Text style={styles.cancelButtonText}>Keep Booking</Text>
             </TouchableOpacity>
-            
+
             <TouchableOpacity
               style={[
                 styles.button,

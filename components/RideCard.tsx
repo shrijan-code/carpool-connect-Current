@@ -11,6 +11,7 @@ import { StarDisplay } from '@/components/RatingSystem';
 import { router } from 'expo-router';
 import { VerificationBadge } from '@/components/VerificationBadge';
 import { formatPrice as formatPriceCents, formatDate, formatTime } from '@/utils/formatters';
+import { PLATFORM_FEE_DISPLAY, getBookingPriceBreakdown } from '@/utils/price';
 import { BookingModal } from './BookingModal';
 
 interface RideCardProps {
@@ -293,8 +294,12 @@ export const RideCard = React.memo<RideCardProps>(({
                     })}
                   </View>
                 </View>
+                {/* Show transparent price breakdown */}
+                <Text style={styles.feeNotice}>
+                  {formatPriceCents(pricePerSeatInCents * selectedSeats)} + {PLATFORM_FEE_DISPLAY} platform fee
+                </Text>
                 <Button
-                  title={`Request ${selectedSeats} seat${selectedSeats > 1 ? 's' : ''} - ${formatPriceCents((pricePerSeatInCents * selectedSeats) + 100)}`}
+                  title={`Request ${selectedSeats} seat${selectedSeats > 1 ? 's' : ''} - ${getBookingPriceBreakdown(pricePerSeatInCents, selectedSeats).total}`}
                   onPress={handleBookRide}
                   disabled={isLoading || isBookingInProgress || (ride.availableSeats || ride.seatsAvailable || 0) === 0}
                   style={[styles.bookButton, (ride.availableSeats || ride.seatsAvailable || 0) === 0 && styles.disabledButton]}
@@ -590,6 +595,12 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 12,
+  },
+  feeNotice: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 8,
   },
 
 });

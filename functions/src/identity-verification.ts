@@ -197,7 +197,25 @@ export const handleIdentityWebhook = onRequest({ secrets: ['STRIPE_SECRET_KEY', 
         return;
     }
 
-    console.log(`Received Identity webhook event: ${event.type}`);
+    console.log(`Received Identity webhook event: ${event.type} (ID: ${event.id})`);
+
+    // Deduplication: Check if we've already processed this event
+    const processedEventsRef = admin.firestore().collection('processed_webhook_events').doc(event.id);
+    const existingEvent = await processedEventsRef.get();
+
+    if (existingEvent.exists) {
+        console.log(`Event ${event.id} already processed, skipping`);
+        res.json({ received: true, duplicate: true });
+        return;
+    }
+
+    // Mark event as being processed (before processing to prevent race conditions)
+    await processedEventsRef.set({
+        type: event.type,
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        // TTL field for automatic cleanup (7 days)
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    });
 
     try {
         // Handle verification session events

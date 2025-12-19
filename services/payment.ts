@@ -29,9 +29,22 @@ export interface PaymentTransaction {
   refundAmount?: number;
 }
 
+/**
+ * @deprecated Most methods in this class are stubs or return mock data.
+ * 
+ * For actual payment processing, use:
+ * - `CarpoolBookingService` (services/carpool-booking.ts) for booking with payment
+ * - `StripeService` (services/stripe.ts) for Stripe Connect setup
+ * 
+ * The following utility methods are still valid:
+ * - `calculatePlatformFee()`
+ * - `calculateTotalAmount()`
+ * - `calculateDriverPayout()`
+ * - `recordPaymentTransaction()` for audit logging
+ */
 export class PaymentService {
-  private static stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_your_stripe_publishable_key_here';
-  private static apiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://your-cloud-function-url';
+  private static stripePublishableKey = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+  private static apiUrl = process.env.EXPO_PUBLIC_API_URL || '';
 
   // Initialize Stripe (would be done in app initialization)
   static async initializeStripe(): Promise<void> {
