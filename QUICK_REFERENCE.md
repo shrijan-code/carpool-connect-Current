@@ -99,6 +99,27 @@ export const Colors = {
 | **Sender Password** | Firebase Secrets | `firebase functions:secrets:set EMAIL_PASSWORD` |
 | **Admin Email** | `functions/src/index.ts` | Search: `SAFETY_REPORT_EMAIL` |
 
+### Using Microsoft 365 / Outlook
+
+To use a custom domain via Microsoft 365 instead of Gmail, you need to update the `nodemailer` transporter configuration.
+
+1.  **Update Configuration File:** `functions/src/utils/email.ts`
+    *   Change `service: 'gmail'` to the Microsoft 365 configuration below:
+    ```typescript
+    const transporter = nodemailer.createTransport({
+      host: "smtp.office365.com",
+      port: 587,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
+    ```
+2.  **Update Secrets:**
+    *   Set `EMAIL_USER` to your full Microsoft 365 email (e.g., `support@yourdomain.com`).
+    *   Set `EMAIL_PASSWORD` to your Microsoft 365 password.
+
 ---
 
 ## 🏢 Business Information
@@ -176,6 +197,54 @@ Edit `constants/legal-text.ts` and modify the template strings. The app renders 
 | `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` | Address autocomplete |
 | `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` | Maps display |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe payments |
+
+## 🔒 Security & API Keys
+
+### Where to Store Keys?
+
+*   **NEVER store keys directly in code.** Doing so exposes them if the codebase is shared or public.
+*   **Public Keys (Client-Side):** Safe to expose in the app bundle. Store in `.env` and load via `EXPO_PUBLIC_` prefix.
+*   **Secret Keys (Server-Side):** **MUST** be stored securely in the backend. Never include these in the mobile app.
+
+### How to Store Backend Secrets (Firebase)
+
+We use Google Cloud Secret Manager via Firebase Functions to store sensitive keys like `STRIPE_SECRET_KEY` and email passwords.
+
+**1. Set a Secret:**
+```bash
+firebase functions:secrets:set STRIPE_SECRET_KEY
+# You will be prompted to enter the value
+```
+
+**2. Access in Code (Functions Only):**
+```typescript
+// In your function definition
+export const myFunction = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  // ...
+});
+```
+
+**3. Check Used Secrets:**
+To see which secrets are currently set for your project:
+```bash
+firebase functions:secrets:get SECRET_NAME # View metadata
+# OR view in Google Cloud Console > Security > Secret Manager
+```
+
+### 🔑 Required API Keys Checklist
+
+| Key Name | Type | Storage Location | Purpose |
+|----------|------|------------------|---------|
+| `EXPO_PUBLIC_FIREBASE_API_KEY` | Public | `.env` | App authentication |
+| `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` | Public | `.env` | Maps display on device |
+| `EXPO_PUBLIC_GOOGLE_PLACES_API_KEY` | Public | `.env` | Address autocomplete |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Public | `.env` | Processing payments in app |
+| `STRIPE_SECRET_KEY` | **SECRET** | Firebase Secrets | Charging cards (backend) |
+| `STRIPE_WEBHOOK_SECRET` | **SECRET** | Firebase Secrets | Verifying Stripe events |
+| `EMAIL_USER` | **SECRET** | Firebase Secrets | Sending emails |
+| `EMAIL_PASSWORD` | **SECRET** | Firebase Secrets | Sending emails |
+| `FIREBASE_PRIVATE_KEY` | **SECRET** | Admin Dashboard `.env` | Admin database access |
 
 ### Cloud Functions (Firebase Secrets)
 
