@@ -110,25 +110,36 @@ Your backend is already "deployed" if you are using production Firebase.
 
 ---
 
-## 📱 4. Mobile App (Expo / EAS)
+## 📱 4. Mobile Lifecycle (App Stores)
 
-We use **EAS (Expo Application Services)** to build and submit the app.
+We use **EAS (Expo Application Services)** to manage the entire lifecycle from development to app store submission.
 
-1.  **Install EAS CLI:** `npm install -g eas-cli`
-2.  **Login:** `eas login`
-3.  **Configure:** `eas build:configure`
-4.  **Production Build:**
-    ```bash
-    eas build --platform ios --profile production
-    eas build --platform android --profile production
-    ```
-5.  **Submit to Stores:**
-    ```bash
-    eas submit --platform ios
-    eas submit --platform android
-    ```
-*   **Updates:** Push over-the-air updates for small JS changes:
-    `eas update --branch production`
+### A. Development (Local)
+Since we use native code (Stripe, Maps), **you cannot use the standard Expo Go app** from the store. You must build a "Development Client".
+1.  **Build Dev Client:** `eas build --profile development --platform android` (or ios)
+2.  **Install on Device:** Install the `.apk` (Android) or use TestFlight (iOS, requires Apple Developer Account).
+3.  **Run Locally:** `npm run start:tunnel`
+4.  **Connect:** Open the Dev Client app on your phone -> Connect to localhost/tunnel.
+
+### B. Testing (Staging / Beta)
+Before releasing to the public, push a build to internal testers.
+1.  **Build for Store:**
+    `eas build --profile production --platform all`
+2.  **Submit to Stores (Beta Tracks):**
+    `eas submit --platform all`
+3.  **Configure in Stores:**
+    *   **iOS (App Store Connect):** The build appears in **TestFlight**. Add "Internal Testers" to let your team download it immediately.
+    *   **Android (Google Play Console):** The build appears in **Internal Testing**. Add tester emails.
+
+### C. Production (Live)
+When the Beta build is confirmed stable:
+1.  **Promote Build:**
+    *   **iOS:** Promote from TestFlight -> **Production**. Submit for Review.
+    *   **Android:** Promote from Internal Testing -> **Production**. Submit for Review.
+2.  **Updates (OTA):**
+    *   For small JavaScript changes (bug fixes, text changes), you don't need a full store review.
+    *   Run: `eas update --branch production`
+    *   Users get the update instantly next time they open the app.
 
 ---
 
