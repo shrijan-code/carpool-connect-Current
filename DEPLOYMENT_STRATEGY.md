@@ -282,6 +282,14 @@ Apple and Google will **reject** your app if you miss these during submission:
 | **Domain** | ~$1/mo | ~$12/year renewal. |
 | **Total** | **~$35/mo** | Minimum viable operational cost. |
 
+### ⚠️ What does "EAS Build Queues" mean?
+When you run `eas build` to create a new app version:
+*   **Free Account:** Your build request goes into a waiting line (queue) behind paying customers.
+    *   *Wait Time:* Can vary from 5 mins to **1 hour** depending on traffic.
+    *   *Impact:* Slows down your development speed.
+*   **Priority Plan ($29/mo):** Your builds skip the line and start instantly.
+    *   *Recommendation:* Start with Free. Upgrade only if "waiting" becomes frustrating for your team.
+
 ---
 
 ## ✅ Deployment Checklist
