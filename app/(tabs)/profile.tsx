@@ -18,6 +18,7 @@ import { EmergencyContactComponent } from '@/src/components/EmergencyContact';
 import { SafetyReportComponent } from '@/src/components/SafetyReport';
 import { VerificationService, VerificationStatus } from '@/services/verification';
 import { VerificationBadge } from '@/components/VerificationBadge';
+import { FAQ, TERMS_OF_SERVICE, PRIVACY_POLICY } from '@/constants/legal-text';
 import {
   Star,
   Calendar,
@@ -48,6 +49,9 @@ export default function ProfileScreen() {
   const { getUserRides } = useRidesStore();
   const { loadSettings } = useSettingsStore();
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [showInfoModal, setShowInfoModal] = useState<boolean>(false);
+  const [infoModalTitle, setInfoModalTitle] = useState<string>('');
+  const [infoModalContent, setInfoModalContent] = useState<string>('');
   const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
   const [showSafetyModal, setShowSafetyModal] = useState<boolean>(false);
   const [showEmergencyContacts, setShowEmergencyContacts] = useState<boolean>(false);
@@ -890,7 +894,11 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.helpItem}
-              onPress={() => Linking.openURL('https://carpoolconnect.com/faq')}
+              onPress={() => {
+                setInfoModalTitle('FAQ');
+                setInfoModalContent(FAQ);
+                setShowInfoModal(true);
+              }}
             >
               <HelpCircle size={20} color={Colors.primary} />
               <View style={styles.helpContent}>
@@ -901,7 +909,11 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.helpItem}
-              onPress={() => Linking.openURL('https://carpoolconnect.com/terms')}
+              onPress={() => {
+                setInfoModalTitle('Terms of Service');
+                setInfoModalContent(TERMS_OF_SERVICE);
+                setShowInfoModal(true);
+              }}
             >
               <FileText size={20} color={Colors.primary} />
               <View style={styles.helpContent}>
@@ -912,7 +924,11 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.helpItem}
-              onPress={() => Linking.openURL('https://carpoolconnect.com/privacy')}
+              onPress={() => {
+                setInfoModalTitle('Privacy Policy');
+                setInfoModalContent(PRIVACY_POLICY);
+                setShowInfoModal(true);
+              }}
             >
               <Lock size={20} color={Colors.primary} />
               <View style={styles.helpContent}>
@@ -1253,6 +1269,30 @@ export default function ProfileScreen() {
                 </View>
               </View>
             </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+      {/* Legal Info Modal */}
+      <Modal
+        visible={showInfoModal}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowInfoModal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{infoModalTitle}</Text>
+            <TouchableOpacity
+              onPress={() => setShowInfoModal(false)}
+              style={styles.closeButton}
+            >
+              <X size={24} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalContent} contentContainerStyle={{ paddingBottom: 40 }}>
+            <Text style={{ fontSize: 16, lineHeight: 24, color: Colors.text, paddingHorizontal: 4 }}>
+              {infoModalContent}
+            </Text>
           </ScrollView>
         </SafeAreaView>
       </Modal>

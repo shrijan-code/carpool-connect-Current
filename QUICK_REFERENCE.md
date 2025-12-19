@@ -130,6 +130,19 @@ export const Colors = {
 
 ---
 
+## 📚 Legal & Help Content
+
+| Content | File | Variable |
+|---------|------|----------|
+| **Terms of Service** | `constants/legal-text.ts` | `TERMS_OF_SERVICE` |
+| **Privacy Policy** | `constants/legal-text.ts` | `PRIVACY_POLICY` |
+| **FAQ** | `constants/legal-text.ts` | `FAQ` |
+
+**To update legal text:**
+Edit `constants/legal-text.ts` and modify the template strings. The app renders this text in a scrollable modal.
+
+---
+
 ## ✍️ App Text & Wording
 
 ### Common UI Text Locations
