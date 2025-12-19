@@ -14,6 +14,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StripeProvider } from "@stripe/stripe-react-native";
 import { NotificationService } from "@/services/notifications";
 import { useRouter } from "expo-router";
+import GlobalErrorBoundary from "@/components/GlobalErrorBoundary";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -318,7 +319,7 @@ export default function RootLayout() {
   }
 
   return (
-    <ErrorBoundary>
+    <GlobalErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <StripeProvider
           publishableKey={STRIPE_PUBLISHABLE_KEY}
@@ -329,6 +330,6 @@ export default function RootLayout() {
           </GestureHandlerRootView>
         </StripeProvider>
       </QueryClientProvider>
-    </ErrorBoundary>
+    </GlobalErrorBoundary>
   );
 }
