@@ -17,7 +17,42 @@
 
 ---
 
-## 🌐 1. Domain & DNS Setup
+## 🌍 1. Environments & Branching
+
+The most efficient way to manage Development vs. Production is **Single Codebase, Multiple Configs**.
+
+### A. Environment Strategy
+You do **NOT** need separate codebases. Instead, use separate **Firebase Projects** and key sets.
+
+| Environment | Purpose | Firebase Project | Branch | URL (Example) |
+|-------------|---------|------------------|--------|---------------|
+| **Dev** | Local testing, breaking changes | `carpool-dev` | `dev` | `localhost:3000` |
+| **Staging** | Final QA before launch | `carpool-staging` | `staging` | `staging.carpoolconnect.com` |
+| **Prod** | Live user data (REAL MONEY) | `carpool-prod` | `main` | `www.carpoolconnect.com` |
+
+### B. Configuration (.env)
+Create separate `.env` files locally to switch contexts:
+
+*   `.env.development` -> Loaded by `npm run dev`
+*   `.env.production` -> Loaded by `npm start` or Vercel Prod
+*   `.env.local` -> Your local overrides (gitignored)
+
+**How to Switch:**
+1.  **Vercel:** Add Environment Variables in the Project Settings. You can set different values for "Production" and "Preview" (Staging) deployments.
+2.  **Firebase:** Use `firebase use` command:
+    ```bash
+    firebase use dev   # Switch to dev project
+    firebase use prod  # Switch to production project
+    ```
+
+### C. Git Workflow
+1.  **Feature Branch:** Create `feat/new-login` from `dev`. Code & Test locally.
+2.  **Pull Request -> Dev:** Merge to `dev`. CI runs tests. Deploy to Dev environment.
+3.  **Pull Request -> Main:** When confident, merge `dev` to `main`. This triggers Vercel to deploy to Production.
+
+---
+
+## 🌐 2. Domain & DNS Setup
 
 **You need ONE domain name (e.g., `carpoolconnect.com`).**
 Buy this from any registrar (Namecheap, GoDaddy, Google/Squarespace).
