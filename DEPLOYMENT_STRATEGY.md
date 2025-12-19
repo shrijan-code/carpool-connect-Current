@@ -213,6 +213,55 @@ Go to **GitHub Settings > Branches** and add rules for `main` and `dev`:
 
 ---
 
+## 📊 8. Monitoring & Health Checks
+
+Once you go live, you need to know if the app crashes.
+
+1.  **Crashlytics (Mobile):**
+    *   Already built into Firebase.
+    *   **Action:** Check the Firebase Console > Crashlytics weekly to see if users are experiencing crashes.
+
+2.  **Vercel Analytics (Web):**
+    *   Enable "Analytics" and "Speed Insights" in Vercel Dashboard.
+    *   **Cost:** Free tier is sufficient for launch.
+    *   **Benefit:** Tells you if the website is slow for users.
+
+3.  **Stripe Dashboard:**
+    *   The ultimate health check. If payments stop coming in, something is wrong.
+    *   **Action:** Enable email alerts for failed payments in Stripe Settings.
+
+---
+
+## 💸 9. Cost Control (Cloud Budgets)
+
+Cloud bills can surprise you if usage spikes (or if you make a loop error).
+
+1.  **Google Cloud Budget:**
+    *   Go to [Google Cloud Billing](https://console.cloud.google.com/billing).
+    *   **Set a Budget:** e.g., $50/month.
+    *   **Alerts:** Configure it to email `shrijan@...` at 50%, 90%, and 100% of budget.
+    *   *Note: This alerts you, it doesn't stop the service (which is good, you don't want the app to vanish).*
+
+2.  **Vercel Limits:**
+    *   Vercel will email you if you approach Pro limits. The Hobby tier is generous (100GB bandwidth).
+
+---
+
+## 🍎 10. Store Listing Requirements (The "Paperwork")
+
+Apple and Google will **reject** your app if you miss these during submission:
+
+| Requirement | What you need | Where to put it |
+|-------------|---------------|-----------------|
+| **Privacy Policy URL** | A web link to your policy. | `www.carpoolconnect.com/privacy` |
+| **Support URL** | A link where users can contact you. | `www.carpoolconnect.com/contact` |
+| **Marketing URL** | Your landing page. | `www.carpoolconnect.com` |
+| **Account Deletion** | **MANDATORY:** Users must be able to delete their account *inside the app*. | You already have this in Profile Settings! ✅ |
+| **App Screenshots** | High-res images for iPhone 6.5" and 5.5". | Use a tool like **Shotbot** or **Figma**. |
+| **Login Credentials** | A demo user/pass for the Apple Reviewer. | Create a user `apple_test@carpool.com` in Firebase. |
+
+---
+
 ## ✅ Deployment Checklist
 
 - [ ] **Domain:** Purchased and accessible.
