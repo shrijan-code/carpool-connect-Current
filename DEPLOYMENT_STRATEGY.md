@@ -262,6 +262,28 @@ Apple and Google will **reject** your app if you miss these during submission:
 
 ---
 
+## 💰 11. The Cost of Doing Business (Hidden Costs)
+
+**Can you use the Free Tier?**
+*   **Vercel:** Technically, the "Hobby" (Free) tier is for **personal, non-commercial use only**. Since CarpoolConnect is a business, their Terms of Service require the **Pro Plan** ($20/user/mo).
+    *   *Risk:* They may block your deployment if they detect commercial activity on a free plan.
+*   **Firebase:** The "Spark" (Free) tier is generous but has limits (e.g., 10k phone auths/month). You likely need "Blaze" (Pay as you go) eventually, mainly for Cloud Functions external calls.
+
+**Estimated Monthly "Keep the Lights On" Costs:**
+
+| Service | Cost | Notes |
+|---------|------|-------|
+| **Vercel Pro** | $20/mo | Required for commercial apps. |
+| **Apple Developer** | ~$8/mo | Billed as $99/year. Mandatory. |
+| **Google Play** | ~$0 | One-time $25 fee. |
+| **Google Maps** | $0 - $?? | First $200/mo is free. optimizing (`sessiontoken`) keeps this low. |
+| **EAS Build** | Free* | Free tier has queues. $29/mo "Priority" plan skips lines. |
+| **Microsoft 365** | $6/user/mo | For email hosting. |
+| **Domain** | ~$1/mo | ~$12/year renewal. |
+| **Total** | **~$35/mo** | Minimum viable operational cost. |
+
+---
+
 ## ✅ Deployment Checklist
 
 - [ ] **Domain:** Purchased and accessible.
