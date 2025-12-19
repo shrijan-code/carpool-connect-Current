@@ -205,8 +205,28 @@ Edit `constants/legal-text.ts` and modify the template strings. The app renders 
 *   **NEVER store keys directly in code.** Doing so exposes them if the codebase is shared or public.
 *   **Public Keys (Client-Side):** Safe to expose in the app bundle. Store in `.env` and load via `EXPO_PUBLIC_` prefix.
 *   **Secret Keys (Server-Side):** **MUST** be stored securely in the backend. Never include these in the mobile app.
+### Why are Maps & Firebase Keys Public?
 
-### How to Store Backend Secrets (Firebase)
+It is standard practice to include **Google Maps** and **Firebase** API keys in your mobile app code. They are designed to be public/client-side keys.
+
+**How to secure them:**
+Since these keys are public, you **MUST** restrict them in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials) to prevent unauthorized use.
+
+1.  **Android Restrictions:**
+    *   Go to **Credentials** > Select your Android Key.
+    *   Under "Application restrictions", select **Android apps**.
+    *   Add your package name: `com.carpoolconnect.app`
+    *   Add your **SHA-1 certificate fingerprint**.
+
+2.  **iOS Restrictions:**
+    *   Go to **Credentials** > Select your iOS Key.
+    *   Under "Application restrictions", select **iOS apps**.
+    *   Add your bundle ID: `com.carpoolconnect.app`
+
+3.  **API Restrictions (Best Practice):**
+    *   Under "API restrictions", select **Restrict key**.
+    *   Only check the APIs this key needs (e.g., Maps SDK for Android, Places API, Firebase Authentication).
+    *   This ensures even if stolen, the key cannot be used for other paid services.
 
 We use Google Cloud Secret Manager via Firebase Functions to store sensitive keys like `STRIPE_SECRET_KEY` and email passwords.
 
