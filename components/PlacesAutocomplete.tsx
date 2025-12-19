@@ -21,8 +21,10 @@ interface PlacesAutocompleteProps {
 // Google Places API key should be loaded from environment variables
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
 
-console.log('Google Places API Key loaded:', GOOGLE_PLACES_API_KEY ? 'Yes' : 'No');
-console.log('API Key (first 10 chars):', GOOGLE_PLACES_API_KEY ? GOOGLE_PLACES_API_KEY.substring(0, 10) + '...' : 'Not found');
+// Security: Don't log API keys, even partially
+if (!GOOGLE_PLACES_API_KEY && __DEV__) {
+  console.warn('PlacesAutocomplete: EXPO_PUBLIC_GOOGLE_PLACES_API_KEY not configured');
+}
 
 export const PlacesAutocomplete: React.FC<PlacesAutocompleteProps> = ({
   placeholder = '',

@@ -28,13 +28,42 @@ export const createVerificationSession = onCall({ secrets: ['STRIPE_SECRET_KEY']
     try {
         const stripe = getStripe();
 
-        // Create verification session
+        // Fetch user data from Firestore for pre-filling
+        const userDoc = await admin.firestore().collection('users').doc(userId).get();
+        const userData = userDoc.data();
+
+        // Parse name parts for Stripe
+        const nameParts = (userData?.name || userName || '').trim().split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+
+        // Get phone and normalize
+        let phone = userData?.phone || '';
+        if (phone && phone.startsWith('04')) {
+            phone = '+61' + phone.substring(1);
+        }
+
+        console.log(`🔍 Creating Identity verification for user ${userId}:`, {
+            firstName,
+            lastName,
+            email: userData?.email || userEmail,
+            phone: phone ? '***hidden***' : 'none',
+        });
+
+        // Create verification session with user-specific pre-filled data
         // Note: return_url must be https:// - app deep links not supported
         // For mobile apps, users return manually after verification
         const verificationSession = await stripe.identity.verificationSessions.create({
             type: 'document',
             metadata: {
                 userId: userId,
+                appName: 'CarpoolConnect',
+                createdAt: new Date().toISOString(),
+            },
+            // Pre-fill user data so they don't see generic test data
+            provided_details: {
+                email: userData?.email || userEmail,
+                phone: phone || undefined,
             },
             options: {
                 document: {

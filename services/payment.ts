@@ -65,7 +65,7 @@ export class PaymentService {
   // Create payment intent (backend call)
   static async createPaymentIntent(
     amount: number,
-    currency: string = 'usd',
+    currency: string = 'aud',
     customerId?: string
   ): Promise<{ clientSecret: string; paymentIntentId: string }> {
     try {

@@ -2,9 +2,17 @@
  * Price utility functions
  * 
  * IMPORTANT: All prices in the database are stored in CENTS
- * - pricePerSeat: stored in cents (e.g., 1500 = $15.00)
- * - amountTotal: stored in cents (e.g., 3000 = $30.00)
+ * - pricePerSeat: stored in cents (e.g., 1500 = $15.00 AUD)
+ * - amountTotal: stored in cents (e.g., 3000 = $30.00 AUD)
+ * 
+ * CURRENCY: All prices are in Australian Dollars (AUD)
  */
+
+/**
+ * Default currency code for Stripe
+ */
+export const CURRENCY_CODE = 'aud';
+export const CURRENCY_SYMBOL = 'A$';
 
 /**
  * Format price from cents to dollar string

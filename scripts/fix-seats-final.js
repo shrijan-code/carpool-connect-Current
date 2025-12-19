@@ -1,15 +1,25 @@
 // Fix Seat Availability - Direct Firebase Connection
+// IMPORTANT: Set environment variables before running
+// FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID, etc.
 const { initializeApp } = require('firebase/app');
 const { getFirestore, collection, getDocs, doc, updateDoc } = require('firebase/firestore');
+require('dotenv').config();
 
 const firebaseConfig = {
-    apiKey: "AIzaSyCxwV_Va0voJxTdc8aAcqqphKIQp3FnAIo",
-    authDomain: "carpoolconnect1-0.firebaseapp.com",
-    projectId: "carpoolconnect1-0",
-    storageBucket: "carpoolconnect1-0.appspot.com",
-    messagingSenderId: "889604849863",
-    appId: "1:889604849863:web:8734c34781342a92197ee2",
+    apiKey: process.env.FIREBASE_API_KEY || process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.FIREBASE_AUTH_DOMAIN || process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.FIREBASE_PROJECT_ID || process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID || "carpoolconnect1-0",
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.FIREBASE_APP_ID || process.env.EXPO_PUBLIC_FIREBASE_APP_ID,
 };
+
+// Validate config
+if (!firebaseConfig.apiKey) {
+    console.error('❌ ERROR: Firebase API key not found in environment variables');
+    console.error('Please set FIREBASE_API_KEY or EXPO_PUBLIC_FIREBASE_API_KEY');
+    process.exit(1);
+}
 
 console.log(`\n🔗 Connecting to Firebase project: ${firebaseConfig.projectId}\n`);
 
