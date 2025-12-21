@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 import {
@@ -25,6 +25,24 @@ export default function AdminsPage() {
     const [error, setError] = useState('');
     const [actionMenu, setActionMenu] = useState<string | null>(null);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
+
+    // Close menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+                setActionMenu(null);
+            }
+        };
+
+        if (actionMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [actionMenu]);
 
     useEffect(() => {
         fetchAdmins();
@@ -137,7 +155,7 @@ export default function AdminsPage() {
             </div>
 
             {/* Admins Table */}
-            <div className="bg-white dark:bg-gray-900 rounded-lg shadow overflow-hidden">
+            <div className="bg-white dark:bg-gray-900 rounded-lg shadow">
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                     <thead className="bg-gray-50 dark:bg-gray-800">
                         <tr>
@@ -209,7 +227,11 @@ export default function AdminsPage() {
                                     </button>
 
                                     {actionMenu === admin.id && (
-                                        <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 z-10">
+                                        <div
+                                            ref={menuRef}
+                                            className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border dark:border-gray-700 z-50"
+                                            style={{ top: '100%' }}
+                                        >
                                             <button
                                                 onClick={() => {
                                                     const newRole = prompt('Enter new role (global_admin, editor_admin, viewer_admin):', admin.role);
