@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { Card } from '@/components/ui/Card';
 import { Colors } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { Booking } from '@/types';
-import { Clock, User, DollarSign, Check, X, Loader } from 'lucide-react-native';
+import { Clock, User, DollarSign, Check, X, Loader, ChevronLeft } from 'lucide-react-native';
 
 const { width: screenWidth } = Dimensions.get('window');
 const isSmallScreen = screenWidth < 375;
@@ -21,12 +22,19 @@ export default function BookingRequestsScreen() {
   const params = useLocalSearchParams<{ bookingId?: string }>();
   const [pendingBookings, setPendingBookings] = useState<Booking[]>([]);
   const [loadingBookings, setLoadingBookings] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [processingBookingId, setProcessingBookingId] = useState<string | null>(null);
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const loadPendingBookings = useCallback(async () => {
+  const loadPendingBookings = useCallback(async (showRefreshing = false) => {
     if (!user?.id || user.role !== 'driver') return;
 
-    setLoadingBookings(true);
+    if (showRefreshing) {
+      setRefreshing(true);
+    } else if (!refreshing) {
+      setLoadingBookings(true);
+    }
+
     try {
       const bookings = await getPendingBookingRequests(user.id);
       setPendingBookings(bookings);
@@ -35,11 +43,38 @@ export default function BookingRequestsScreen() {
       console.error('Error loading pending bookings:', error);
     } finally {
       setLoadingBookings(false);
+      setRefreshing(false);
     }
-  }, [user?.id, user?.role, getPendingBookingRequests]);
+  }, [user?.id, user?.role, getPendingBookingRequests, refreshing]);
 
+  // Initial load
   useEffect(() => {
     loadPendingBookings();
+  }, []);
+
+  // Auto-refresh every 30 seconds when screen is focused
+  useFocusEffect(
+    useCallback(() => {
+      // Reload on focus
+      loadPendingBookings();
+
+      // Set up auto-refresh interval
+      refreshIntervalRef.current = setInterval(() => {
+        loadPendingBookings();
+      }, 30000); // 30 seconds
+
+      return () => {
+        // Clean up interval when screen loses focus
+        if (refreshIntervalRef.current) {
+          clearInterval(refreshIntervalRef.current);
+          refreshIntervalRef.current = null;
+        }
+      };
+    }, [loadPendingBookings])
+  );
+
+  const handleRefresh = useCallback(() => {
+    loadPendingBookings(true);
   }, [loadPendingBookings]);
 
 
@@ -60,7 +95,7 @@ export default function BookingRequestsScreen() {
               Alert.alert(
                 '🎉 Booking Accepted!',
                 `You've accepted ${booking.passenger?.name || 'the passenger'}'s booking.\n\n• Payment has been captured\n• Chat is now enabled\n• Passenger has been notified`,
-                [{ text: 'OK', onPress: loadPendingBookings }]
+                [{ text: 'OK', onPress: () => loadPendingBookings() }]
               );
             } catch (error: unknown) {
               const errorMessage = error instanceof Error ? error.message : 'Failed to accept booking';
@@ -91,7 +126,7 @@ export default function BookingRequestsScreen() {
               Alert.alert(
                 'Booking Declined',
                 `You've declined ${booking.passenger?.name || 'the passenger'}'s booking.\n\n• Payment authorization cancelled\n• Passenger has been notified`,
-                [{ text: 'OK', onPress: loadPendingBookings }]
+                [{ text: 'OK', onPress: () => loadPendingBookings() }]
               );
             } catch (error: unknown) {
               const errorMessage = error instanceof Error ? error.message : 'Failed to decline booking';
@@ -140,10 +175,30 @@ export default function BookingRequestsScreen() {
       <Stack.Screen options={{
         title: 'Booking Requests',
         headerStyle: { backgroundColor: colors.primary },
-        headerTintColor: colors.background
+        headerTintColor: '#FFFFFF',
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ marginLeft: 8, padding: 8 }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ChevronLeft size={24} color="#FFFFFF" />
+          </TouchableOpacity>
+        ),
       }} />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Pending Requests</Text>
           <Text style={styles.subtitle}>
@@ -164,10 +219,10 @@ export default function BookingRequestsScreen() {
               return 0;
             })
             .map((booking) => (
-              <Card key={booking.id} style={[
-                styles.bookingCard,
-                params.bookingId === booking.id && { borderColor: Colors.primary, borderWidth: 2 }
-              ]}>
+              <Card key={booking.id} style={{
+                ...styles.bookingCard,
+                ...(params.bookingId === booking.id ? { borderColor: Colors.primary, borderWidth: 2 } : {})
+              }}>
                 <View style={styles.bookingHeader}>
                   <View style={styles.passengerInfo}>
                     <View style={styles.passengerAvatar}>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, RefreshControl, Platform, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, Stack } from 'expo-router';
@@ -23,6 +23,7 @@ import {
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Colors } from '@/constants/colors';
+import { EmergencyContactService } from '@/services/emergency-contacts';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 
@@ -306,12 +307,45 @@ export default function LiveDashboardScreen() {
       Alert.alert('Emergency Contact', 'Emergency contact feature is available on mobile devices.');
     } else {
       Alert.alert(
-        'Emergency Contact',
-        'Contact emergency services or your emergency contact?',
+        '🚨 Emergency Contact',
+        'Are you in an emergency? Select an option below.',
         [
           { text: 'Cancel', style: 'cancel' },
-          { text: 'Emergency Services', onPress: () => console.log('Call emergency services') },
-          { text: 'Emergency Contact', onPress: () => console.log('Call emergency contact') }
+          {
+            text: '📞 Call 000 (Emergency)',
+            onPress: () => {
+              Linking.openURL('tel:000').catch(() => {
+                Alert.alert('Error', 'Unable to make call. Please dial 000 manually.');
+              });
+            },
+            style: 'destructive'
+          },
+          {
+            text: '👤 Call Emergency Contact',
+            onPress: async () => {
+              // Get user's primary emergency contact from Firestore
+              try {
+                const primaryContact = await EmergencyContactService.getPrimaryContact(user?.id || '');
+                if (primaryContact?.phone) {
+                  Linking.openURL(`tel:${primaryContact.phone}`).catch(() => {
+                    Alert.alert('Error', 'Unable to make call. Please try again.');
+                  });
+                } else {
+                  Alert.alert(
+                    'No Emergency Contact',
+                    'You have not set up an emergency contact. Would you like to add one now?',
+                    [
+                      { text: 'Later', style: 'cancel' },
+                      { text: 'Add Contact', onPress: () => router.push('/profile') }
+                    ]
+                  );
+                }
+              } catch (error) {
+                console.error('Failed to get emergency contact:', error);
+                Alert.alert('Error', 'Failed to retrieve emergency contact. Please try again.');
+              }
+            }
+          }
         ]
       );
     }

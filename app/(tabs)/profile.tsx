@@ -42,7 +42,8 @@ import {
   CreditCard,
   AlertTriangle,
   CheckCircle,
-  Trash2
+  Trash2,
+  Clock
 } from 'lucide-react-native';
 
 export default function ProfileScreen() {
@@ -659,10 +660,10 @@ export default function ProfileScreen() {
                 activeOpacity={0.7}
               >
                 <Shield size={20} color={Colors.background} />
-                <Text style={styles.statValue}>
-                  {verificationStatus?.verificationLevel === 'premium' ? 'Verified' : 'Not Verified'}
+                <Text style={[styles.statValue, { fontSize: 18 }]} numberOfLines={1}>
+                  {verificationStatus?.verificationLevel === 'premium' ? '✓' : '✗'}
                 </Text>
-                <Text style={styles.statLabel}>Verification</Text>
+                <Text style={styles.statLabel}>Verified</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -871,6 +872,77 @@ export default function ProfileScreen() {
                 size="small"
                 onPress={handleEditVehicle}
               />
+
+              {/* Driver Approval Status */}
+              {user?.carDetails?.make && user?.carDetails?.registrationDocument && user?.carDetails?.insuranceDocument && (
+                <View style={styles.approvalSection}>
+                  <Text style={styles.documentTitle}>Driver Approval Status</Text>
+                  {!user?.driverApproval || user?.driverApproval?.status === 'not_submitted' ? (
+                    <View>
+                      <Text style={styles.approvalText}>
+                        Your documents are ready for review. Submit for admin approval to start posting rides.
+                      </Text>
+                      <Button
+                        title="Submit for Approval"
+                        onPress={async () => {
+                          try {
+                            await updateUser({
+                              driverApproval: {
+                                status: 'pending',
+                                submittedAt: new Date().toISOString(),
+                              }
+                            });
+                            Alert.alert('Success', 'Your driver application has been submitted for review. We\'ll notify you once approved.');
+                          } catch {
+                            Alert.alert('Error', 'Failed to submit for approval. Please try again.');
+                          }
+                        }}
+                        style={styles.approvalButton}
+                      />
+                    </View>
+                  ) : user?.driverApproval?.status === 'pending' ? (
+                    <View style={styles.approvalStatusBox}>
+                      <Clock size={20} color={Colors.warning} />
+                      <Text style={[styles.approvalStatusText, { color: Colors.warning }]}>
+                        Pending Review - Your application is under review
+                      </Text>
+                    </View>
+                  ) : user?.driverApproval?.status === 'approved' ? (
+                    <View style={styles.approvalStatusBox}>
+                      <CheckCircle size={20} color={Colors.success} />
+                      <Text style={[styles.approvalStatusText, { color: Colors.success }]}>
+                        Approved - You can post rides
+                      </Text>
+                    </View>
+                  ) : user?.driverApproval?.status === 'rejected' ? (
+                    <View>
+                      <View style={styles.approvalStatusBox}>
+                        <AlertTriangle size={20} color={Colors.error} />
+                        <Text style={[styles.approvalStatusText, { color: Colors.error }]}>
+                          Rejected: {user?.driverApproval?.rejectionReason || 'Contact support for details'}
+                        </Text>
+                      </View>
+                      <Button
+                        title="Resubmit for Approval"
+                        onPress={async () => {
+                          try {
+                            await updateUser({
+                              driverApproval: {
+                                status: 'pending',
+                                submittedAt: new Date().toISOString(),
+                              }
+                            });
+                            Alert.alert('Success', 'Your application has been resubmitted for review.');
+                          } catch {
+                            Alert.alert('Error', 'Failed to resubmit. Please try again.');
+                          }
+                        }}
+                        style={[styles.approvalButton, { marginTop: 12 }]}
+                      />
+                    </View>
+                  ) : null}
+                </View>
+              )}
             </Card>
           )}
 
@@ -2021,5 +2093,33 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600' as const,
     color: '#DC2626',
+  },
+  approvalSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  approvalText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    lineHeight: 20,
+  },
+  approvalButton: {
+    marginTop: 8,
+  },
+  approvalStatusBox: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 8,
+    padding: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 8,
+  },
+  approvalStatusText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500' as const,
   },
 });

@@ -104,7 +104,7 @@ describe('PaymentService Payment Operations', () => {
                 })
             });
 
-            const result = await PaymentService.createPaymentIntent(50.00, 'usd');
+            const result = await PaymentService.createPaymentIntent(50.00, 'aud');
 
             expect(result.clientSecret).toBe('cs_test_123');
             expect(result.paymentIntentId).toBe('pi_test_123');
@@ -126,7 +126,7 @@ describe('PaymentService Payment Operations', () => {
                 })
             });
 
-            await PaymentService.createPaymentIntent(25.50, 'usd');
+            await PaymentService.createPaymentIntent(25.50, 'aud');
 
             const callBody = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
             expect(callBody.amount).toBe(2550); // 25.50 * 100

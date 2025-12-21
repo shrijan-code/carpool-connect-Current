@@ -15,17 +15,28 @@ import { Colors } from '@/constants/colors';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
-import { Users, DollarSign, AlertTriangle, CreditCard, CheckCircle } from 'lucide-react-native';
+import { Users, DollarSign, AlertTriangle, CreditCard, CheckCircle, Car, FileText, XCircle, Clock } from 'lucide-react-native';
 import { Location, Vehicle, Ride } from '@/types';
 import { validatePrice, validateSeats, validateLocation, validateFutureDate } from '@/utils/validation';
 import { useMemo } from 'react';
+
+// Driver verification requirements check result
+interface DriverVerificationStatus {
+  canCreateRide: boolean;
+  missingVehicleDetails: boolean;
+  missingRegistration: boolean;
+  missingInsurance: boolean;
+  pendingApproval: boolean;
+  rejected: boolean;
+  rejectionReason?: string;
+  isGrandfathered: boolean; // Existing drivers without documents
+}
 
 export default function CreateRideScreen() {
   const { user } = useAuthStore();
   const { createRide, isLoading } = useRidesStore();
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-
 
   const [fromLocation, setFromLocation] = useState<Location | null>(null);
   const [toLocation, setToLocation] = useState<Location | null>(null);
@@ -44,6 +55,63 @@ export default function CreateRideScreen() {
   const [stripeRequirement, setStripeRequirement] = useState<{ required: boolean; completedRides: number; message: string } | null>(null);
   const [validationErrors, setValidationErrors] = useState<{ [key: string]: string }>({});
 
+  // Check driver verification status
+  const driverVerificationStatus = useMemo<DriverVerificationStatus>(() => {
+    if (!user) {
+      return {
+        canCreateRide: false,
+        missingVehicleDetails: true,
+        missingRegistration: true,
+        missingInsurance: true,
+        pendingApproval: false,
+        rejected: false,
+        isGrandfathered: false,
+      };
+    }
+
+    const carDetails = user.carDetails;
+    const driverApproval = user.driverApproval;
+
+    // Check if this is a grandfathered driver (has completed rides but no documents)
+    // Grandfathered drivers can continue to post but should be encouraged to upload documents
+    const hasCompletedRides = (user.totalRides || 0) > 0;
+    const hasDocuments = !!carDetails?.registrationDocument && !!carDetails?.insuranceDocument;
+    const isGrandfathered = hasCompletedRides && !hasDocuments && !driverApproval;
+
+    // Vehicle details check
+    const hasVehicleDetails = !!(
+      carDetails?.make &&
+      carDetails?.model &&
+      carDetails?.year &&
+      carDetails?.licensePlate
+    );
+
+    // Document checks
+    const hasRegistration = !!carDetails?.registrationDocument;
+    const hasInsurance = !!carDetails?.insuranceDocument;
+
+    // Approval status check
+    const approvalStatus = driverApproval?.status;
+    const isPending = approvalStatus === 'pending';
+    const isRejected = approvalStatus === 'rejected';
+    const isApproved = approvalStatus === 'approved';
+
+    // Can create ride if:
+    // 1. Grandfathered driver (has rides, no documents required yet)
+    // 2. Fully verified: has vehicle details, documents, and approved status
+    const canCreateRide = isGrandfathered || (hasVehicleDetails && hasRegistration && hasInsurance && isApproved);
+
+    return {
+      canCreateRide,
+      missingVehicleDetails: !hasVehicleDetails,
+      missingRegistration: !hasRegistration,
+      missingInsurance: !hasInsurance,
+      pendingApproval: isPending,
+      rejected: isRejected,
+      rejectionReason: driverApproval?.rejectionReason,
+      isGrandfathered,
+    };
+  }, [user]);
 
   // Check Stripe requirement on component mount only
   useEffect(() => {
@@ -303,6 +371,101 @@ export default function CreateRideScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Driver Verification Requirements */}
+        {!driverVerificationStatus.canCreateRide && (
+          <Card style={[styles.errorCard, { marginBottom: 16 }]}>
+            <View style={styles.warningHeader}>
+              {driverVerificationStatus.rejected ? (
+                <XCircle size={24} color={colors.error} />
+              ) : driverVerificationStatus.pendingApproval ? (
+                <Clock size={24} color={colors.warning} />
+              ) : (
+                <AlertTriangle size={24} color={colors.warning} />
+              )}
+              <Text style={styles.errorTitle}>
+                {driverVerificationStatus.rejected
+                  ? 'Driver Application Rejected'
+                  : driverVerificationStatus.pendingApproval
+                    ? 'Awaiting Admin Approval'
+                    : 'Complete Driver Setup'}
+              </Text>
+            </View>
+            <Text style={styles.errorMessage}>
+              {driverVerificationStatus.rejected
+                ? `Your driver application was rejected: ${driverVerificationStatus.rejectionReason || 'Please contact support for details.'}`
+                : driverVerificationStatus.pendingApproval
+                  ? 'Your driver application is under review. We\'ll notify you once approved.'
+                  : 'Complete the following to post rides:'}
+            </Text>
+
+            {!driverVerificationStatus.pendingApproval && !driverVerificationStatus.rejected && (
+              <View style={{ marginTop: 12 }}>
+                <View style={styles.requirementItem}>
+                  {driverVerificationStatus.missingVehicleDetails ? (
+                    <XCircle size={18} color={colors.error} />
+                  ) : (
+                    <CheckCircle size={18} color={colors.success} />
+                  )}
+                  <Text style={[
+                    styles.requirementText,
+                    !driverVerificationStatus.missingVehicleDetails && styles.requirementComplete
+                  ]}>Vehicle details (make, model, year, license plate)</Text>
+                </View>
+                <View style={styles.requirementItem}>
+                  {driverVerificationStatus.missingRegistration ? (
+                    <XCircle size={18} color={colors.error} />
+                  ) : (
+                    <CheckCircle size={18} color={colors.success} />
+                  )}
+                  <Text style={[
+                    styles.requirementText,
+                    !driverVerificationStatus.missingRegistration && styles.requirementComplete
+                  ]}>Vehicle registration document</Text>
+                </View>
+                <View style={styles.requirementItem}>
+                  {driverVerificationStatus.missingInsurance ? (
+                    <XCircle size={18} color={colors.error} />
+                  ) : (
+                    <CheckCircle size={18} color={colors.success} />
+                  )}
+                  <Text style={[
+                    styles.requirementText,
+                    !driverVerificationStatus.missingInsurance && styles.requirementComplete
+                  ]}>Vehicle insurance document</Text>
+                </View>
+              </View>
+            )}
+
+            {!driverVerificationStatus.pendingApproval && (
+              <Button
+                title={driverVerificationStatus.rejected ? 'Update Documents' : 'Complete Setup'}
+                onPress={() => router.push('/(tabs)/profile')}
+                style={[styles.errorButton, { marginTop: 16 }]}
+                leftIcon={<Car size={16} color={colors.background} />}
+              />
+            )}
+          </Card>
+        )}
+
+        {/* Grandfathered Driver Notice */}
+        {driverVerificationStatus.isGrandfathered && (
+          <Card style={[styles.infoCard, { marginBottom: 16 }]}>
+            <View style={styles.infoHeader}>
+              <FileText size={20} color={colors.primary} />
+              <Text style={styles.infoTitle}>Upload Documents (Recommended)</Text>
+            </View>
+            <Text style={styles.infoMessage}>
+              You can post rides, but we recommend uploading registration and insurance for trust and safety.
+            </Text>
+            <Button
+              title="Add Documents"
+              onPress={() => router.push('/(tabs)/profile')}
+              style={styles.infoButton}
+              leftIcon={<FileText size={16} color={Colors.primary} />}
+            />
+          </Card>
+        )}
+
         {/* Stripe Requirement Warning */}
         {stripeRequirement?.required ? (
           <Card style={styles.errorCard}>
@@ -477,13 +640,23 @@ export default function CreateRideScreen() {
           <Button
             title={isLoading ? "Creating Ride..." : "Create Ride"}
             onPress={handleCreateRide}
-            disabled={isLoading || stripeRequirement?.required || !isFormValid}
+            disabled={isLoading || stripeRequirement?.required || !isFormValid || !driverVerificationStatus.canCreateRide}
             style={[
               styles.createButton,
-              (stripeRequirement?.required || !isFormValid) && styles.disabledButton
+              (stripeRequirement?.required || !isFormValid || !driverVerificationStatus.canCreateRide) && styles.disabledButton
             ]}
             leftIcon={<CheckCircle size={20} color={colors.background} />}
           />
+          {!driverVerificationStatus.canCreateRide && !driverVerificationStatus.pendingApproval && (
+            <Text style={styles.disabledButtonText}>
+              Complete driver setup to create rides
+            </Text>
+          )}
+          {driverVerificationStatus.pendingApproval && (
+            <Text style={styles.disabledButtonText}>
+              Awaiting admin approval
+            </Text>
+          )}
           {stripeRequirement?.required && (
             <Text style={styles.disabledButtonText}>
               Complete payment setup to create rides
@@ -960,5 +1133,20 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     fontStyle: 'italic' as const,
+  },
+  requirementItem: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    marginBottom: 8,
+    gap: 8,
+  },
+  requirementText: {
+    fontSize: 14,
+    color: colors.text,
+    flex: 1,
+  },
+  requirementComplete: {
+    color: colors.success,
+    textDecorationLine: 'line-through' as const,
   },
 });

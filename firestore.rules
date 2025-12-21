@@ -167,12 +167,15 @@ service cloud.firestore {
     match /safety_reports/{reportId} {
       allow read: if isSignedIn() && 
                     isRecentRequest() &&
-                    resource.data.reporterId == request.auth.uid;
+                    (resource.data.reporterId == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && 
                       isRecentRequest() &&
                       request.resource.data.reporterId == request.auth.uid;
-      // Reports are immutable once created
-      allow update: if false;
+      // Allow reporter to update their own report (for adding evidence photos)
+      // Allow admins to update for status changes
+      allow update: if isSignedIn() && 
+                      isRecentRequest() &&
+                      (resource.data.reporterId == request.auth.uid || isAdmin());
       allow delete: if false;
     }
 

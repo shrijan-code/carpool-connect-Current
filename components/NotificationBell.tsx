@@ -59,42 +59,75 @@ export const NotificationBell = React.memo(() => {
 
     setShowModal(false);
 
-    // Handle navigation based on notification type with deep linking
-    switch (notification.type) {
-      case 'ride_booked':
-      case 'ride_confirmed':
-      case 'ride_cancelled':
-      case 'ride_completed':
-        // Navigate to ride details if rideId available, otherwise to rides list
-        if (notification.data?.rideId) {
-          router.push({ pathname: '/ride-details', params: { id: notification.data.rideId } });
+    // Handle navigation based on notification type and data
+    // Types stored in Firestore: 'booking' | 'payment' | 'ride' | 'system' | 'reminder'
+    const { type, data } = notification;
+
+    switch (type) {
+      case 'booking':
+        // For booking notifications, navigate based on available data
+        if (data?.bookingId) {
+          // Navigate to booking management if we have a bookingId
+          router.push({ pathname: '/booking-management', params: { bookingId: data.bookingId } });
+        } else if (data?.rideId) {
+          // Fallback to ride details if we have rideId
+          router.push({ pathname: '/ride-details', params: { id: data.rideId } });
+        } else {
+          // Fallback to booking requests for drivers or rides tab
+          router.push('/booking-requests');
+        }
+        break;
+
+      case 'ride':
+        // For ride notifications, navigate to ride details
+        if (data?.rideId) {
+          router.push({ pathname: '/ride-details', params: { id: data.rideId } });
+        } else if (data?.bookingId) {
+          router.push({ pathname: '/booking-management', params: { bookingId: data.bookingId } });
         } else {
           router.push('/(tabs)/rides');
         }
         break;
+
+      case 'payment':
+        // For payment notifications, navigate to ride or booking details
+        if (data?.bookingId) {
+          router.push({ pathname: '/booking-management', params: { bookingId: data.bookingId } });
+        } else if (data?.rideId) {
+          router.push({ pathname: '/ride-details', params: { id: data.rideId } });
+        } else {
+          router.push('/(tabs)/rides');
+        }
+        break;
+
+      case 'reminder':
+        // For reminders, go to ride details
+        if (data?.rideId) {
+          router.push({ pathname: '/ride-details', params: { id: data.rideId } });
+        } else {
+          router.push('/(tabs)/rides');
+        }
+        break;
+
       case 'message':
-        // Navigate to chat with rideId to auto-select the conversation
-        if (notification.data?.rideId) {
-          router.push({ pathname: '/(tabs)/chat', params: { rideId: notification.data.rideId } });
+        // For message notifications, go to chat
+        if (data?.rideId) {
+          router.push({ pathname: '/(tabs)/chat', params: { rideId: data.rideId } });
         } else {
           router.push('/(tabs)/chat');
         }
         break;
-      case 'ride_request':
-      case 'booking_accepted':
-      case 'booking_confirmed':
-      case 'booking_rejected':
-      case 'booking_declined':
-        // Navigate to ride details if rideId is available
-        if (notification.data?.rideId) {
-          router.push({ pathname: '/ride-details', params: { id: notification.data.rideId } });
-        } else {
-          router.push('/(tabs)/rides');
-        }
-        break;
+
+      case 'system':
       default:
-        // Default to home screen (handles payment, general, and any other types)
-        router.push('/(tabs)/home');
+        // For system notifications or unknown types, check data first
+        if (data?.rideId) {
+          router.push({ pathname: '/ride-details', params: { id: data.rideId } });
+        } else if (data?.bookingId) {
+          router.push({ pathname: '/booking-management', params: { bookingId: data.bookingId } });
+        } else {
+          router.push('/(tabs)/home');
+        }
         break;
     }
   }, [user?.id]);

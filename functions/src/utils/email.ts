@@ -578,9 +578,13 @@ const templates = {
 
           ${reportDetails.evidencePhotos && reportDetails.evidencePhotos.length > 0 ? `
           <div style="background: #F3F4F6; padding: 20px; border-radius: 10px; margin: 25px 0;">
-            <p style="color: #6B7280; margin: 0;">
-              <strong>📸 Evidence Photos:</strong> ${reportDetails.evidencePhotos.length} photo(s) attached
-            </p>
+            <h3 style="color: #1F2937; margin-top: 0;">📸 Evidence Photos</h3>
+            <p style="color: #6B7280;">${reportDetails.evidencePhotos.length} photo(s) attached to your report:</p>
+            <ul style="color: #4F46E5; margin: 10px 0; padding-left: 20px;">
+              ${reportDetails.evidencePhotos.map((url: string, index: number) =>
+        `<li><a href="${url}" style="color: #4F46E5;">View Photo ${index + 1}</a></li>`
+      ).join('')}
+            </ul>
           </div>
           ` : ''}
 

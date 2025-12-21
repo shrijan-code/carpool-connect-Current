@@ -183,6 +183,47 @@ export async function PATCH(
                 if (data.phone) updateData.phone = data.phone;
                 break;
 
+            case 'approve_driver':
+                // Validate that driver has required documents
+                if (!userData?.carDetails?.registrationDocument || !userData?.carDetails?.insuranceDocument) {
+                    return NextResponse.json({
+                        error: 'Cannot approve driver without registration and insurance documents'
+                    }, { status: 400 });
+                }
+                if (!userData?.carDetails?.make || !userData?.carDetails?.model || !userData?.carDetails?.licensePlate) {
+                    return NextResponse.json({
+                        error: 'Cannot approve driver without complete vehicle details'
+                    }, { status: 400 });
+                }
+                updateData.driverApproval = {
+                    status: 'approved',
+                    submittedAt: userData?.driverApproval?.submittedAt || new Date().toISOString(),
+                    reviewedAt: new Date().toISOString(),
+                    reviewedBy: session.id,
+                };
+                break;
+
+            case 'reject_driver':
+                if (!data.reason) {
+                    return NextResponse.json({ error: 'Rejection reason is required' }, { status: 400 });
+                }
+                updateData.driverApproval = {
+                    status: 'rejected',
+                    submittedAt: userData?.driverApproval?.submittedAt || new Date().toISOString(),
+                    reviewedAt: new Date().toISOString(),
+                    reviewedBy: session.id,
+                    rejectionReason: data.reason,
+                };
+                break;
+
+            case 'submit_for_approval':
+                // Called when driver completes document upload
+                updateData.driverApproval = {
+                    status: 'pending',
+                    submittedAt: new Date().toISOString(),
+                };
+                break;
+
             default:
                 // Legacy support for simple suspended boolean
                 if (typeof data.suspended === 'boolean') {

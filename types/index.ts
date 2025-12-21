@@ -37,6 +37,14 @@ export interface User {
     initiatedAt?: string;
     verifiedAt?: string;
   };
+  // Driver approval status - controls whether driver can post rides
+  driverApproval?: {
+    status: 'not_submitted' | 'pending' | 'approved' | 'rejected';
+    submittedAt?: string;
+    reviewedAt?: string;
+    reviewedBy?: string;
+    rejectionReason?: string;
+  };
   createdAt: string;
   updatedAt: string;
 }

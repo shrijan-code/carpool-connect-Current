@@ -2347,7 +2347,7 @@ export const processPayment = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (
     // or use Ephemeral Keys for the mobile SDK. This is a direct charge approach.
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(amount * 100), // Convert to cents
-      currency: "usd",
+      currency: "aud",
       payment_method: paymentMethodId, // Optional: if provided, we try to confirm immediately
       confirm: !!paymentMethodId,
       metadata: {
@@ -3074,7 +3074,7 @@ export const processDriverPayout = onCall(
 
       const transfer = await stripe.transfers.create({
         amount: driverAmount,
-        currency: "usd",
+        currency: "aud",
         destination: driverData.stripeAccountId,
         description: `Payout for booking ${bookingId}`,
         metadata: {
@@ -3179,7 +3179,7 @@ export const processAutomaticPayouts = onRequest(
           const stripe = getStripe();
           const transfer = await stripe.transfers.create({
             amount: driverAmount,
-            currency: "usd",
+            currency: "aud",
             destination: driverData.stripeAccountId,
             metadata: {
               bookingId: bookingDoc.id,
