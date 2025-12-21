@@ -195,11 +195,27 @@ export async function PATCH(
                         error: 'Cannot approve driver without complete vehicle details'
                     }, { status: 400 });
                 }
+                // Validate expiry date is provided and in the future
+                if (!data.expiryDate) {
+                    return NextResponse.json({
+                        error: 'Expiry date is required when approving a driver'
+                    }, { status: 400 });
+                }
+                const expiryDateObj = new Date(data.expiryDate);
+                if (expiryDateObj <= new Date()) {
+                    return NextResponse.json({
+                        error: 'Expiry date must be in the future'
+                    }, { status: 400 });
+                }
                 updateData.driverApproval = {
                     status: 'approved',
                     submittedAt: userData?.driverApproval?.submittedAt || new Date().toISOString(),
                     reviewedAt: new Date().toISOString(),
                     reviewedBy: session.id,
+                    documentsLocked: true,
+                    lockedAt: new Date().toISOString(),
+                    expiryDate: data.expiryDate,
+                    expiryNotificationSent: false,
                 };
                 break;
 
@@ -213,14 +229,49 @@ export async function PATCH(
                     reviewedAt: new Date().toISOString(),
                     reviewedBy: session.id,
                     rejectionReason: data.reason,
+                    documentsLocked: false, // Unlock so they can fix and resubmit
                 };
                 break;
 
             case 'submit_for_approval':
-                // Called when driver completes document upload
+                // Called when driver completes document upload - lock documents
                 updateData.driverApproval = {
                     status: 'pending',
                     submittedAt: new Date().toISOString(),
+                    documentsLocked: true,
+                    lockedAt: new Date().toISOString(),
+                };
+                break;
+
+            case 'unlock_documents':
+                // Admin unlocks documents to allow driver to re-upload
+                if (!data.reason) {
+                    return NextResponse.json({ error: 'Unlock reason is required' }, { status: 400 });
+                }
+                updateData.driverApproval = {
+                    ...userData?.driverApproval,
+                    documentsLocked: false,
+                    unlockedBy: session.id,
+                    unlockedAt: new Date().toISOString(),
+                    unlockedReason: data.reason,
+                };
+                break;
+
+            case 'update_expiry':
+                // Admin updates the expiry date
+                if (!data.expiryDate) {
+                    return NextResponse.json({ error: 'Expiry date is required' }, { status: 400 });
+                }
+                const newExpiryDate = new Date(data.expiryDate);
+                if (newExpiryDate <= new Date()) {
+                    return NextResponse.json({ error: 'Expiry date must be in the future' }, { status: 400 });
+                }
+                updateData.driverApproval = {
+                    ...userData?.driverApproval,
+                    expiryDate: data.expiryDate,
+                    // If previously expired, reactivate
+                    status: userData?.driverApproval?.status === 'expired' ? 'approved' : userData?.driverApproval?.status,
+                    expiryNotificationSent: false, // Reset notification flag
                 };
                 break;
 

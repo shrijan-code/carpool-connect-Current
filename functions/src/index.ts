@@ -650,6 +650,94 @@ https://console.firebase.google.com/project/carpoolconnect1-0/firestore/data/~2F
     }
   });
 
+/**
+ * Cloud Function: onSafetyReportEvidenceAdded
+ * Triggered when evidence photos are added to an existing safety report
+ * Sends a follow-up email with clickable photo links
+ */
+export const onSafetyReportEvidenceAdded = onDocumentUpdated(
+  { document: "safety_reports/{reportId}", secrets: ["EMAIL_USER", "EMAIL_PASSWORD"] },
+  async (event) => {
+    const beforeData = event.data?.before?.data();
+    const afterData = event.data?.after?.data();
+    const reportId = event.params.reportId;
+
+    if (!beforeData || !afterData) return;
+
+    // Check if evidence photos were just added (didn't exist before, exists now)
+    const hadPhotos = beforeData.evidence?.photos && beforeData.evidence.photos.length > 0;
+    const hasPhotos = afterData.evidence?.photos && afterData.evidence.photos.length > 0;
+
+    if (hadPhotos || !hasPhotos) {
+      // Either already had photos or still doesn't have photos - ignore
+      return;
+    }
+
+    console.log(`📸 Evidence photos added to safety report ${reportId}: ${afterData.evidence.photos.length} photo(s)`);
+
+    try {
+      // Get admin email
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || 'shrijan.bhandari1318@gmail.com';
+
+      // Build photo links HTML
+      const photoLinks = afterData.evidence.photos.map((url: string, index: number) =>
+        `<li><a href="${url}" style="color: #4F46E5;">View Photo ${index + 1}</a></li>`
+      ).join('');
+
+      // Send follow-up email to admin with photo links
+      const adminEmailHtml = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: #4F46E5; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+            <h1 style="color: white; margin: 0; font-size: 20px;">📸 Evidence Photos Added to Safety Report</h1>
+          </div>
+          
+          <p>Evidence photos have been uploaded for safety report:</p>
+          
+          <div style="background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <p style="margin: 0;"><strong>Report ID:</strong> ${reportId}</p>
+            <p style="margin: 8px 0 0 0;"><strong>Type:</strong> ${afterData.type || 'Unknown'}</p>
+            <p style="margin: 8px 0 0 0;"><strong>Severity:</strong> ${afterData.severity || 'Unknown'}</p>
+          </div>
+          
+          <div style="background: #EFF6FF; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #4F46E5;">
+            <h3 style="color: #1E40AF; margin: 0 0 10px 0;">📷 Evidence Photos (${afterData.evidence.photos.length})</h3>
+            <ul style="color: #4F46E5; margin: 0; padding-left: 20px;">
+              ${photoLinks}
+            </ul>
+          </div>
+          
+          <p style="color: #6B7280; font-size: 12px; margin-top: 20px;">
+            This is an automated notification from CarpoolConnect.
+          </p>
+        </div>
+      `;
+
+      await sendEmail(adminEmail, "safetyReportEvidenceAdded", [{
+        reportId,
+        type: afterData.type,
+        severity: afterData.severity,
+        photos: afterData.evidence.photos,
+        html: adminEmailHtml,
+      }]);
+
+      console.log(`✅ Evidence photo notification sent for report ${reportId}`);
+
+      // Also send to the reporter if they have an email
+      if (afterData.reporterId) {
+        const reporterDoc = await db.collection("users").doc(afterData.reporterId).get();
+        const reporterEmail = reporterDoc.data()?.email;
+
+        if (reporterEmail) {
+          console.log(`📧 Sending photo confirmation to reporter: ${reporterEmail}`);
+          // The reporter confirmation already includes photos in the safetyReportConfirmation template
+          // Just log for now - the initial email would have been sent already
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error sending evidence photo notification for ${reportId}:`, error);
+    }
+  });
+
 export const createBooking = onCall(async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "User must be logged in");
@@ -3694,6 +3782,95 @@ export const retryFailedPaymentAuthorizations = onSchedule("every 1 hours", asyn
     console.log(`💳 Retry complete: ${retryCount} successful, ${failedPermanentlyCount} permanently failed`);
   } catch (error) {
     console.error("❌ Fatal error in retryFailedPaymentAuthorizations:", error);
+    throw error;
+  }
+});
+
+// ============================================================================
+// DRIVER DOCUMENT EXPIRY CHECK - Scheduled Daily
+// ============================================================================
+
+/**
+ * Scheduled function to check for expired driver documents
+ * Runs daily at 2 AM to:
+ * 1. Mark expired drivers as 'expired' status
+ * 2. Send 30-day warning notifications for upcoming expirations
+ * 3. Notify drivers when their approval expires
+ */
+export const checkDriverExpirations = onSchedule("every day 02:00", async () => {
+  console.log("🔍 Starting daily driver expiry check...");
+
+  const now = new Date();
+  const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  let expiredCount = 0;
+  let warningCount = 0;
+
+  try {
+    // Get all approved drivers with an expiry date
+    const approvedDriversSnapshot = await db.collection("users")
+      .where("driverApproval.status", "==", "approved")
+      .where("driverApproval.expiryDate", "!=", null)
+      .get();
+
+    console.log(`Found ${approvedDriversSnapshot.size} approved drivers with expiry dates`);
+
+    for (const userDoc of approvedDriversSnapshot.docs) {
+      const userData = userDoc.data();
+      const userId = userDoc.id;
+      const expiryDate = new Date(userData.driverApproval?.expiryDate);
+
+      // Check if expired
+      if (expiryDate <= now) {
+        console.log(`⚠️ Driver ${userId} has expired - updating status`);
+
+        await db.collection("users").doc(userId).update({
+          "driverApproval.status": "expired",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Send expiry notification
+        await createNotification({
+          userId,
+          title: "Driver Approval Expired",
+          body: "Your driver approval has expired. Please contact admin to renew your documents and continue posting rides.",
+          type: "system",
+          data: { action: "driver_expired" },
+        });
+
+        expiredCount++;
+        continue;
+      }
+
+      // Check for 30-day warning
+      if (expiryDate <= thirtyDaysFromNow && !userData.driverApproval?.expiryNotificationSent) {
+        const daysRemaining = Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+
+        console.log(`📅 Driver ${userId} expires in ${daysRemaining} days - sending warning`);
+
+        await createNotification({
+          userId,
+          title: "Driver Approval Expiring Soon",
+          body: `Your driver approval expires in ${daysRemaining} days. Please contact admin to update your documents before expiry.`,
+          type: "system",
+          data: { action: "driver_expiry_warning", daysRemaining },
+        });
+
+        // Mark notification as sent
+        await db.collection("users").doc(userId).update({
+          "driverApproval.expiryNotificationSent": true,
+          "driverApproval.expiryNotificationDate": now.toISOString(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        warningCount++;
+      }
+    }
+
+    console.log(`✅ Driver expiry check complete. Expired: ${expiredCount}, Warnings sent: ${warningCount}`);
+
+  } catch (error) {
+    console.error("❌ Error during driver expiry check:", error);
     throw error;
   }
 });

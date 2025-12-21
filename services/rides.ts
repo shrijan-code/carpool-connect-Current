@@ -14,13 +14,13 @@ import {
   Query
 } from 'firebase/firestore';
 import { db } from '@/config/firebase';
-import { Ride, Booking, User } from '@/types';
+import { Ride, Booking, User, AuditLogData, getErrorMessage } from '@/types';
 import { NotificationService } from './notifications';
 import { logger } from '@/utils/logger';
 
 // Audit log service
 class AuditService {
-  static async logAction(action: string, entityType: string, entityId: string, userId: string, data?: any) {
+  static async logAction(action: string, entityType: string, entityId: string, userId: string, data?: AuditLogData) {
     try {
       await addDoc(collection(db, 'audit_logs'), {
         action,
@@ -32,7 +32,7 @@ class AuditService {
         createdAt: serverTimestamp()
       });
     } catch (error) {
-      console.error('Audit log error:', error);
+      logger.error('Audit log error', error);
       // Don't throw error to avoid breaking main functionality
     }
   }
@@ -53,7 +53,7 @@ export class RidesService {
       // The price should already be in cents from the UI
       if (rideData.pricePerSeat !== undefined) {
         rideData.pricePerSeat = Math.round(rideData.pricePerSeat);
-        console.log(`Price stored as ${rideData.pricePerSeat} cents (${(rideData.pricePerSeat / 100).toFixed(2)})`);
+        logger.debug('Price stored', { cents: rideData.pricePerSeat, dollars: (rideData.pricePerSeat / 100).toFixed(2) });
       }
 
       // Ensure availableSeats is set (use totalSeats or seatsAvailable if not provided)
@@ -69,7 +69,7 @@ export class RidesService {
         updatedAt: serverTimestamp()
       });
 
-      logger.info('Ride created successfully with ID:', rideRef.id);
+      logger.info('Ride created successfully', { rideId: rideRef.id });
 
       // Log audit trail
       await AuditService.logAction('CREATE_RIDE', 'ride', rideRef.id, rideData.driverId!, {
@@ -81,9 +81,9 @@ export class RidesService {
       });
 
       return rideRef.id;
-    } catch (error: any) {
-      console.error('Create ride error:', error);
-      throw new Error(error.message || 'Failed to create ride');
+    } catch (error) {
+      logger.error('Create ride error', error);
+      throw new Error(getErrorMessage(error) || 'Failed to create ride');
     }
   }
 
@@ -112,8 +112,8 @@ export class RidesService {
       });
 
       return rides;
-    } catch (error: any) {
-      console.error('Search rides error:', error);
+    } catch (error) {
+      logger.error('Search rides error', error);
       throw new Error('Failed to search rides');
     }
   }
@@ -127,7 +127,7 @@ export class RidesService {
       }
       return null;
     } catch (error) {
-      console.error('Get ride error:', error);
+      logger.error('Get ride error', error);
       return null;
     }
   }
@@ -184,10 +184,10 @@ export class RidesService {
         return new Date(aTime).getTime() - new Date(bTime).getTime();
       });
 
-      logger.debug('Loaded available rides (future only):', rides.length, deliveryOnly ? '(delivery-enabled only)' : '(all rides)');
+      logger.debug('Loaded available rides (future only)', { count: rides.length, deliveryOnly });
       return rides;
-    } catch (error: any) {
-      console.error('Get all available rides error:', error);
+    } catch (error) {
+      logger.error('Get all available rides error', error);
       throw new Error('Failed to get available rides');
     }
   }
@@ -228,10 +228,10 @@ export class RidesService {
       // Sort manually if needed
       rides.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-      logger.debug('Loaded user rides for driver:', userId, '- Count:', rides.length, '(includes past and future)');
+      logger.debug('Loaded user rides for driver', { userId, count: rides.length, includesPastRides: true });
       return rides;
-    } catch (error: any) {
-      console.error('Get user rides error:', error);
+    } catch (error) {
+      logger.error('Get user rides error', error);
       throw new Error('Failed to get user rides');
     }
   }
@@ -241,12 +241,12 @@ export class RidesService {
     rideId: string,
     passengerId: string,
     seats: number,
-    passengerData: any,
+    passengerData: Partial<User>,
     paymentIntentId?: string | null,
     initialStatus: 'pending_driver' | 'pending_payment' = 'pending_driver'
   ): Promise<string> {
     try {
-      logger.debug('Creating booking request:', rideId, 'for passenger:', passengerId, 'seats:', seats);
+      logger.debug('Creating booking request', { rideId, passengerId, seats });
 
       // Validate booking data
       if (!rideId || !passengerId || !seats || seats <= 0) {
@@ -719,7 +719,7 @@ export class RidesService {
   // Accept booking (Driver action)
   static async acceptBooking(bookingId: string, driverId: string): Promise<void> {
     try {
-      logger.debug('Accepting booking:', bookingId, 'by driver:', driverId);
+      logger.debug('Accepting booking', { bookingId, driverId });
 
       // Get booking data
       const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -882,7 +882,7 @@ export class RidesService {
     reason?: string
   ): Promise<void> {
     try {
-      logger.debug('Rejecting booking:', bookingId, 'by driver:', driverId);
+      logger.debug('Rejecting booking', { bookingId, driverId });
 
       // Get booking data
       const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -953,7 +953,7 @@ export class RidesService {
     reason?: string
   ): Promise<void> {
     try {
-      logger.debug('Cancelling booking:', bookingId, 'by passenger:', passengerId);
+      logger.debug('Cancelling booking', { bookingId, passengerId });
 
       // Get booking and ride data
       const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
@@ -1191,7 +1191,7 @@ export class RidesService {
     }
   ): Promise<void> {
     try {
-      logger.debug('Updating ride:', rideId, 'by driver:', driverId, 'updates:', updates);
+      logger.debug('Updating ride', { rideId, driverId, updates });
 
       // 1. Verify the ride exists and belongs to this driver
       const ride = await this.getRideById(rideId);

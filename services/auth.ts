@@ -7,7 +7,9 @@ import {
   GoogleAuthProvider,
   signInWithCredential,
   signInWithPopup,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  reload
 } from 'firebase/auth';
 import {
   doc,

@@ -5,12 +5,14 @@ import admin from '@/lib/firebase-admin';
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     const session = await getSession();
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    const resolvedParams = await params;
 
     try {
         const { note } = await request.json();
@@ -23,7 +25,7 @@ export async function POST(
         };
 
         await db.collection('safety_reports')
-            .doc(params.id)
+            .doc(resolvedParams.id)
             .collection('notes')
             .add(noteData);
 

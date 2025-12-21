@@ -4,8 +4,9 @@ import * as Crypto from 'expo-crypto';
 import { doc, updateDoc, getDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { db, functions } from '@/config/firebase';
 import { httpsCallable } from 'firebase/functions';
-import { User } from '@/types';
+import { User, getErrorMessage, AuditLogData } from '@/types';
 import { stripeCircuitBreaker, CircuitBreakerOpenError } from '@/utils/circuit-breaker';
+import { logger } from '@/utils/logger';
 
 // Stripe Configuration
 export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51HMiYNDuXA4vn5QKRFRjdRH71bcNVlaxgaB459LlIuyAre8qUVEb53vf4haYuAKm2nVPxGssxvxaKN9Eb00kXF1n000Hg6HieO';
@@ -13,16 +14,16 @@ const STRIPE_CONNECT_EXPRESS_URL = 'https://connect.stripe.com/d/setup/e/_Ssi0gO
 
 // Initialize Stripe - Web compatible version
 export const initializeStripe = async (): Promise<void> => {
-  console.log(`Stripe initialization for ${Platform.OS} platform`);
+  logger.debug('Stripe initialization', { platform: Platform.OS });
 
   if (Platform.OS === 'web') {
-    console.log('Stripe initialization skipped on web platform - using web-compatible payment methods');
+    logger.debug('Stripe initialization skipped on web platform');
     return Promise.resolve();
   }
 
   // For native platforms, we simulate initialization
   // In production, you would properly initialize Stripe here
-  console.log('Stripe initialization completed for native platform');
+  logger.debug('Stripe initialization completed for native platform');
   return Promise.resolve();
 };
 
@@ -36,19 +37,20 @@ export class StripeConnectService {
    */
   static async startConnectOnboarding(user: User): Promise<string> {
     try {
-      console.log('Starting Stripe Connect onboarding for user:', user.id);
+      logger.info('Starting Stripe Connect onboarding', { userId: user.id });
 
       const createAccount = httpsCallable(functions, 'createStripeConnectAccount');
-      const { data }: any = await createAccount();
+      const response = await createAccount();
+      const data = response.data as { url?: string };
 
       if (!data.url) {
         throw new Error('No URL returned from backend');
       }
 
-      console.log('Generated Connect URL:', data.url);
+      logger.debug('Generated Connect URL', { url: data.url.substring(0, 50) + '...' });
       return data.url;
     } catch (error) {
-      console.error('Error starting Connect onboarding:', error);
+      logger.error('Error starting Connect onboarding', error);
       throw new Error('Failed to start Stripe Connect onboarding');
     }
   }
@@ -59,7 +61,7 @@ export class StripeConnectService {
    */
   static async handleConnectReturn(url: string, userId: string): Promise<boolean> {
     try {
-      console.log('Handling Connect return URL:', url);
+      logger.debug('Handling Connect return URL', { urlPrefix: url.substring(0, 30) });
 
       const parsedUrl = new URL(url);
       const code = parsedUrl.searchParams.get('code');
@@ -67,7 +69,7 @@ export class StripeConnectService {
       const error = parsedUrl.searchParams.get('error');
 
       if (error) {
-        console.error('Stripe Connect error:', error);
+        logger.error('Stripe Connect error', new Error(error));
         throw new Error(`Stripe Connect error: ${error}`);
       }
 
@@ -109,10 +111,10 @@ export class StripeConnectService {
         stripeConnectState: null, // Clear the state
       });
 
-      console.log('Stripe Connect setup completed for user:', userId);
+      logger.info('Stripe Connect setup completed', { userId });
       return true;
     } catch (error) {
-      console.error('Error handling Connect return:', error);
+      logger.error('Error handling Connect return', error);
       throw error;
     }
   }
@@ -126,7 +128,7 @@ export class StripeConnectService {
       const userData = userDoc.data();
       return !!(userData?.stripeAccountId && userData?.stripeConnectCompleted);
     } catch (error) {
-      console.error('Error checking Connect setup:', error);
+      logger.error('Error checking Connect setup', error);
       return false;
     }
   }
@@ -150,7 +152,7 @@ export class StripeConnectService {
 
       return await response.json();
     } catch (error) {
-      console.error('Error getting account status:', error);
+      logger.error('Error getting account status', error);
       throw error;
     }
   }
@@ -173,7 +175,7 @@ export class StripePaymentService {
   }): Promise<{ clientSecret: string; paymentIntentId: string }> {
     // Wrap with circuit breaker
     return stripeCircuitBreaker.execute(async () => {
-      console.log('Creating payment intent via Firebase Functions:', { amount, bookingId });
+      logger.payment.initiated(bookingId, amount);
 
       const processPayment = httpsCallable(functions, 'processPayment');
       const response = await processPayment({
@@ -190,7 +192,7 @@ export class StripePaymentService {
         }
       }
 
-      console.log('Payment intent created:', result.paymentId);
+      logger.debug('Payment intent created', { paymentId: result.paymentId });
 
       return {
         clientSecret: result.clientSecret,
@@ -201,8 +203,8 @@ export class StripePaymentService {
       if (error instanceof CircuitBreakerOpenError) {
         throw new Error('Payment service is temporarily unavailable. Please try again in a few minutes.');
       }
-      console.error('Error creating payment intent:', error);
-      throw new Error(error.message || 'Failed to create payment intent');
+      logger.error('Error creating payment intent', error);
+      throw new Error(getErrorMessage(error) || 'Failed to create payment intent');
     });
   }
 
@@ -212,7 +214,7 @@ export class StripePaymentService {
    */
   static async capturePayment(paymentIntentId: string, bookingId: string): Promise<void> {
     return stripeCircuitBreaker.execute(async () => {
-      console.log('Capturing payment:', paymentIntentId);
+      logger.debug('Capturing payment', { paymentIntentId });
       const capturePaymentFn = httpsCallable(functions, 'capturePayment');
       const response = await capturePaymentFn({ paymentIntentId, bookingId });
       const result = response.data as any;
@@ -220,13 +222,13 @@ export class StripePaymentService {
       if (!result.success) {
         throw new Error('Capture failed on server');
       }
-      console.log('Payment captured successfully');
-    }).catch((error: any) => {
+      logger.payment.succeeded(paymentIntentId);
+    }).catch((error) => {
       if (error instanceof CircuitBreakerOpenError) {
         throw new Error('Payment service is temporarily unavailable. Please try again in a few minutes.');
       }
-      console.error('Error capturing payment:', error);
-      throw new Error(error.message || 'Failed to capture payment');
+      logger.error('Error capturing payment', error);
+      throw new Error(getErrorMessage(error) || 'Failed to capture payment');
     });
   }
 
@@ -276,7 +278,7 @@ export class StripePaymentService {
 
       // For demo purposes, we'll simulate successful payment
       // In a real app, you'd use the Stripe SDK to collect payment method and confirm
-      console.log('Simulating successful payment for demo...');
+      logger.debug('Simulating successful payment for demo');
 
       // Log the payment attempt
       await addDoc(collection(db, 'payment_logs'), {
@@ -295,7 +297,7 @@ export class StripePaymentService {
         paymentIntentId,
       };
     } catch (error) {
-      console.error('Error processing ride payment:', error);
+      logger.error('Error processing ride payment', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Payment processing failed',
@@ -330,7 +332,7 @@ export class StripeAuditService {
         createdAt: serverTimestamp(),
       });
     } catch (error) {
-      console.error('Stripe audit log error:', error);
+      logger.error('Stripe audit log error', error);
     }
   }
 }

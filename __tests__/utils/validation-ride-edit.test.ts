@@ -60,12 +60,15 @@ describe('validateRideEditPermissions', () => {
             expect(result.canEdit).toBe(true);
         });
 
-        it('should deny edit when confirmed bookings exist', () => {
+        it('should allow limited edit when confirmed bookings exist', () => {
             const ride = { driverId: 'user123', status: 'upcoming' };
             const result = validateRideEditPermissions(ride, 'user123', true);
 
-            expect(result.canEdit).toBe(false);
-            expect(result.reason).toBe('Cannot edit ride with confirmed bookings');
+            // New behavior: limited editing allowed (notes and seats only)
+            expect(result.canEdit).toBe(true);
+            expect(result.limitedEdit).toBe(true);
+            expect(result.editableFields).toEqual(['notes', 'availableSeats']);
+            expect(result.reason).toContain('confirmed');
         });
     });
 

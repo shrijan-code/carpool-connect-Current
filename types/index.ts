@@ -39,11 +39,21 @@ export interface User {
   };
   // Driver approval status - controls whether driver can post rides
   driverApproval?: {
-    status: 'not_submitted' | 'pending' | 'approved' | 'rejected';
+    status: 'not_submitted' | 'pending' | 'approved' | 'rejected' | 'expired';
     submittedAt?: string;
     reviewedAt?: string;
     reviewedBy?: string;
     rejectionReason?: string;
+    // Document locking - prevents driver from changing docs after submission
+    documentsLocked?: boolean;
+    lockedAt?: string;
+    unlockedBy?: string;          // Admin ID who unlocked for re-upload
+    unlockedAt?: string;
+    unlockedReason?: string;
+    // Expiry date - when document validity expires (e.g., insurance expiry)
+    expiryDate?: string;          // ISO date when approval expires
+    expiryNotificationSent?: boolean;
+    expiryNotificationDate?: string;
   };
   createdAt: string;
   updatedAt: string;

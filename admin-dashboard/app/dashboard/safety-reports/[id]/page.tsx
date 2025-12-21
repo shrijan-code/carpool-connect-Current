@@ -78,7 +78,7 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
                 <div className="grid grid-cols-2 gap-6 mb-6">
                     <div>
                         <h3 className="text-sm font-medium text-gray-500 mb-1">Type</h3>
-                        <p className="text-gray-900">{report.type.replace('_', ' ')}</p>
+                        <p className="text-gray-900">{(report.type || 'Unknown').replace('_', ' ')}</p>
                     </div>
                     <div>
                         <h3 className="text-sm font-medium text-gray-500 mb-1">Created</h3>

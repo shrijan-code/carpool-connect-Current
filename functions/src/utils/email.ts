@@ -659,6 +659,12 @@ const templates = {
       </div>
     `,
   }),
+
+  // Email when evidence photos are uploaded to a safety report
+  safetyReportEvidenceAdded: (data: { reportId: string; type: string; severity: string; photos: string[]; html: string }) => ({
+    subject: `📸 Evidence Photos Added - Safety Report ${data.reportId.slice(-8)}`,
+    html: data.html,
+  }),
 };
 
 // Send email function

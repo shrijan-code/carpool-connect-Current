@@ -1,11 +1,11 @@
 import React, { useMemo } from 'react';
-import { View, StyleSheet, ViewStyle } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { DarkColors, LightColors } from '@/constants/colors';
 import { useSettingsStore } from '@/store/settings-store';
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padding?: number;
   testID?: string;
 }
@@ -19,8 +19,8 @@ export const Card: React.FC<CardProps> = ({
   const theme = useSettingsStore((s) => s.settings.currentTheme);
   const Colors = useMemo(() => (theme === 'dark' ? DarkColors : LightColors), [theme]);
   return (
-    <View 
-      style={[styles.cardBase, { padding, backgroundColor: Colors.card, borderColor: Colors.border, shadowColor: Colors.shadow.color, shadowOpacity: Colors.shadow.opacity }, style]} 
+    <View
+      style={[styles.cardBase, { padding, backgroundColor: Colors.card, borderColor: Colors.border, shadowColor: Colors.shadow.color, shadowOpacity: Colors.shadow.opacity }, style]}
       testID={testID}
     >
       {children}

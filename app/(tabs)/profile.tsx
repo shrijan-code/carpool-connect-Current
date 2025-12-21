@@ -796,6 +796,45 @@ export default function ProfileScreen() {
 
               <View style={styles.documentSection}>
                 <Text style={styles.documentTitle}>Documents</Text>
+
+                {/* Show lock warning if documents are locked */}
+                {user?.driverApproval?.documentsLocked && (
+                  <View style={[styles.approvalStatusBox, { backgroundColor: '#FEF3C7', marginBottom: 12 }]}>
+                    <Lock size={16} color="#D97706" />
+                    <Text style={[styles.approvalStatusText, { color: '#D97706', flex: 1 }]}>
+                      Documents locked. Contact admin to update.
+                    </Text>
+                  </View>
+                )}
+
+                {/* Show expiry warning if approaching */}
+                {user?.driverApproval?.expiryDate && (() => {
+                  const expiry = new Date(user.driverApproval.expiryDate);
+                  const now = new Date();
+                  const daysUntilExpiry = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                  if (daysUntilExpiry <= 30 && daysUntilExpiry > 0) {
+                    return (
+                      <View style={[styles.approvalStatusBox, { backgroundColor: '#FEF3C7', marginBottom: 12 }]}>
+                        <AlertTriangle size={16} color="#D97706" />
+                        <Text style={[styles.approvalStatusText, { color: '#D97706', flex: 1 }]}>
+                          Documents expire in {daysUntilExpiry} day{daysUntilExpiry !== 1 ? 's' : ''}. Contact admin to update.
+                        </Text>
+                      </View>
+                    );
+                  }
+                  if (daysUntilExpiry <= 0) {
+                    return (
+                      <View style={[styles.approvalStatusBox, { backgroundColor: '#FEE2E2', marginBottom: 12 }]}>
+                        <AlertTriangle size={16} color="#DC2626" />
+                        <Text style={[styles.approvalStatusText, { color: '#DC2626', flex: 1 }]}>
+                          Documents expired. Contact admin to renew and continue posting rides.
+                        </Text>
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <View style={styles.documentRow}>
                   <View style={styles.documentItem}>
                     <File size={16} color={Colors.textSecondary} />
@@ -803,13 +842,19 @@ export default function ProfileScreen() {
                     <TouchableOpacity
                       style={[
                         styles.documentButton,
-                        user?.carDetails?.registrationDocument && styles.documentButtonUploaded
+                        user?.carDetails?.registrationDocument && styles.documentButtonUploaded,
+                        user?.driverApproval?.documentsLocked && { opacity: 0.5 }
                       ]}
                       onPress={() => handleDocumentUpload('registration')}
-                      disabled={uploadingDocument === 'registration'}
+                      disabled={uploadingDocument === 'registration' || user?.driverApproval?.documentsLocked}
                     >
                       {uploadingDocument === 'registration' ? (
                         <Text style={styles.documentButtonText}>Uploading...</Text>
+                      ) : user?.driverApproval?.documentsLocked ? (
+                        <>
+                          <Lock size={14} color={Colors.textSecondary} />
+                          <Text style={styles.documentButtonText}>Locked</Text>
+                        </>
                       ) : (
                         <>
                           <Upload size={14} color={user?.carDetails?.registrationDocument ? Colors.background : Colors.primary} />
@@ -830,13 +875,19 @@ export default function ProfileScreen() {
                     <TouchableOpacity
                       style={[
                         styles.documentButton,
-                        user?.carDetails?.insuranceDocument && styles.documentButtonUploaded
+                        user?.carDetails?.insuranceDocument && styles.documentButtonUploaded,
+                        user?.driverApproval?.documentsLocked && { opacity: 0.5 }
                       ]}
                       onPress={() => handleDocumentUpload('insurance')}
-                      disabled={uploadingDocument === 'insurance'}
+                      disabled={uploadingDocument === 'insurance' || user?.driverApproval?.documentsLocked}
                     >
                       {uploadingDocument === 'insurance' ? (
                         <Text style={styles.documentButtonText}>Uploading...</Text>
+                      ) : user?.driverApproval?.documentsLocked ? (
+                        <>
+                          <Lock size={14} color={Colors.textSecondary} />
+                          <Text style={styles.documentButtonText}>Locked</Text>
+                        </>
                       ) : (
                         <>
                           <Upload size={14} color={user?.carDetails?.insuranceDocument ? Colors.background : Colors.primary} />

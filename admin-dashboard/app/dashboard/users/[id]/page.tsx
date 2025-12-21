@@ -286,16 +286,43 @@ export default function UserDetailPage() {
                         Driver Verification
                     </h3>
 
-                    {/* Approval Status */}
-                    <div className="mb-4">
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Approval Status</p>
-                        <span className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${user.driverApproval?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                    {/* Approval Status with Expiry */}
+                    <div className="flex flex-wrap gap-4 mb-4">
+                        <div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Approval Status</p>
+                            <span className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${user.driverApproval?.status === 'approved' ? 'bg-green-100 text-green-800' :
                                 user.driverApproval?.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
                                     user.driverApproval?.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                                        'bg-gray-100 text-gray-800'
-                            }`}>
-                            {user.driverApproval?.status || 'Not Submitted'}
-                        </span>
+                                        user.driverApproval?.status === 'expired' ? 'bg-orange-100 text-orange-800' :
+                                            'bg-gray-100 text-gray-800'
+                                }`}>
+                                {user.driverApproval?.status || 'Not Submitted'}
+                            </span>
+                        </div>
+                        {user.driverApproval?.expiryDate && (
+                            <div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Expiry Date</p>
+                                <span className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${new Date(user.driverApproval.expiryDate) <= new Date()
+                                        ? 'bg-red-100 text-red-800'
+                                        : new Date(user.driverApproval.expiryDate) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+                                            ? 'bg-yellow-100 text-yellow-800'
+                                            : 'bg-green-100 text-green-800'
+                                    }`}>
+                                    {formatDate(user.driverApproval.expiryDate)}
+                                </span>
+                            </div>
+                        )}
+                        {user.driverApproval?.documentsLocked !== undefined && (
+                            <div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Documents</p>
+                                <span className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${user.driverApproval.documentsLocked
+                                        ? 'bg-purple-100 text-purple-800'
+                                        : 'bg-gray-100 text-gray-800'
+                                    }`}>
+                                    {user.driverApproval.documentsLocked ? '🔒 Locked' : '🔓 Unlocked'}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Vehicle Details */}
@@ -352,34 +379,99 @@ export default function UserDetailPage() {
                         </div>
                     </div>
 
-                    {/* Approval Actions - show only if pending or can be changed */}
+                    {/* Approval Actions - show only if pending */}
                     {user.driverApproval?.status === 'pending' && (
-                        <div className="flex gap-3 pt-4 border-t dark:border-gray-700">
-                            <button
-                                onClick={() => {
-                                    if (confirm('Approve this driver? They will be able to create rides.')) {
-                                        handleAction('approve_driver');
-                                    }
-                                }}
-                                disabled={actionLoading !== null}
-                                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                <CheckCircle className="w-4 h-4" />
-                                {actionLoading === 'approve_driver' ? 'Approving...' : 'Approve Driver'}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    const reason = prompt('Enter rejection reason:');
-                                    if (reason) {
-                                        handleAction('reject_driver', { reason });
-                                    }
-                                }}
-                                disabled={actionLoading !== null}
-                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                <XCircle className="w-4 h-4" />
-                                {actionLoading === 'reject_driver' ? 'Rejecting...' : 'Reject Driver'}
-                            </button>
+                        <div className="space-y-3 pt-4 border-t dark:border-gray-700">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Document Expiry Date (Required for Approval)
+                                </label>
+                                <input
+                                    type="date"
+                                    id="expiryDate"
+                                    min={new Date().toISOString().split('T')[0]}
+                                    className="px-3 py-2 border dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                                />
+                            </div>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        const expiryInput = document.getElementById('expiryDate') as HTMLInputElement;
+                                        const expiryDate = expiryInput?.value;
+                                        if (!expiryDate) {
+                                            alert('Please select an expiry date based on the insurance/registration validity');
+                                            return;
+                                        }
+                                        if (confirm('Approve this driver? They will be able to create rides until the expiry date.')) {
+                                            handleAction('approve_driver', { expiryDate });
+                                        }
+                                    }}
+                                    disabled={actionLoading !== null}
+                                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    <CheckCircle className="w-4 h-4" />
+                                    {actionLoading === 'approve_driver' ? 'Approving...' : 'Approve Driver'}
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        const reason = prompt('Enter rejection reason:');
+                                        if (reason) {
+                                            handleAction('reject_driver', { reason });
+                                        }
+                                    }}
+                                    disabled={actionLoading !== null}
+                                    className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50"
+                                >
+                                    <XCircle className="w-4 h-4" />
+                                    {actionLoading === 'reject_driver' ? 'Rejecting...' : 'Reject Driver'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Actions for approved/expired drivers */}
+                    {(user.driverApproval?.status === 'approved' || user.driverApproval?.status === 'expired') && (
+                        <div className="space-y-3 pt-4 border-t dark:border-gray-700">
+                            <div className="flex flex-wrap gap-3">
+                                {/* Unlock Documents Button */}
+                                {user.driverApproval?.documentsLocked && (
+                                    <button
+                                        onClick={() => {
+                                            const reason = prompt('Enter reason for unlocking documents (e.g., "Driver needs to update expired insurance"):');
+                                            if (reason) {
+                                                handleAction('unlock_documents', { reason });
+                                            }
+                                        }}
+                                        disabled={actionLoading !== null}
+                                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2 disabled:opacity-50"
+                                    >
+                                        🔓 {actionLoading === 'unlock_documents' ? 'Unlocking...' : 'Unlock Documents'}
+                                    </button>
+                                )}
+                                {/* Update Expiry Button */}
+                                <button
+                                    onClick={() => {
+                                        const newExpiry = prompt('Enter new expiry date (YYYY-MM-DD):',
+                                            user.driverApproval?.expiryDate?.split('T')[0] || '');
+                                        if (newExpiry && /^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) {
+                                            handleAction('update_expiry', { expiryDate: newExpiry });
+                                        } else if (newExpiry) {
+                                            alert('Please enter date in YYYY-MM-DD format');
+                                        }
+                                    }}
+                                    disabled={actionLoading !== null}
+                                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2 disabled:opacity-50"
+                                >
+                                    📅 {actionLoading === 'update_expiry' ? 'Updating...' : 'Update Expiry Date'}
+                                </button>
+                            </div>
+                            {/* Show unlock history if unlocked */}
+                            {user.driverApproval?.unlockedAt && (
+                                <p className="text-sm text-gray-500 dark:text-gray-400">
+                                    Last unlocked: {formatDate(user.driverApproval.unlockedAt)}
+                                    {user.driverApproval.unlockedReason && ` - "${user.driverApproval.unlockedReason}"`}
+                                </p>
+                            )}
                         </div>
                     )}
 
