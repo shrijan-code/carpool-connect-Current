@@ -1,111 +1,217 @@
+/**
+ * Legal Text Constants for CarpoolConnect Mobile App
+ * Consistent with webapp privacy and terms pages
+ * Last updated: December 21, 2024
+ */
+
 export const TERMS_OF_SERVICE = `
-1. Acceptance of Terms
-By accessing or using CarpoolConnect, you agree to be bound by these Terms of Service. If you do not agree, please do not use the app.
+TERMS & CONDITIONS
 
-2. Description of Service
-CarpoolConnect is a platform connecting drivers and passengers for shared rides. We facilitate connections and payments but do not provide transportation services ourselves.
+Last Updated: December 21, 2024
 
-3. User Accounts
-- You must be at least 18 years old to use CarpoolConnect
-- You are responsible for maintaining account security
-- You must provide accurate and complete information
-- Notify us immediately of unauthorized access
+IMPORTANT: By using CarpoolConnect, you agree to these Terms. Please read carefully.
 
-4. Driver Requirements
-- Valid driver's license and adequate insurance
-- Identity verification through our platform
-- Roadworthy vehicle in safe condition
-- Compliance with traffic laws
-- No impaired driving
+1. ABOUT CARPOOLCONNECT
 
-5. Passenger Responsibilities
-- Be at pickup location on time
-- Treat drivers and vehicles with respect
-- Wear seatbelts during journeys
-- Pay agreed fares through the app
+CarpoolConnect Pty Ltd is a TECHNOLOGY PLATFORM that enables users to post, discover, and arrange shared rides. We provide software infrastructure connecting drivers and passengers.
 
-6. Payments and Fees
-- Passengers pay fares plus a platform service fee
-- Payments processed securely via Stripe
-- Drivers receive payouts to connected bank accounts
-- All fees displayed before booking confirmation
+WE DO NOT provide transportation services. WE DO NOT employ drivers. WE DO NOT own or operate vehicles. All ride arrangements are made directly between independent users.
 
-7. Cancellation Policy
-- Free cancellation up to 24 hours before ride
-- Late cancellations may incur fees
-- Repeated driver cancellations may result in restrictions
+2. ELIGIBILITY
 
-8. Safety and Conduct
-All users must behave respectfully and report safety concerns. We reserve the right to suspend accounts for violations.
+You must be at least 18 years old and provide accurate registration information. You are responsible for all activity under your account.
 
-9. Limitation of Liability
-CarpoolConnect connects users but is not responsible for conduct, accidents, or delays. Our liability is limited to fees paid for disputed transactions.
+3. DRIVER REQUIREMENTS
 
-10. Contact
-Email: legal@carpoolconnect.com.au
+✅ All drivers MUST complete identity verification through Stripe Identity.
+
+Drivers represent and warrant they:
+• Hold a valid driver's license
+• Have adequate vehicle insurance
+• Operate a roadworthy vehicle
+• Will comply with all traffic laws
+• Will not drive while impaired
+
+⚠️ DISCLAIMER: While we require identity verification, CarpoolConnect does not verify driver's licenses, insurance, vehicle registration, or driving history. Drivers are solely responsible for meeting all legal requirements.
+
+4. PASSENGER ACKNOWLEDGMENTS
+
+⚠️ Passenger identity verification is OPTIONAL and NOT required.
+
+By using CarpoolConnect as a passenger, you acknowledge:
+• You enter into arrangements directly with drivers, not CarpoolConnect
+• You assume responsibility for your own safety
+• You will be punctual and respectful
+• You will pay agreed fares through the app
+
+5. PAYMENTS (HANDLED BY STRIPE)
+
+All payment processing is provided by Stripe, Inc. CarpoolConnect does not directly process or store payment card information.
+
+• Passengers pay fares plus platform service fee
+• Drivers receive payouts via Stripe Connect
+• All fees displayed before booking confirmation
+
+6. CANCELLATION
+
+• Passengers: Free cancellation 24+ hours before ride
+• Late cancellations may incur fees
+• Repeated driver cancellations may result in restrictions
+
+7. SAFETY & CONDUCT
+
+All users must behave respectfully and report safety concerns. We may suspend accounts for violations without notice.
+
+8. LIMITATION OF LIABILITY ⚠️
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW:
+
+• CarpoolConnect provides a technology platform only
+• We are NOT LIABLE for user actions or conduct
+• We are NOT LIABLE for accidents, injuries, death, or property damage
+• We are NOT LIABLE for delays, cancellations, or ride failures
+• We are NOT LIABLE for lost or damaged belongings
+• We are NOT LIABLE for payment processing issues (handled by Stripe)
+
+OUR TOTAL LIABILITY SHALL NOT EXCEED THE FEES YOU PAID US IN THE PAST 12 MONTHS, OR AUD $100, WHICHEVER IS LESS.
+
+9. DISCLAIMER OF WARRANTIES
+
+The platform is provided "AS IS" without warranties of any kind.
+
+10. INDEMNIFICATION
+
+You agree to indemnify CarpoolConnect against claims arising from your use of the platform.
+
+11. GOVERNING LAW
+
+These Terms are governed by the laws of the Australian Capital Territory, Australia.
+
+12. CONTACT
+
+Legal: legal@carpoolconnect.com.au
+Support: hello@carpoolconnect.com.au
+Location: Canberra, ACT, Australia
+
+By using CarpoolConnect, you acknowledge you have read, understood, and agree to these Terms.
 `;
 
 export const PRIVACY_POLICY = `
-1. Information We Collect
-- Personal: Name, email, phone, profile photo, ID documents
-- Location: Real-time during rides, pickup/dropoff points
-- Payment: Card details (via Stripe), transaction history
-- Device: Type, OS, identifiers, network info
-- Usage: App interactions, ride history, ratings
+PRIVACY POLICY
 
-2. How We Use Your Information
-- Facilitate ride matching and payments
-- Verify identities and ensure safety
-- Provide customer support
-- Send ride and account notifications
-- Improve services and develop features
-- Comply with legal obligations
+Last Updated: December 21, 2024
 
-3. Third-Party Services
-- Firebase (Google): Authentication and database
-- Stripe: Payments and identity verification  
-- Google Maps: Location and routing
+CarpoolConnect Pty Ltd ("we") is committed to transparency about data collection and use.
 
-4. Data Sharing
-- Between matched drivers and passengers
-- With payment processors for transactions
-- With law enforcement when legally required
-We never sell your data to third parties.
+1. WHO WE ARE
 
-5. Data Retention
-We retain data while your account is active. After deletion, personal data is removed within 30 days. Financial records kept up to 7 years for legal compliance.
+CarpoolConnect is a technology platform connecting drivers and passengers. We are NOT a transportation company.
 
-6. Data Security
-We use encryption, secure storage, and access controls. No method is 100% secure.
+Business: CarpoolConnect Pty Ltd
+Location: Canberra, ACT, Australia
+Contact: privacy@carpoolconnect.com.au
 
-7. Your Rights
-You can access, correct, or delete your data via app settings or by contacting privacy@carpoolconnect.com.au
+2. INFORMATION WE COLLECT
 
-8. Children's Privacy
+• Account Info: Name, email, phone, profile photo
+• Identity Verification (Drivers): ID documents via Stripe Identity
+• Location: GPS during rides, pickup/dropoff points
+• Payment Info: Collected EXCLUSIVELY by Stripe (not us)
+• Device Info: Type, OS, app version, device identifiers
+• Usage Data: App interactions, ride history, ratings
+
+3. HOW WE USE YOUR INFORMATION
+
+• Display profiles for ride matching
+• Facilitate driver-passenger communication
+• Process payments through Stripe
+• Verify driver identities
+• Send ride and account notifications
+• Provide customer support
+• Improve our platform
+
+4. THIRD-PARTY SERVICES
+
+🔥 Firebase (Google): Authentication, database, cloud functions
+💳 Stripe: Payment processing, driver payouts, identity verification
+🗺️ Google Maps: Location services, maps, routing
+
+Each has their own privacy policies.
+
+5. DATA SHARING
+
+We share information:
+• Between matched drivers and passengers
+• With Stripe for payment processing
+• When legally required
+• To prevent fraud or protect safety
+
+✅ We NEVER sell your data to third parties.
+
+6. DATA SECURITY
+
+We use encryption, secure cloud infrastructure, and access controls. No method is 100% secure.
+
+7. DATA RETENTION
+
+• Active accounts: Data retained while active
+• After deletion: Personal data deleted within 30 days
+• Financial records: Up to 7 years for legal compliance
+
+8. YOUR RIGHTS
+
+• Access your data
+• Correct inaccurate data
+• Delete your account (via app settings)
+• Request data portability
+
+Contact: privacy@carpoolconnect.com.au
+
+9. CHILDREN'S PRIVACY
+
 CarpoolConnect is for users 18+. We don't knowingly collect data from minors.
 
-9. Contact Us
-Email: privacy@carpoolconnect.com.au
-Location: Canberra, Australia
+10. CHANGES
+
+We may update this policy and will notify you of significant changes.
+
+11. CONTACT
+
+Privacy: privacy@carpoolconnect.com.au
+Support: hello@carpoolconnect.com.au
+Location: Canberra, ACT, Australia
 `;
 
 export const FAQ = `
+FREQUENTLY ASKED QUESTIONS
+
 Q: How do I book a ride?
 A: Search for your destination, select a ride that matches your schedule, and tap "Book Seat".
 
 Q: How do payments work?
-A: You pay securely through the app using a credit/debit card. Drivers receive payouts automatically after the ride is completed.
+A: Payments are processed securely through Stripe. Drivers receive automatic payouts after ride completion. CarpoolConnect does not handle payments directly.
+
+Q: Are drivers verified?
+A: Yes, ALL drivers must complete identity verification through Stripe Identity before offering rides.
+
+Q: Are passengers verified?
+A: Passenger verification is optional. Drivers can see if passengers have completed verification on their profiles.
 
 Q: Can I cancel a ride?
-A: Yes, you can cancel up to 24 hours before the ride for a full refund. Late cancellations may incur a fee.
-
-Q: Is my identity verified?
-A: Yes, we require identity verification for all drivers and encourage it for riders to build trust.
+A: Yes. Free cancellation up to 24 hours before. Late cancellations may incur fees.
 
 Q: What if I leave something in a car?
-A: Contact the driver through the app immediately. If you can't reach them, contact our support team.
+A: Contact the driver through the app immediately. If unreachable, contact support at hello@carpoolconnect.com.au
 
 Q: How do I delete my account?
-A: Go to Profile > scroll down > "Delete Account". This permanently removes all your data.
-`;
+A: Go to Profile > scroll down > "Delete Account". This permanently removes all your data within 30 days.
 
+Q: Is CarpoolConnect a taxi service?
+A: No. CarpoolConnect is a technology platform that connects drivers and passengers. We do not provide transportation services ourselves.
+
+Q: Who is responsible for ride safety?
+A: Users are responsible for their own safety decisions. CarpoolConnect provides safety features but cannot guarantee user behavior.
+
+Q: How do I report a safety concern?
+A: Use the "Report Safety Concern" feature in the app during or after a ride. For emergencies, contact local emergency services.
+`;
