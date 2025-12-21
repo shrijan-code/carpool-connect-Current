@@ -42,8 +42,9 @@ export class SafetyReportService {
       const reportId = docRef.id;
 
       // Upload photos in the background (don't block the response)
+      const reporterId = report.reporterId;
       setTimeout(() => {
-        this.uploadEvidencePhotosAsync(docRef.id, report.evidence?.photos || []).catch(error => {
+        this.uploadEvidencePhotosAsync(docRef.id, reporterId, report.evidence?.photos || []).catch(error => {
           console.error('Background photo upload failed:', error);
         });
       }, 0);
@@ -72,7 +73,7 @@ export class SafetyReportService {
    * Upload evidence photos asynchronously in the background
    * This doesn't block the safety report submission
    */
-  private static async uploadEvidencePhotosAsync(reportId: string, photos: string[]): Promise<void> {
+  private static async uploadEvidencePhotosAsync(reportId: string, reporterId: string, photos: string[]): Promise<void> {
     if (!photos || photos.length === 0) {
       console.log('No evidence photos to upload');
       return;
@@ -93,7 +94,7 @@ export class SafetyReportService {
           console.log(`📸 Uploading evidence photo ${i + 1}/${photos.length}`);
 
           // Add timeout to prevent hanging
-          const uploadPromise = ImageService.uploadSafetyEvidence(reportId, photoUri, i);
+          const uploadPromise = ImageService.uploadSafetyEvidence(reportId, reporterId, photoUri, i);
           const timeoutPromise = new Promise<string | null>((_, reject) =>
             setTimeout(() => reject(new Error('Upload timeout (30s)')), 30000)
           );

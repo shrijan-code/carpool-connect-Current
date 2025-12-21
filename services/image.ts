@@ -140,6 +140,7 @@ export class ImageService {
             customMetadata: {
               uploadedAt: new Date().toISOString(),
               originalName: finalFileName,
+              uploadedBy: auth.currentUser?.uid || 'unknown',
             }
           };
 
@@ -246,36 +247,42 @@ export class ImageService {
   }
 
   // Upload vehicle document (keeps historical versions)
+  // Path matches storage rules: /vehicle-documents/{userId}/{allPaths=**}
   static async uploadVehicleDocument(
     userId: string,
     uri: string,
     documentType: 'registration' | 'insurance'
   ): Promise<string | null> {
     const timestamp = Date.now();
-    const fileName = `${userId}_${documentType}_${timestamp}.jpg`;
+    const fileName = `${documentType}_${timestamp}.jpg`;
     return this.uploadImage(
       uri,
-      `vehicle-documents`,
+      `vehicle-documents/${userId}`,
       fileName
     );
   }
 
   // Upload incident image
+  // Path matches storage rules: /incident-images/{userId}/{allPaths=**}
   static async uploadIncidentImage(
+    userId: string,
     rideId: string,
     uri: string
   ): Promise<string | null> {
     const timestamp = Date.now();
     return this.uploadImage(
       uri,
-      `incident-images`,
+      `incident-images/${userId}`,
       `${rideId}_incident_${timestamp}.jpg`
     );
   }
 
   // Upload safety report evidence
+  // Path matches storage rules: /safety-reports/{reportId}/{allPaths=**}
+  // Metadata includes uploadedBy for security rule validation
   static async uploadSafetyEvidence(
     reportId: string,
+    userId: string,
     uri: string,
     index: number
   ): Promise<string | null> {
