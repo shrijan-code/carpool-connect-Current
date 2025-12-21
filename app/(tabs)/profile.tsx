@@ -81,6 +81,8 @@ export default function ProfileScreen() {
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus | null>(null);
   const [showVerificationModal, setShowVerificationModal] = useState<boolean>(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState<boolean>(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState<string>('');
 
   // Check driver status and Stripe setup on component mount
   useEffect(() => {
@@ -201,44 +203,29 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      '⚠️ Delete Account',
-      'This action is permanent and cannot be undone. All your data including rides, bookings, and personal information will be permanently deleted.\n\nAre you sure you want to delete your account?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          onPress: () => {
-            // Second confirmation
-            Alert.alert(
-              '🚨 Final Confirmation',
-              'This is your last chance to cancel. Type DELETE to confirm account deletion.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'I Understand, Delete',
-                  style: 'destructive',
-                  onPress: async () => {
-                    try {
-                      setIsDeletingAccount(true);
-                      await deleteAccount();
-                      router.replace('/auth');
-                      Alert.alert('Account Deleted', 'Your account and all associated data have been permanently deleted.');
-                    } catch (error: unknown) {
-                      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                      Alert.alert('Deletion Failed', `Failed to delete account: ${errorMessage}\n\nPlease try again or contact support.`);
-                    } finally {
-                      setIsDeletingAccount(false);
-                    }
-                  }
-                },
-              ]
-            );
-          }
-        },
-      ]
-    );
+    // Open the GitHub-style Danger Zone modal
+    setShowDeleteAccountModal(true);
+    setDeleteConfirmText('');
+  };
+
+  const confirmDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') {
+      Alert.alert('Error', 'Please type DELETE to confirm account deletion.');
+      return;
+    }
+
+    try {
+      setIsDeletingAccount(true);
+      await deleteAccount();
+      setShowDeleteAccountModal(false);
+      router.replace('/auth');
+      Alert.alert('Account Deleted', 'Your account and all associated data have been permanently deleted.');
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      Alert.alert('Deletion Failed', `Failed to delete account: ${errorMessage}\n\nPlease try again or contact support.`);
+    } finally {
+      setIsDeletingAccount(false);
+    }
   };
 
   const handleEditProfile = () => {
@@ -1137,6 +1124,76 @@ export default function ProfileScreen() {
             </View>
           </ScrollView>
         </SafeAreaView>
+      </Modal>
+
+      {/* Danger Zone: Delete Account Confirmation Modal */}
+      <Modal
+        visible={showDeleteAccountModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowDeleteAccountModal(false)}
+      >
+        <View style={styles.dangerZoneOverlay}>
+          <View style={styles.dangerZoneModal}>
+            <View style={styles.dangerZoneHeader}>
+              <AlertTriangle size={32} color="#DC2626" />
+              <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+            </View>
+
+            <View style={styles.dangerZoneWarning}>
+              <Text style={styles.dangerZoneWarningText}>
+                ⚠️ This action is permanent and cannot be undone.
+              </Text>
+            </View>
+
+            <Text style={styles.dangerZoneDescription}>
+              Deleting your account will permanently remove:
+            </Text>
+            <View style={styles.dangerZoneList}>
+              <Text style={styles.dangerZoneListItem}>• All your personal information</Text>
+              <Text style={styles.dangerZoneListItem}>• Your ride history and bookings</Text>
+              <Text style={styles.dangerZoneListItem}>• Your driver profile and documents</Text>
+              <Text style={styles.dangerZoneListItem}>• Your payment and earnings history</Text>
+              <Text style={styles.dangerZoneListItem}>• All ratings and reviews</Text>
+            </View>
+
+            <Text style={styles.dangerZoneConfirmLabel}>
+              To confirm, type <Text style={styles.dangerZoneDeleteWord}>DELETE</Text> below:
+            </Text>
+            <Input
+              placeholder="Type DELETE to confirm"
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              style={styles.dangerZoneInput}
+              autoCapitalize="characters"
+            />
+
+            <View style={styles.dangerZoneButtons}>
+              <TouchableOpacity
+                style={styles.dangerZoneCancelButton}
+                onPress={() => {
+                  setShowDeleteAccountModal(false);
+                  setDeleteConfirmText('');
+                }}
+              >
+                <Text style={styles.dangerZoneCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.dangerZoneDeleteButton,
+                  deleteConfirmText !== 'DELETE' && styles.dangerZoneDeleteButtonDisabled
+                ]}
+                onPress={confirmDeleteAccount}
+                disabled={deleteConfirmText !== 'DELETE' || isDeletingAccount}
+              >
+                <Trash2 size={18} color="#FFFFFF" />
+                <Text style={styles.dangerZoneDeleteText}>
+                  {isDeletingAccount ? 'Deleting...' : 'Delete Account'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* Edit Profile Modal */}
@@ -2121,5 +2178,109 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '500' as const,
+  },
+  // Danger Zone styles for delete account modal
+  dangerZoneOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center' as const,
+    alignItems: 'center' as const,
+    padding: 20,
+  },
+  dangerZoneModal: {
+    backgroundColor: Colors.background,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    borderWidth: 2,
+    borderColor: '#DC2626',
+  },
+  dangerZoneHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 12,
+    marginBottom: 16,
+  },
+  dangerZoneTitle: {
+    fontSize: 22,
+    fontWeight: 'bold' as const,
+    color: '#DC2626',
+  },
+  dangerZoneWarning: {
+    backgroundColor: '#FEE2E2',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  dangerZoneWarningText: {
+    color: '#991B1B',
+    fontSize: 14,
+    fontWeight: '600' as const,
+    textAlign: 'center' as const,
+  },
+  dangerZoneDescription: {
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 8,
+    fontWeight: '500' as const,
+  },
+  dangerZoneList: {
+    marginBottom: 16,
+    paddingLeft: 8,
+  },
+  dangerZoneListItem: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  dangerZoneConfirmLabel: {
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 8,
+  },
+  dangerZoneDeleteWord: {
+    fontWeight: 'bold' as const,
+    color: '#DC2626',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  dangerZoneInput: {
+    marginBottom: 20,
+    borderColor: '#DC2626',
+  },
+  dangerZoneButtons: {
+    flexDirection: 'row' as const,
+    gap: 12,
+  },
+  dangerZoneCancelButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: Colors.surface,
+    alignItems: 'center' as const,
+  },
+  dangerZoneCancelText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.text,
+  },
+  dangerZoneDeleteButton: {
+    flex: 1,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    gap: 8,
+  },
+  dangerZoneDeleteButtonDisabled: {
+    backgroundColor: '#F87171',
+    opacity: 0.6,
+  },
+  dangerZoneDeleteText: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: '#FFFFFF',
   },
 });
