@@ -3,7 +3,8 @@ import { User, AuditLogData } from '@/types';
 import { AuthService } from '@/services/auth';
 import { NotificationService } from '@/services/notifications';
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/config/firebase';
 import { listenerManager } from '@/utils/listener-manager';
 import { dataCache } from '@/utils/cache';
 import { logger } from '@/utils/logger';
@@ -36,6 +37,7 @@ interface AuthState {
   loginWithGoogle: () => Promise<void>;
   register: (userData: Partial<User> & { password: string }) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   updateUser: (userData: Partial<User>) => Promise<void>;
   completeOnboarding: () => Promise<void>;
   initializeAuth: () => Promise<void>;
@@ -123,6 +125,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       listenerManager.unregisterAll();
       dataCache.clear();
       set({ user: null, isAuthenticated: false, isOnboarded: false });
+    }
+  },
+
+  deleteAccount: async () => {
+    try {
+      const currentUser = get().user;
+      if (!currentUser) {
+        throw new Error('No user logged in');
+      }
+
+      logger.info('Starting account deletion');
+
+      // Call the Cloud Function to delete all user data
+      const deleteUserAccountFn = httpsCallable(functions, 'deleteUserAccount');
+      await deleteUserAccountFn();
+
+      // Clean up local state (same as logout)
+      logger.debug('[Optimization] Cleaning up all Firestore listeners and cache on account deletion');
+      listenerManager.unregisterAll();
+      dataCache.clear();
+      NotificationService.clearCache(currentUser.id);
+
+      set({ user: null, isAuthenticated: false, isOnboarded: false });
+      logger.info('Account deleted successfully');
+    } catch (error: unknown) {
+      logger.error('Account deletion error', error);
+      throw error;
     }
   },
 

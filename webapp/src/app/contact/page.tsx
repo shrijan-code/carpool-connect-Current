@@ -55,8 +55,8 @@ export default function ContactPage() {
     };
 
     const contactInfo = [
-        { icon: '📧', label: 'Email', value: 'hello@carpoolconnect.com', href: 'mailto:hello@carpoolconnect.com' },
-        { icon: '📍', label: 'Location', value: 'Sydney, Australia', href: null },
+        { icon: '📧', label: 'Email', value: 'hello@carpoolconnect.com.au', href: 'mailto:hello@carpoolconnect.com.au' },
+        { icon: '📍', label: 'Location', value: 'Canberra, Australia', href: null },
         { icon: '📱', label: 'Social', value: '@carpoolconnect', href: 'https://twitter.com' },
     ];
 

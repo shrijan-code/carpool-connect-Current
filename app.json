@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "myapp",
+    "scheme": "carpoolconnect",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -96,8 +96,8 @@
       [
         "@stripe/stripe-react-native",
         {
-          "merchantIdentifier": "string | string[]",
-          "enableGooglePay": "boolean"
+          "merchantIdentifier": "merchant.com.carpoolconnect",
+          "enableGooglePay": true
         }
       ],
       [

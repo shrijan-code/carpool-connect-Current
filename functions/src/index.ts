@@ -3634,6 +3634,169 @@ export const retryFailedPaymentAuthorizations = onSchedule("every 1 hours", asyn
 // IDENTITY VERIFICATION (Stripe Identity)
 // ============================================================================
 
+// ============================================================================
+// ACCOUNT DELETION (App Store Requirement)
+// ============================================================================
+
+/**
+ * Delete user account and all associated data
+ * Required for App Store compliance - users must be able to delete their accounts
+ */
+export const deleteUserAccount = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "User must be logged in to delete account");
+  }
+
+  const userId = request.auth.uid;
+  console.log(`🗑️ Starting account deletion for user: ${userId}`);
+
+  try {
+    // 1. Get user data first (for Stripe cleanup)
+    const userDoc = await db.collection("users").doc(userId).get();
+    const userData = userDoc.exists ? userDoc.data() : null;
+
+    // 2. Cancel all pending/confirmed bookings where user is passenger
+    console.log(`📋 Cancelling user's bookings...`);
+    const passengerBookings = await db.collection("bookings")
+      .where("passengerId", "==", userId)
+      .where("status", "in", ["pending", "pending_driver", "confirmed"])
+      .get();
+
+    const batch1 = db.batch();
+    passengerBookings.forEach((doc) => {
+      batch1.update(doc.ref, {
+        status: "cancelled",
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelReason: "User account deleted",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch1.commit();
+    console.log(`✅ Cancelled ${passengerBookings.size} passenger bookings`);
+
+    // 3. Cancel all pending bookings where user is driver and restore seats
+    const driverBookings = await db.collection("bookings")
+      .where("driverId", "==", userId)
+      .where("status", "in", ["pending", "pending_driver", "confirmed"])
+      .get();
+
+    for (const bookingDoc of driverBookings.docs) {
+      const booking = bookingDoc.data();
+
+      // Restore seats to the ride
+      if (booking.rideId && booking.seats) {
+        await db.collection("rides").doc(booking.rideId).update({
+          availableSeats: admin.firestore.FieldValue.increment(booking.seats),
+          seatsAvailable: admin.firestore.FieldValue.increment(booking.seats),
+        });
+      }
+
+      await bookingDoc.ref.update({
+        status: "cancelled",
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelReason: "Driver account deleted",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    console.log(`✅ Cancelled ${driverBookings.size} driver bookings`);
+
+    // 4. Cancel/delete user's rides
+    console.log(`🚗 Cancelling user's rides...`);
+    const userRides = await db.collection("rides")
+      .where("driverId", "==", userId)
+      .where("status", "in", ["active", "scheduled"])
+      .get();
+
+    const batch2 = db.batch();
+    userRides.forEach((doc) => {
+      batch2.update(doc.ref, {
+        status: "cancelled",
+        cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
+        cancelReason: "Driver account deleted",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch2.commit();
+    console.log(`✅ Cancelled ${userRides.size} rides`);
+
+    // 5. Delete user's notifications
+    console.log(`🔔 Deleting notifications...`);
+    const notifications = await db.collection("notifications")
+      .where("userId", "==", userId)
+      .get();
+
+    const batch3 = db.batch();
+    notifications.forEach((doc) => {
+      batch3.delete(doc.ref);
+    });
+    await batch3.commit();
+    console.log(`✅ Deleted ${notifications.size} notifications`);
+
+    // 6. Delete emergency contacts
+    console.log(`📞 Deleting emergency contacts...`);
+    const emergencyContacts = await db.collection("emergency_contacts")
+      .where("userId", "==", userId)
+      .get();
+
+    const batch4 = db.batch();
+    emergencyContacts.forEach((doc) => {
+      batch4.delete(doc.ref);
+    });
+    await batch4.commit();
+    console.log(`✅ Deleted ${emergencyContacts.size} emergency contacts`);
+
+    // 7. Delete Stripe Connect account if exists
+    if (userData?.stripeAccountId) {
+      console.log(`💳 Deleting Stripe Connect account...`);
+      try {
+        const stripe = getStripe();
+        await stripe.accounts.del(userData.stripeAccountId);
+        console.log(`✅ Deleted Stripe Connect account: ${userData.stripeAccountId}`);
+      } catch (stripeError: any) {
+        // Log but don't fail - account may have active payouts
+        console.error(`⚠️ Could not delete Stripe account (may have active payouts):`, stripeError.message);
+      }
+    }
+
+    // 8. Create audit log entry before deleting user document
+    await db.collection("audit_logs").add({
+      action: "ACCOUNT_DELETED",
+      entityType: "user",
+      entityId: userId,
+      userId: userId,
+      data: {
+        email: userData?.email || "unknown",
+        deletedAt: new Date().toISOString(),
+        bookingsCancelled: passengerBookings.size + driverBookings.size,
+        ridesCancelled: userRides.size,
+      },
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // 9. Delete user document from Firestore
+    console.log(`👤 Deleting user document...`);
+    await db.collection("users").doc(userId).delete();
+    console.log(`✅ User document deleted`);
+
+    // 10. Delete Firebase Auth account
+    console.log(`🔐 Deleting Firebase Auth account...`);
+    await admin.auth().deleteUser(userId);
+    console.log(`✅ Firebase Auth account deleted`);
+
+    console.log(`🎉 Account deletion complete for user: ${userId}`);
+
+    return {
+      success: true,
+      message: "Your account and all associated data have been permanently deleted.",
+    };
+  } catch (error: any) {
+    console.error(`❌ Error deleting account for user ${userId}:`, error);
+    throw new HttpsError("internal", error.message || "Failed to delete account. Please contact support.");
+  }
+});
+
+
 export {
   createVerificationSession,
   getVerificationStatus,

@@ -41,11 +41,12 @@ import {
   File,
   CreditCard,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Trash2
 } from 'lucide-react-native';
 
 export default function ProfileScreen() {
-  const { user, logout, updateUser } = useAuthStore();
+  const { user, logout, deleteAccount, updateUser } = useAuthStore();
   const { getUserRides } = useRidesStore();
   const { loadSettings } = useSettingsStore();
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
@@ -78,6 +79,7 @@ export default function ProfileScreen() {
   const [uploadingDocument, setUploadingDocument] = useState<string | null>(null);
   const [verificationStatus, setVerificationStatus] = useState<VerificationStatus | null>(null);
   const [showVerificationModal, setShowVerificationModal] = useState<boolean>(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState<boolean>(false);
 
   // Check driver status and Stripe setup on component mount
   useEffect(() => {
@@ -191,6 +193,47 @@ export default function ProfileScreen() {
           onPress: async () => {
             await logout();
             router.replace('/auth');
+          }
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      '⚠️ Delete Account',
+      'This action is permanent and cannot be undone. All your data including rides, bookings, and personal information will be permanently deleted.\n\nAre you sure you want to delete your account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            // Second confirmation
+            Alert.alert(
+              '🚨 Final Confirmation',
+              'This is your last chance to cancel. Type DELETE to confirm account deletion.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'I Understand, Delete',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      setIsDeletingAccount(true);
+                      await deleteAccount();
+                      router.replace('/auth');
+                      Alert.alert('Account Deleted', 'Your account and all associated data have been permanently deleted.');
+                    } catch (error: unknown) {
+                      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                      Alert.alert('Deletion Failed', `Failed to delete account: ${errorMessage}\n\nPlease try again or contact support.`);
+                    } finally {
+                      setIsDeletingAccount(false);
+                    }
+                  }
+                },
+              ]
+            );
           }
         },
       ]
@@ -857,6 +900,18 @@ export default function ProfileScreen() {
             style={styles.logoutButton}
             textStyle={styles.logoutText}
           />
+
+          <TouchableOpacity
+            style={styles.deleteAccountButton}
+            onPress={handleDeleteAccount}
+            disabled={isDeletingAccount}
+            activeOpacity={0.7}
+          >
+            <Trash2 size={18} color="#DC2626" />
+            <Text style={styles.deleteAccountText}>
+              {isDeletingAccount ? 'Deleting Account...' : 'Delete Account'}
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -1947,5 +2002,24 @@ const styles = StyleSheet.create({
   levelDescription: {
     fontSize: 12,
     color: Colors.textSecondary,
+  },
+  deleteAccountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    marginTop: 12,
+    marginBottom: 32,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    backgroundColor: 'rgba(220, 38, 38, 0.05)',
+  },
+  deleteAccountText: {
+    fontSize: 15,
+    fontWeight: '600' as const,
+    color: '#DC2626',
   },
 });
