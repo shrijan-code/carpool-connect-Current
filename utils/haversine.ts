@@ -29,6 +29,9 @@ export function calculateHaversineDistance(
   return distance;
 }
 
+// Alias for backward compatibility
+export const haversineDistance = calculateHaversineDistance;
+
 /**
  * Calculate distance between two Location objects or coordinate objects
  * @param location1 First location (Location or { latitude, longitude })
@@ -71,9 +74,9 @@ export function isRideWithinWalkingDistance(
   const startDistance = calculateLocationDistance(riderStart, rideStart);
   const endDistance = calculateLocationDistance(riderEnd, rideEnd);
   const totalWalkingDistance = startDistance + endDistance;
-  
-  const isWithinTolerance = 
-    startDistance <= walkingTolerance && 
+
+  const isWithinTolerance =
+    startDistance <= walkingTolerance &&
     endDistance <= walkingTolerance;
 
   return {

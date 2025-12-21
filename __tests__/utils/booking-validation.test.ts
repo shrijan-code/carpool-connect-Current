@@ -135,7 +135,7 @@ describe('canEditRide', () => {
     it('should ignore cancelled/declined bookings when checking edit permissions', () => {
         const ride = createMockRide({ status: 'upcoming' });
         const bookings = [
-            createMockBooking({ status: 'cancelled' }),
+            createMockBooking({ status: 'cancelled_by_rider' }),
             createMockBooking({ status: 'declined' }),
         ];
         const result = canEditRide(ride, bookings);
@@ -331,7 +331,7 @@ describe('canAcceptBooking', () => {
     });
 
     it('should not allow accepting cancelled bookings', () => {
-        const booking = createMockBooking({ status: 'cancelled' });
+        const booking = createMockBooking({ status: 'cancelled_by_rider' });
         const result = canAcceptBooking(booking);
 
         expect(result.allowed).toBe(false);
@@ -439,7 +439,7 @@ describe('canCancelBooking', () => {
     });
 
     it('should not allow cancelling already cancelled bookings', () => {
-        const booking = createMockBooking({ status: 'cancelled' });
+        const booking = createMockBooking({ status: 'cancelled_by_rider' });
         const ride = createMockRide({ status: 'upcoming' });
         const result = canCancelBooking(booking, ride);
 

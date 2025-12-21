@@ -113,6 +113,9 @@ export interface Ride {
   to?: Location;
   departureTime?: string;
   availableSeats?: number;
+  totalSeats?: number;
+  // Feature toggles
+  availableForDelivery?: boolean;
 }
 
 export interface RidePassenger {
@@ -131,7 +134,7 @@ export interface Booking {
   passenger: User;
   seats: number;
   amountTotal: number; // in cents
-  status: 'pending_driver' | 'confirmed' | 'declined' | 'cancelled_by_rider' | 'cancelled_by_driver' | 'refunded' | 'expired' | 'payment_failed';
+  status: 'pending_driver' | 'confirmed' | 'declined' | 'completed' | 'cancelled_by_rider' | 'cancelled_by_driver' | 'refunded' | 'expired' | 'payment_failed';
   passengerStatus?: 'waiting' | 'ready' | 'onboard' | 'dropped_off';
   payment: {
     intentId: string;
@@ -250,6 +253,7 @@ export interface SafetyReport {
   reporterId: string;
   reporter?: User;
   rideId?: string;
+  deliveryId?: string;  // For delivery-related safety reports
   ride?: Ride;
   type: 'unsafe_driving' | 'harassment' | 'vehicle_issue' | 'route_deviation' | 'emergency' | 'other';
   severity: 'low' | 'medium' | 'high' | 'critical';

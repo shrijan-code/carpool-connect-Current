@@ -19,14 +19,14 @@ export const useOptimizedState = <T>(
   } = options;
 
   const [state, setState] = useState<T>(initialState);
-  const debounceTimeoutRef = useRef<NodeJS.Timeout>();
-  const throttleTimeoutRef = useRef<NodeJS.Timeout>();
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const throttleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastThrottleTime = useRef<number>(0);
   const prevStateRef = useRef<T>(initialState);
 
   const setOptimizedState = useCallback((newState: T | ((prev: T) => T)) => {
-    const resolvedNewState = typeof newState === 'function' 
-      ? (newState as (prev: T) => T)(state) 
+    const resolvedNewState = typeof newState === 'function'
+      ? (newState as (prev: T) => T)(state)
       : newState;
 
     // Skip update if values are equal
@@ -38,7 +38,7 @@ export const useOptimizedState = <T>(
       const prevState = prevStateRef.current;
       setState(resolvedNewState);
       prevStateRef.current = resolvedNewState;
-      
+
       if (onStateChange) {
         onStateChange(resolvedNewState, prevState);
       }
@@ -49,7 +49,7 @@ export const useOptimizedState = <T>(
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
       }
-      debounceTimeoutRef.current = setTimeout(updateState, debounceMs);
+      debounceTimeoutRef.current = setTimeout(updateState, debounceMs) as ReturnType<typeof setTimeout>;
       return;
     }
 
@@ -57,17 +57,17 @@ export const useOptimizedState = <T>(
     if (throttleMs > 0) {
       const now = Date.now();
       const timeSinceLastThrottle = now - lastThrottleTime.current;
-      
+
       if (timeSinceLastThrottle >= throttleMs) {
         lastThrottleTime.current = now;
         updateState();
       } else if (!throttleTimeoutRef.current) {
         const remainingTime = throttleMs - timeSinceLastThrottle;
         throttleTimeoutRef.current = setTimeout(() => {
-          throttleTimeoutRef.current = undefined;
+          throttleTimeoutRef.current = null;
           lastThrottleTime.current = Date.now();
           updateState();
-        }, remainingTime);
+        }, remainingTime) as ReturnType<typeof setTimeout>;
       }
       return;
     }

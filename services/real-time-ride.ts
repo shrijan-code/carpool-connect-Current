@@ -2,16 +2,16 @@ import { collection, doc, onSnapshot, updateDoc, addDoc, query, where, orderBy, 
 import { db } from '@/config/firebase';
 import { Platform } from 'react-native';
 
-export type RideStatus = 
-  | 'pending' 
-  | 'confirmed' 
-  | 'driver_en_route' 
-  | 'arrived' 
-  | 'in_progress' 
-  | 'completed' 
+export type RideStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'driver_en_route'
+  | 'arrived'
+  | 'in_progress'
+  | 'completed'
   | 'cancelled';
 
-export type NotificationType = 
+export type NotificationType =
   | 'ride_confirmed'
   | 'driver_assigned'
   | 'driver_en_route'
@@ -59,11 +59,11 @@ class RealTimeRideService {
 
   // Subscribe to real-time ride updates
   subscribeToRideUpdates(
-    rideId: string, 
+    rideId: string,
     callback: (update: RideUpdate) => void
   ): () => void {
     const rideRef = doc(db, 'rides', rideId);
-    
+
     const unsubscribe = onSnapshot(rideRef, (doc) => {
       if (doc.exists()) {
         const data = doc.data();
@@ -229,13 +229,14 @@ class RealTimeRideService {
     // Get ride details and passengers
     // Send appropriate notifications based on status
     const notifications = this.getStatusNotificationConfig(status);
-    
+
     // This would need to be implemented with proper ride data fetching
     console.log('Sending status notification:', { rideId, status, message, notifications });
   }
 
   private getStatusNotificationConfig(status: RideStatus) {
-    const configs = {
+    const configs: Record<string, { title: string; message: string; type: NotificationType; actionRequired?: boolean } | null> = {
+      pending: null, // No notification for pending status
       confirmed: {
         title: 'Ride Confirmed!',
         message: 'Your ride has been confirmed. Driver details will be shared soon.',
@@ -308,7 +309,7 @@ class RealTimeRideService {
     }>
   ): Promise<void> {
     try {
-      const promises = updates.map(update => 
+      const promises = updates.map(update =>
         this.updateRideStatus(update.rideId, update.status, update.location, update.message)
       );
       await Promise.all(promises);

@@ -26,7 +26,7 @@ export interface InAppNotification {
   data?: any;
   read: boolean;
   createdAt: Timestamp;
-  type: 'ride_booked' | 'ride_confirmed' | 'ride_cancelled' | 'ride_completed' | 'ride_request' | 'ride_status_update' | 'booking_rejected' | 'booking_accepted' | 'booking_confirmed' | 'booking_declined' | 'passenger_status_update' | 'message' | 'payment' | 'general';
+  type: 'ride_booked' | 'ride_confirmed' | 'ride_cancelled' | 'ride_completed' | 'ride_request' | 'ride_status_update' | 'booking_rejected' | 'booking_accepted' | 'booking_confirmed' | 'booking_declined' | 'passenger_status_update' | 'message' | 'payment' | 'general' | 'booking' | 'ride' | 'reminder' | 'system';
 }
 
 // Notification listeners

@@ -33,9 +33,9 @@ export const useSecureApi = () => {
       }
 
       // Check rate limiting
-      const identifier = user?.id || 'anonymous';
-      const rateLimitCheck = await SecurityManager.checkRateLimit(identifier, rateLimitType);
-      
+      const rateLimitIdentifier = user?.id || 'anonymous';
+      const rateLimitCheck = await SecurityManager.checkRateLimit(rateLimitIdentifier, rateLimitType);
+
       if (!rateLimitCheck.allowed) {
         const retryAfter = rateLimitCheck.retryAfter || 60;
         throw new Error(`Rate limit exceeded. Please try again in ${retryAfter} seconds.`);
@@ -43,8 +43,8 @@ export const useSecureApi = () => {
 
       // Check brute force protection for sensitive operations
       if (rateLimitType === 'login' || rateLimitType === 'booking') {
-        const bruteForceCheck = await SecurityManager.checkBruteForce(identifier);
-        
+        const bruteForceCheck = await SecurityManager.checkBruteForce(rateLimitIdentifier);
+
         if (!bruteForceCheck.allowed) {
           const retryAfter = bruteForceCheck.retryAfter || 300;
           throw new Error(`Too many failed attempts. Please try again in ${Math.ceil(retryAfter / 60)} minutes.`);
@@ -69,16 +69,16 @@ export const useSecureApi = () => {
 
       // Record successful operation for brute force protection
       if (rateLimitType === 'login') {
-        await SecurityManager.recordSuccessfulLogin(identifier);
+        await SecurityManager.recordSuccessfulLogin(user?.id || 'anonymous');
       }
 
       return result;
     } catch (error: any) {
       console.error('Secure API call failed:', error);
-      
+
       // Record failed login attempts
       if (rateLimitType === 'login') {
-        await SecurityManager.recordFailedLogin(identifier);
+        await SecurityManager.recordFailedLogin(user?.id || 'anonymous');
       }
 
       // Log security event for suspicious activity
@@ -87,10 +87,10 @@ export const useSecureApi = () => {
           type: 'suspicious_activity',
           timestamp: Date.now(),
           userId: user?.id,
-          details: { 
-            type: 'api_abuse_attempt', 
-            rateLimitType, 
-            error: error.message 
+          details: {
+            type: 'api_abuse_attempt',
+            rateLimitType,
+            error: error.message
           }
         });
       }

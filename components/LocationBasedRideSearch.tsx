@@ -18,10 +18,10 @@ import { RideCard } from '@/components/RideCard';
 import { useTheme } from '@/hooks/useTheme';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
-import { 
-  Search, 
-  MapPin, 
-  Navigation, 
+import {
+  Search,
+  MapPin,
+  Navigation,
   Filter,
   Loader,
   AlertCircle,
@@ -29,10 +29,10 @@ import {
   List
 } from 'lucide-react-native';
 import { Ride } from '@/types';
-import { 
-  calculateLocationDistance, 
+import {
+  calculateLocationDistance,
   formatDistance,
-  formatWalkingTime 
+  formatWalkingTime
 } from '@/utils/haversine';
 import * as ExpoLocation from 'expo-location';
 import { router } from 'expo-router';
@@ -44,7 +44,6 @@ interface LocationSearchFilters {
   sortBy: 'distance' | 'price' | 'departure' | 'rating';
   minSeats: number;
   maxPrice?: number;
-  availableForDelivery?: boolean;
 }
 
 interface LocationBasedRideSearchProps {
@@ -62,27 +61,27 @@ function parseLocationQuery(query: string): {
   fullAddress?: string;
 } {
   const trimmedQuery = query.trim();
-  
+
   // Check if it's a postcode (4 digits)
   const postcodeMatch = trimmedQuery.match(/^\d{4}$/);
   if (postcodeMatch) {
     return { postcode: postcodeMatch[0] };
   }
-  
+
   // Check if it contains a postcode
   const postcodeInText = trimmedQuery.match(/\b\d{4}\b/);
-  
+
   // If it's a short query (likely city/suburb)
   if (trimmedQuery.length <= 30 && !trimmedQuery.includes(',')) {
-    return { 
+    return {
       city: trimmedQuery,
       suburb: trimmedQuery,
       postcode: postcodeInText?.[0]
     };
   }
-  
+
   // Otherwise treat as full address
-  return { 
+  return {
     fullAddress: trimmedQuery,
     postcode: postcodeInText?.[0]
   };
@@ -94,28 +93,28 @@ function parseLocationQuery(query: string): {
 function doesRideMatchLocation(ride: Ride, query: string): boolean {
   if (!ride) return false;
   if (!query.trim()) return true;
-  
+
   const parsed = parseLocationQuery(query);
   const queryLower = query.toLowerCase();
-  
+
   // Get ride locations
   const fromLocation = ride.from || ride.origin;
   const toLocation = ride.to || ride.destination;
-  
+
   if (!fromLocation || !toLocation) return false;
-  
+
   // Check both pickup and destination locations
   const locations = [fromLocation, toLocation];
-  
+
   return locations.some(location => {
     const addressLower = location.address.toLowerCase();
     const nameLower = location.name.toLowerCase();
-    
+
     // If searching by postcode
     if (parsed.postcode) {
       if (addressLower.includes(parsed.postcode)) return true;
     }
-    
+
     // If searching by city/suburb
     if (parsed.city || parsed.suburb) {
       const searchTerm = (parsed.city || parsed.suburb)!.toLowerCase();
@@ -123,14 +122,14 @@ function doesRideMatchLocation(ride: Ride, query: string): boolean {
         return true;
       }
     }
-    
+
     // If searching by full address
     if (parsed.fullAddress) {
       if (addressLower.includes(queryLower) || nameLower.includes(queryLower)) {
         return true;
       }
     }
-    
+
     // Fallback: general text search
     return addressLower.includes(queryLower) || nameLower.includes(queryLower);
   });
@@ -140,26 +139,26 @@ function doesRideMatchLocation(ride: Ride, query: string): boolean {
  * Calculate distance from user location to ride (pickup or destination, whichever is closer)
  */
 function calculateRideDistance(
-  ride: Ride, 
+  ride: Ride,
   userLocation: { latitude: number; longitude: number }
 ): number {
   if (!ride) return Infinity;
-  
+
   const fromLocation = ride.from || ride.origin;
   const toLocation = ride.to || ride.destination;
-  
+
   if (!fromLocation || !toLocation) return Infinity;
-  
+
   const fromDistance = calculateLocationDistance(
     userLocation,
     fromLocation
   );
-  
+
   const toDistance = calculateLocationDistance(
     userLocation,
     toLocation
   );
-  
+
   // Return the shorter distance (closer location)
   return Math.min(fromDistance, toDistance);
 }
@@ -168,7 +167,7 @@ function calculateRideDistance(
  * Sort rides based on the selected criteria
  */
 function sortRides(
-  rides: Ride[], 
+  rides: Ride[],
   sortBy: LocationSearchFilters['sortBy'],
   userLocation?: { latitude: number; longitude: number }
 ): Ride[] {
@@ -179,43 +178,42 @@ function sortRides(
         const distanceA = calculateRideDistance(a, userLocation);
         const distanceB = calculateRideDistance(b, userLocation);
         return distanceA - distanceB;
-        
+
       case 'price':
         return (a.pricePerSeat || 0) - (b.pricePerSeat || 0);
-        
+
       case 'departure':
         const timeA = new Date(a.departureTime || a.departureAt || 0).getTime();
         const timeB = new Date(b.departureTime || b.departureAt || 0).getTime();
         return timeA - timeB;
-        
+
       case 'rating':
         const ratingA = a.driver?.rating || 0;
         const ratingB = b.driver?.rating || 0;
         return ratingB - ratingA; // Higher rating first
-        
+
       default:
         return 0;
     }
   });
 }
 
-export function LocationBasedRideSearch({ 
-  onRideSelect, 
-  showBookButton = true 
+export function LocationBasedRideSearch({
+  onRideSelect,
+  showBookButton = true
 }: LocationBasedRideSearchProps) {
   const { colors } = useTheme();
   const { user } = useAuthStore();
   const { getAllAvailableRides, requestBooking } = useRidesStore();
-  
+
   const [filters, setFilters] = useState<LocationSearchFilters>({
     searchQuery: '',
     maxDistance: 50, // 50km default
     sortBy: 'distance',
     minSeats: 1,
     maxPrice: undefined,
-    availableForDelivery: false,
   });
-  
+
   const [allRides, setAllRides] = useState<Ride[]>([]);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -223,22 +221,22 @@ export function LocationBasedRideSearch({
   const [hasSearched, setHasSearched] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
-  
+
   // Get user's current location with better mobile support
   const getCurrentLocation = useCallback(async () => {
     try {
       setIsLoadingLocation(true);
-      
+
       if (Platform.OS === 'web') {
         // Web geolocation API
         if (!navigator.geolocation) {
           throw new Error('Geolocation is not supported by this browser');
         }
-        
+
         const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(
-            resolve, 
-            reject, 
+            resolve,
+            reject,
             {
               enableHighAccuracy: true,
               timeout: 15000,
@@ -246,7 +244,7 @@ export function LocationBasedRideSearch({
             }
           );
         });
-        
+
         setUserLocation({
           latitude: position.coords.latitude,
           longitude: position.coords.longitude
@@ -254,19 +252,19 @@ export function LocationBasedRideSearch({
       } else {
         // Mobile location using expo-location with better error handling
         const { status } = await ExpoLocation.requestForegroundPermissionsAsync();
-        
+
         if (status !== 'granted') {
           // Don't show alert immediately, just continue without location
           console.warn('Location permission denied');
           return;
         }
-        
+
         const location = await ExpoLocation.getCurrentPositionAsync({
           accuracy: ExpoLocation.Accuracy.Balanced,
           timeInterval: 10000, // Increased timeout for mobile
           distanceInterval: 0,
         });
-        
+
         setUserLocation({
           latitude: location.coords.latitude,
           longitude: location.coords.longitude
@@ -286,14 +284,14 @@ export function LocationBasedRideSearch({
       setIsLoadingLocation(false);
     }
   }, []);
-  
+
   // Load all available rides with better error handling
   const loadRides = useCallback(async () => {
     try {
       setIsLoading(true);
-      
+
       const rides = await getAllAvailableRides(50); // Reduced for better mobile performance
-      
+
       // Ensure rides have proper structure for mobile compatibility
       const processedRides = rides.map(ride => ({
         ...ride,
@@ -302,14 +300,14 @@ export function LocationBasedRideSearch({
         availableSeats: ride.availableSeats || ride.seatsAvailable || 0,
         departureTime: ride.departureTime || ride.departureAt
       }));
-      
+
       setAllRides(processedRides);
       setHasSearched(true);
     } catch (error: any) {
       console.error('Failed to load rides:', error);
       // Simplified error handling for mobile
       Alert.alert(
-        'Error', 
+        'Error',
         'Failed to load rides. Please try again.',
         [{ text: 'OK' }]
       );
@@ -317,19 +315,19 @@ export function LocationBasedRideSearch({
       setIsLoading(false);
     }
   }, [getAllAvailableRides]);
-  
+
   // Filter and sort rides based on current filters
   const filteredRides = useMemo(() => {
     // Filter out null/undefined rides first
     let filtered = allRides.filter(ride => ride != null);
-    
+
     // Apply location filter
     if (filters.searchQuery.trim()) {
-      filtered = filtered.filter(ride => 
+      filtered = filtered.filter(ride =>
         doesRideMatchLocation(ride, filters.searchQuery)
       );
     }
-    
+
     // Apply distance filter (if user location is available)
     if (userLocation && filters.maxDistance > 0) {
       filtered = filtered.filter(ride => {
@@ -337,39 +335,38 @@ export function LocationBasedRideSearch({
         return distance <= filters.maxDistance;
       });
     }
-    
+
     // Apply other filters
     filtered = filtered.filter(ride => {
       const availableSeats = ride.availableSeats || ride.seatsAvailable || 0;
-      
+
       if (availableSeats < filters.minSeats) return false;
       if (filters.maxPrice && ride.pricePerSeat > filters.maxPrice) return false;
-      if (filters.availableForDelivery && !ride.availableForDelivery) return false;
-      
+
       return true;
     });
-    
+
     // Sort rides
     return sortRides(filtered, filters.sortBy, userLocation || undefined);
   }, [allRides, filters, userLocation]);
-  
+
   // Handle search
   const handleSearch = useCallback(async () => {
     if (!filters.searchQuery.trim()) {
       Alert.alert('Search Required', 'Please enter a location to search for rides.');
       return;
     }
-    
+
     console.log('[LocationBasedRideSearch] Manual search triggered');
     await loadRides();
   }, [filters.searchQuery, loadRides]);
-  
+
   // Handle search without location filter (show all rides)
   const handleSearchAll = useCallback(async () => {
     console.log('[LocationBasedRideSearch] Search all rides triggered');
     await loadRides();
   }, [loadRides]);
-  
+
   // Process booking function defined first
   const processBooking = useCallback(async (ride: Ride, seats: number) => {
     try {
@@ -377,9 +374,9 @@ export function LocationBasedRideSearch({
         Alert.alert('Error', 'You must be logged in to book a ride');
         return;
       }
-      
+
       await requestBooking(ride.id, seats, user);
-      
+
       Alert.alert(
         '✅ Booking Request Sent!',
         'Your booking request has been sent to the driver. You will be notified when they respond.',
@@ -412,7 +409,7 @@ export function LocationBasedRideSearch({
       return;
     }
 
-    const seatOptions: { text: string; onPress?: () => void; style?: 'cancel' }[] = []; 
+    const seatOptions: { text: string; onPress?: () => void; style?: 'cancel' }[] = [];
     for (let i = 1; i <= Math.min(availableSeats, 4); i++) {
       const totalPrice = (rideToBook.pricePerSeat * i).toFixed(2);
       seatOptions.push({
@@ -420,16 +417,16 @@ export function LocationBasedRideSearch({
         onPress: () => processBooking(rideToBook, i)
       });
     }
-    
+
     seatOptions.push({ text: 'Cancel', style: 'cancel' });
-    
+
     Alert.alert(
       '🚗 Book This Ride',
       `From: ${rideToBook.from?.name || rideToBook.origin?.name}\nTo: ${rideToBook.to?.name || rideToBook.destination?.name}\nDriver: ${rideToBook.driver?.name || 'Unknown'}\n\nAvailable: ${availableSeats} seats\nPrice: ${rideToBook.pricePerSeat}/seat`,
       seatOptions as any
     );
   }, [user, filteredRides, processBooking]);
-  
+
   const handleRidePress = useCallback((rideId: string) => {
     if (onRideSelect) {
       const ride = filteredRides.find(r => r.id === rideId);
@@ -438,16 +435,16 @@ export function LocationBasedRideSearch({
       router.push({ pathname: '/ride-details', params: { id: rideId } });
     }
   }, [filteredRides, onRideSelect]);
-  
+
   // Initialize component with better mobile support
   useEffect(() => {
     const initializeData = async () => {
       try {
         console.log('[LocationBasedRideSearch] Initializing data...');
-        
+
         // Load rides first (essential functionality)
         await loadRides();
-        
+
         // Then try to get location (optional enhancement) with delay for mobile
         if (Platform.OS !== 'web') {
           // On mobile, delay location request to avoid blocking UI
@@ -456,7 +453,7 @@ export function LocationBasedRideSearch({
               console.log('[LocationBasedRideSearch] Location request failed (non-critical):', err.message);
             });
           }, 2000);
-          
+
           return () => clearTimeout(timeoutId);
         } else {
           // On web, get location immediately
@@ -468,10 +465,10 @@ export function LocationBasedRideSearch({
         console.error('[LocationBasedRideSearch] Initialization error:', error);
       }
     };
-    
+
     initializeData();
   }, [getCurrentLocation, loadRides]);
-  
+
   // Early return with loading state if colors are not available (mobile initialization)
   if (!colors || !colors.surface || !colors.gradient) {
     return (
@@ -482,9 +479,9 @@ export function LocationBasedRideSearch({
       </SafeAreaView>
     );
   }
-  
+
   const styles = createStyles(colors);
-  
+
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient
@@ -500,8 +497,8 @@ export function LocationBasedRideSearch({
           </Text>
         </View>
       </LinearGradient>
-      
-      <ScrollView 
+
+      <ScrollView
         style={styles.content}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
@@ -525,7 +522,7 @@ export function LocationBasedRideSearch({
               <Filter size={20} color={colors.primary} />
             </TouchableOpacity>
           </View>
-          
+
           {showFilters && (
             <View style={styles.filtersContainer}>
               <View style={styles.filterRow}>
@@ -557,7 +554,7 @@ export function LocationBasedRideSearch({
                   />
                 </View>
               </View>
-              
+
               <View style={styles.filterRow}>
                 <View style={styles.filterItem}>
                   <Text style={[styles.filterLabel, { color: colors.text }]}>Max Price</Text>
@@ -581,7 +578,7 @@ export function LocationBasedRideSearch({
                         key={sort}
                         style={[
                           styles.sortButton,
-                          { 
+                          {
                             backgroundColor: filters.sortBy === sort ? colors.primary : colors.surface,
                             borderColor: colors.border
                           }
@@ -601,7 +598,7 @@ export function LocationBasedRideSearch({
               </View>
             </View>
           )}
-          
+
           <View style={styles.searchActions}>
             <Button
               title={isLoading ? "Searching..." : filters.searchQuery.trim() ? "Search Rides" : "Show All Rides"}
@@ -610,7 +607,7 @@ export function LocationBasedRideSearch({
               style={styles.searchButton}
               leftIcon={isLoading ? <Loader size={20} color={colors.background} /> : <Search size={20} color={colors.background} />}
             />
-            
+
             {!userLocation && (
               <TouchableOpacity
                 style={[styles.locationButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
@@ -628,7 +625,7 @@ export function LocationBasedRideSearch({
               </TouchableOpacity>
             )}
           </View>
-          
+
           {userLocation && (
             <View style={[styles.locationStatus, { backgroundColor: colors.success + '20' }]}>
               <Navigation size={16} color={colors.success} />
@@ -637,7 +634,7 @@ export function LocationBasedRideSearch({
               </Text>
             </View>
           )}
-          
+
           <View style={[styles.disclaimerBox, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
             <AlertCircle size={16} color={colors.primary} />
             <Text style={[styles.disclaimerText, { color: colors.text }]}>
@@ -645,14 +642,14 @@ export function LocationBasedRideSearch({
             </Text>
           </View>
         </Card>
-        
+
         {/* Results Section */}
         {hasSearched && (
           <View style={styles.resultsSection}>
             <View style={styles.resultsHeader}>
               <View style={styles.resultsHeaderLeft}>
                 <Text style={[styles.resultsTitle, { color: colors.text }]}>
-                  {filteredRides.length > 0 
+                  {filteredRides.length > 0
                     ? `${filteredRides.length} ride${filteredRides.length === 1 ? '' : 's'} found`
                     : 'No rides found'
                   }
@@ -663,13 +660,13 @@ export function LocationBasedRideSearch({
                   </Text>
                 )}
               </View>
-              
+
               {filteredRides.length > 0 && (
                 <View style={styles.viewToggle}>
                   <TouchableOpacity
                     style={[
                       styles.viewToggleButton,
-                      { 
+                      {
                         backgroundColor: viewMode === 'list' ? colors.primary : colors.surface,
                         borderColor: colors.border
                       }
@@ -681,7 +678,7 @@ export function LocationBasedRideSearch({
                   <TouchableOpacity
                     style={[
                       styles.viewToggleButton,
-                      { 
+                      {
                         backgroundColor: viewMode === 'map' ? colors.primary : colors.surface,
                         borderColor: colors.border
                       }
@@ -693,17 +690,17 @@ export function LocationBasedRideSearch({
                 </View>
               )}
             </View>
-            
+
             {filteredRides.length > 0 ? (
               viewMode === 'list' ? (
                 filteredRides.map((ride, index) => {
                   // Skip if ride is null/undefined
                   if (!ride || !ride.id) return null;
-                  
-                  const distance = userLocation 
+
+                  const distance = userLocation
                     ? calculateRideDistance(ride, userLocation)
                     : null;
-                    
+
                   return (
                     <View key={ride.id || `ride-${index}`} style={styles.rideContainer}>
                       <RideCard
@@ -739,7 +736,7 @@ export function LocationBasedRideSearch({
                   No rides found
                 </Text>
                 <Text style={[styles.emptySubtext, { color: colors.textSecondary }]}>
-                  {filters.searchQuery 
+                  {filters.searchQuery
                     ? `No rides found near &quot;${filters.searchQuery}&quot;. Try expanding your search area or adjusting filters.`
                     : 'Enter a location to search for available rides.'
                   }
@@ -748,7 +745,7 @@ export function LocationBasedRideSearch({
             )}
           </View>
         )}
-        
+
         {!hasSearched && !isLoading && (
           <Card style={styles.emptyCard}>
             <Search size={48} color={colors.textLight} style={styles.emptyIcon} />
@@ -775,7 +772,7 @@ export function LocationBasedRideSearch({
             </TouchableOpacity>
           </Card>
         )}
-        
+
         {isLoading && (
           <Card style={styles.emptyCard}>
             <Loader size={48} color={colors.primary} style={styles.emptyIcon} />
