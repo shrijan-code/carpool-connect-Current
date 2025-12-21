@@ -103,6 +103,14 @@ describe('VerificationService', () => {
                 profilePicture: 'https://example.com/profile.jpg',
                 role: 'driver',
                 carDetails: {
+                    id: 'vehicle-123',
+                    make: 'Toyota',
+                    model: 'Camry',
+                    year: 2020,
+                    color: 'White',
+                    licensePlate: 'ABC123',
+                    seats: 5,
+                    verified: false,
                     registrationDocument: 'https://example.com/rego.pdf',
                     insuranceDocument: 'https://example.com/insurance.pdf'
                 },
@@ -125,7 +133,17 @@ describe('VerificationService', () => {
                 phone: '0412345678',
                 profilePicture: 'https://example.com/profile.jpg',
                 role: 'driver',
-                carDetails: {}, // Missing documents
+                carDetails: {
+                    id: 'vehicle-123',
+                    make: 'Toyota',
+                    model: 'Camry',
+                    year: 2020,
+                    color: 'White',
+                    licensePlate: 'ABC123',
+                    seats: 5,
+                    verified: false,
+                    // Missing registrationDocument and insuranceDocument
+                }, // Missing documents
                 stripeAccountId: 'acct_123',
                 stripeConnectCompleted: true
             };
@@ -145,6 +163,14 @@ describe('VerificationService', () => {
                 profilePicture: 'https://example.com/profile.jpg',
                 role: 'driver',
                 carDetails: {
+                    id: 'vehicle-123',
+                    make: 'Toyota',
+                    model: 'Camry',
+                    year: 2020,
+                    color: 'White',
+                    licensePlate: 'ABC123',
+                    seats: 5,
+                    verified: true,
                     registrationDocument: 'https://example.com/rego.pdf',
                     insuranceDocument: 'https://example.com/insurance.pdf'
                 },

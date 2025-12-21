@@ -69,7 +69,7 @@ describe('Race Condition Scenarios', () => {
             const ride = createMockRide({ status: 'upcoming' });
             const bookings = [
                 createMockBooking({ status: 'pending_driver', id: 'b1' }),
-                createMockBooking({ status: 'cancelled', id: 'b2' }),
+                createMockBooking({ status: 'cancelled_by_rider', id: 'b2' }),
                 createMockBooking({ status: 'declined', id: 'b3' }),
             ];
 
@@ -185,9 +185,9 @@ describe('Multi-Booking Scenarios', () => {
             createMockBooking({ status: 'confirmed', id: 'b1' }),
             createMockBooking({ status: 'confirmed', id: 'b2' }),
             createMockBooking({ status: 'pending_driver', id: 'b3' }),
-            createMockBooking({ status: 'cancelled', id: 'b4' }),
+            createMockBooking({ status: 'cancelled_by_rider', id: 'b4' }),
             createMockBooking({ status: 'declined', id: 'b5' }),
-            createMockBooking({ status: 'completed', id: 'b6' }),
+            createMockBooking({ status: 'confirmed', id: 'b6' }), // Use confirmed instead of completed
         ];
 
         const editResult = canEditRide(ride, bookings);
@@ -213,7 +213,7 @@ describe('Multi-Booking Scenarios', () => {
         const bookings = [
             createMockBooking({ status: 'pending_driver', id: 'b1' }),
             createMockBooking({ status: 'confirmed', id: 'b2' }),
-            createMockBooking({ status: 'cancelled', id: 'b3' }),
+            createMockBooking({ status: 'cancelled_by_rider', id: 'b3' }),
         ];
 
         const startResult = canStartRide(ride, bookings);
@@ -324,7 +324,7 @@ describe('Status Combination Tests', () => {
         });
     });
 
-    const bookingStatuses = ['pending_driver', 'confirmed', 'declined', 'cancelled', 'completed'];
+    const bookingStatuses = ['pending_driver', 'confirmed', 'declined', 'cancelled_by_rider', 'refunded'];
 
     bookingStatuses.forEach(status => {
         it(`should correctly validate ${status} booking for cancellation`, () => {
