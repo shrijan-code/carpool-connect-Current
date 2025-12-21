@@ -105,8 +105,8 @@ export default function LoginPage() {
                     </button>
                 </form>
 
-                <div className="mt-6 text-center text-sm text-gray-600">
-                    <p>Default credentials: admin123</p>
+                <div className="mt-6 text-center text-sm text-gray-500">
+                    <p>Contact your system administrator if you need access.</p>
                 </div>
             </div>
         </div>
