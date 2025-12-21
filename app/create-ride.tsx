@@ -19,6 +19,7 @@ import { Users, DollarSign, AlertTriangle, CreditCard, CheckCircle, Car, FileTex
 import { Location, Vehicle, Ride } from '@/types';
 import { validatePrice, validateSeats, validateLocation, validateFutureDate } from '@/utils/validation';
 import { useMemo } from 'react';
+import { logger } from '@/utils/logger';
 
 // Driver verification requirements check result
 interface DriverVerificationStatus {
@@ -233,7 +234,7 @@ export default function CreateRideScreen() {
     // Convert price from dollars to cents
     const priceInDollars = parseFloat(pricePerSeat);
     const priceInCents = Math.round(priceInDollars * 100);
-    console.log(`Creating ride with price: ${priceInDollars.toFixed(2)} (${priceInCents} cents)`);
+    logger.debug('Creating ride', { priceInDollars: priceInDollars.toFixed(2), priceInCents });
 
     try {
       // Use selected locations with coordinates (already validated)
@@ -270,9 +271,8 @@ export default function CreateRideScreen() {
         notes: notes?.trim() || '',
       };
 
-      console.log('Creating ride with data:', rideData);
       const rideId = await createRide(rideData);
-      console.log('Ride created successfully with ID:', rideId);
+      logger.ride.created(rideId, user.id);
 
       setShowSuccessScreen(true);
 

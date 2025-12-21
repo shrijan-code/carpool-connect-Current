@@ -10,6 +10,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { Booking } from '@/types';
 import { Clock, User, DollarSign, Check, X, Loader, ChevronLeft } from 'lucide-react-native';
+import { logger } from '@/utils/logger';
 
 const { width: screenWidth } = Dimensions.get('window');
 const isSmallScreen = screenWidth < 375;
@@ -38,7 +39,7 @@ export default function BookingRequestsScreen() {
     try {
       const bookings = await getPendingBookingRequests(user.id);
       setPendingBookings(bookings);
-      console.log('Loaded pending bookings:', bookings.length);
+      logger.debug('Loaded pending bookings', { count: bookings.length });
     } catch (error) {
       console.error('Error loading pending bookings:', error);
     } finally {

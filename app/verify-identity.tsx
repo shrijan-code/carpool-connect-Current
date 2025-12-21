@@ -15,6 +15,7 @@ import { useAuthStore } from '@/store/auth-store';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/config/firebase';
 import { Colors } from '@/constants/colors';
+import { logger } from '@/utils/logger';
 
 export default function VerifyIdentityScreen() {
     const { user } = useAuthStore();
@@ -53,7 +54,7 @@ export default function VerifyIdentityScreen() {
             const result = await createSession();
             const data = result.data as any;
 
-            console.log('Verification session created:', {
+            logger.debug('Verification session created', {
                 sessionId: data.sessionId,
                 hasUrl: !!data.url,
                 hasClientSecret: !!data.clientSecret
@@ -68,7 +69,7 @@ export default function VerifyIdentityScreen() {
                 throw new Error('Invalid URL format - must be HTTPS');
             }
 
-            console.log('Opening verification URL:', data.url);
+            logger.debug('Opening verification URL');
 
             // Check if we can open the URL first
             const canOpen = await Linking.canOpenURL(data.url);

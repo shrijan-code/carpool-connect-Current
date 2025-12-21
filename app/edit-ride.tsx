@@ -17,6 +17,7 @@ import { RidesService } from '@/services/rides';
 import { Users, DollarSign, CheckCircle, ChevronLeft, Save } from 'lucide-react-native';
 import { Location, Ride } from '@/types';
 import { validateRideEditPermissions } from '@/utils/validation';
+import { logger } from '@/utils/logger';
 
 export default function EditRideScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -210,7 +211,7 @@ export default function EditRideScreen() {
             updates.seatsTotal = availableSeats;
             updates.notes = notes.trim();
 
-            console.log('Saving ride updates:', updates);
+            logger.debug('Saving ride updates');
 
             await RidesService.updateRide(id, user.id, updates);
 

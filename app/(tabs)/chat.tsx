@@ -9,6 +9,7 @@ import { useRidesStore } from '@/store/rides-store';
 import { ChatService } from '@/services/chat';
 import { ChatMessage, Ride } from '@/types';
 import { MessageCircle, Send, Phone, MoreVertical } from 'lucide-react-native';
+import { logger } from '@/utils/logger';
 
 interface ChatRoom {
   id: string;
@@ -119,7 +120,7 @@ export default function ChatScreen() {
       });
     }
 
-    console.log('Generated chat rooms:', rooms.length, 'rooms for', user.role, user.name);
+    logger.debug('Generated chat rooms', { count: rooms.length, role: user.role });
     return rooms.filter(room => room.id && room.otherUser?.name); // Filter out invalid rooms
   }, [user, rides, bookings]);
 
@@ -176,12 +177,7 @@ export default function ChatScreen() {
     setLoading(true);
 
     try {
-      console.log('Sending message:', {
-        messageText,
-        rideId: room.rideId,
-        senderId: user.id,
-        senderName: user.name
-      });
+      logger.debug('Sending message', { rideId: room.rideId });
 
       await ChatService.sendMessage(
         room.rideId,
@@ -190,7 +186,7 @@ export default function ChatScreen() {
         messageText
       );
 
-      console.log('Message sent successfully');
+      logger.debug('Message sent successfully');
     } catch (error: any) {
       console.error('Send message error:', error);
       Alert.alert('Error', `Failed to send message: ${error.message || 'Unknown error'}`);
@@ -204,12 +200,12 @@ export default function ChatScreen() {
     if (selectedChat) {
       const room = chatRooms.find(r => r.id === selectedChat);
       if (room && user) {
-        console.log('Subscribing to messages for ride:', room.rideId);
+        logger.debug('Subscribing to messages', { rideId: room.rideId });
         // Subscribe to messages for the selected chat
         const unsubscribe = ChatService.subscribeToRideMessages(
           room.rideId,
           (newMessages) => {
-            console.log('Received messages update:', newMessages.length, 'messages');
+            logger.debug('Received messages update', { count: newMessages.length });
             const messagesWithCurrentUser = newMessages.map(msg => ({
               ...msg,
               isCurrentUser: msg.senderId === user.id
@@ -219,7 +215,7 @@ export default function ChatScreen() {
         );
 
         return () => {
-          console.log('Unsubscribing from messages for ride:', room.rideId);
+          logger.debug('Unsubscribing from messages', { rideId: room.rideId });
           unsubscribe();
         };
       }

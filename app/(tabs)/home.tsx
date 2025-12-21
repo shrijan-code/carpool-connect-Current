@@ -20,6 +20,7 @@ import { Plus, Search, MapPin, Clock, Bell, CheckCircle, Activity, Users, Star, 
 import RidesMapView from '@/components/RidesMapView';
 import { SmartRideRecommendations } from '@/components/SmartRideRecommendations';
 import { useStripe } from '@stripe/stripe-react-native';
+import { logger } from '@/utils/logger';
 
 export default function HomeScreen() {
   const { user } = useAuthStore();
@@ -100,7 +101,7 @@ export default function HomeScreen() {
     if (user?.id) {
       const unsubscribes: (() => void)[] = [];
 
-      console.log(`🔔 Setting up subscriptions for user ${user.id} (${user.role})`);
+      logger.debug(`Setting up subscriptions for user ${user.id} (${user.role})`);
 
       if (user.role === 'driver') {
         const ridesSub = subscribeToUserRides(user.id);
@@ -114,10 +115,10 @@ export default function HomeScreen() {
       const availableRidesSub = subscribeToAvailableRides();
       if (availableRidesSub) unsubscribes.push(availableRidesSub);
 
-      console.log(`✅ ${unsubscribes.length} subscriptions active`);
+      logger.debug(`${unsubscribes.length} subscriptions active`);
 
       return () => {
-        console.log(`🧹 Cleaning up ${unsubscribes.length} subscriptions`);
+        logger.debug(`Cleaning up ${unsubscribes.length} subscriptions`);
         unsubscribes.forEach((unsub, index) => {
           try {
             unsub();
@@ -187,7 +188,7 @@ export default function HomeScreen() {
 
     // Price is already stored in cents in the database
     const pricePerSeatInCents = Math.round(rideToBook.pricePerSeat);
-    console.log(`Booking ride ${rideId}: pricePerSeat = ${pricePerSeatInCents} cents (${(pricePerSeatInCents / 100).toFixed(2)})`);
+    logger.debug('Booking ride', { rideId, priceInCents: pricePerSeatInCents, priceInDollars: (pricePerSeatInCents / 100).toFixed(2) });
 
     // Show seat selection dialog with pricing
     const seatOptions = [];
@@ -231,7 +232,7 @@ export default function HomeScreen() {
 
   const processBooking = async (ride: Ride, seats: number) => {
     try {
-      console.log('🚗 Starting booking process for ride:', ride.id, 'user:', user?.id, 'seats:', seats);
+      logger.info('Starting booking process', { rideId: ride.id, seats });
 
       // Show processing alert
       Alert.alert(
@@ -242,7 +243,7 @@ export default function HomeScreen() {
 
       // 1. Create Booking & Payment Intent
       const { bookingId, clientSecret } = await requestBooking(ride.id, seats, user!);
-      console.log('✅ Booking created, preparing sheet with secret:', clientSecret ? '***' : 'missing');
+      logger.debug('Booking created, preparing payment sheet');
 
       if (!clientSecret) {
         throw new Error('Failed to Initialize Payment: No Client Secret');

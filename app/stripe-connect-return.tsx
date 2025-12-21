@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/store/auth-store';
 import { StripeConnectService } from '@/services/stripe';
+import { logger } from '@/utils/logger';
 
 export default function StripeConnectReturnScreen() {
   const { user } = useAuthStore();
@@ -33,17 +34,17 @@ export default function StripeConnectReturnScreen() {
         if (code && state) {
           // Construct the return URL for processing
           const returnUrl = `rideshare://stripe-connect-return?code=${code}&state=${state}`;
-          
+
           const success = await StripeConnectService.handleConnectReturn(returnUrl, user.id);
-          
+
           if (success) {
-            console.log('Stripe Connect setup completed successfully');
+            logger.payment.succeeded('stripe_connect_setup');
           }
         }
 
         // Navigate back to profile or home
         router.replace('/(tabs)/profile');
-        
+
       } catch (error) {
         console.error('Error handling Stripe Connect return:', error);
         router.replace('/(tabs)/profile');

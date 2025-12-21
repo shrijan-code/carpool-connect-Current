@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { useSettingsStore } from '@/store/settings-store';
 import { validateEmail, validatePhone, validatePassword, validateName } from '@/utils/validation';
 import { ColorScheme } from '@/constants/colors';
+import { logger } from '@/utils/logger';
 
 type AuthMode = 'login' | 'register' | 'role-select' | 'forgot-password';
 
@@ -438,9 +439,9 @@ export default function AuthScreen() {
 
     setLoading(true);
     try {
-      console.log('Sending password reset for:', trimmedEmail);
+      logger.debug('Sending password reset', { email: trimmedEmail });
       await sendPasswordReset(trimmedEmail);
-      console.log('Password reset sent successfully');
+      logger.auth.loginFailed(trimmedEmail, 'Password reset requested');
 
       Alert.alert(
         'Reset Link Sent',

@@ -18,6 +18,7 @@ import { useTheme } from '@/hooks/useTheme';
 import { Skeleton } from '@/components/ui/Skeleton';
 import RidesMapView from '@/components/RidesMapView';
 import { formatPrice } from '@/utils/price';
+import { logger } from '@/utils/logger';
 
 
 type RideFilter = 'upcoming' | 'completed' | 'cancelled';
@@ -114,7 +115,7 @@ export default function RidesScreen() {
   const loadData = useCallback(async () => {
     if (user?.id) {
       try {
-        console.log('🔄 Loading data for user:', user.id, 'role:', user.role);
+        logger.debug('Loading data for user', { userId: user.id, role: user.role });
         // Always load both rides and bookings for all users
         // This ensures data is available for both tabs
         await Promise.all([
@@ -128,7 +129,7 @@ export default function RidesScreen() {
           setDriverPendingRequests(pendingRequests);
         }
 
-        console.log('✅ Data loaded successfully');
+        logger.debug('Data loaded successfully');
       } catch (err) {
         console.error('❌ Error loading data:', err);
       }

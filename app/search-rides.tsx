@@ -17,6 +17,7 @@ import { Calendar, Search, Filter, Navigation, Clock, MapPin, Map as MapIcon, Li
 import { Location, Ride } from '@/types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RidesMapView from '@/components/RidesMapView';
+import { logger } from '@/utils/logger';
 
 export default function SearchRidesScreen() {
   const { user } = useAuthStore();
@@ -60,7 +61,7 @@ export default function SearchRidesScreen() {
     }
 
     try {
-      console.log('Searching rides from', fromLocation!.name, 'to', toLocation!.name, 'with walking tolerance:', walkingDistance);
+      logger.debug('Searching rides', { from: fromLocation!.name, to: toLocation!.name, walkingDistance });
       await searchRides(fromLocation!, toLocation!, searchDate.toISOString(), walkingDistance);
       setHasSearched(true);
 
@@ -169,7 +170,7 @@ export default function SearchRidesScreen() {
 
   const processBooking = async (ride: Ride, seats: number) => {
     try {
-      console.log('🚗 Starting booking request for ride:', ride.id, 'user:', user?.id, 'seats:', seats);
+      logger.info('Starting booking request', { rideId: ride.id, seats });
 
       // Show processing alert
       Alert.alert(

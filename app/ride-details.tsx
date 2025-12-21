@@ -17,6 +17,7 @@ import { EnhancedRideTracking } from '@/components/EnhancedRideTracking';
 import RideDriverActions from '@/components/RideDriverActions';
 import { VerificationBadge } from '@/components/VerificationBadge';
 import { formatPrice, formatTotalPrice, getBookingPriceBreakdown, PLATFORM_FEE_DISPLAY } from '@/utils/price';
+import { logger } from '@/utils/logger';
 
 export default function RideDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -47,7 +48,7 @@ export default function RideDetailsScreen() {
     }
 
     setIsLoadingRide(true);
-    console.log('🔄 Subscribing to real-time updates for ride:', id);
+    logger.debug('Subscribing to real-time updates for ride', { rideId: id });
 
     // Subscribe to real-time updates for the ride document
     const rideRef = doc(db, 'rides', id);
@@ -56,11 +57,11 @@ export default function RideDetailsScreen() {
       (docSnapshot) => {
         if (docSnapshot.exists()) {
           const rideData = { id: docSnapshot.id, ...docSnapshot.data() } as Ride;
-          console.log('✅ Ride updated in real-time:', rideData.id, 'status:', rideData.status);
+          logger.debug('Ride updated in real-time', { rideId: rideData.id, status: rideData.status });
           setRide(rideData);
           setRideNotFound(false);
         } else {
-          console.log('❌ Ride not found:', id);
+          logger.warn('Ride not found', { rideId: id });
           setRideNotFound(true);
         }
         setIsLoadingRide(false);
@@ -74,7 +75,7 @@ export default function RideDetailsScreen() {
 
     // Cleanup subscription on unmount
     return () => {
-      console.log('🧹 Unsubscribing from ride updates:', id);
+      logger.debug('Unsubscribing from ride updates', { rideId: id });
       unsubscribe();
     };
   }, [id]);

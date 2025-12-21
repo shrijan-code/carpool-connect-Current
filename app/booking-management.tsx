@@ -10,6 +10,7 @@ import { Booking } from '@/types';
 import { Clock, User, DollarSign, AlertTriangle, CheckCircle, XCircle, RefreshCw, Eye, MessageCircle } from 'lucide-react-native';
 import { CancellationModal } from '@/src/components/CancellationModal';
 import { router } from 'expo-router';
+import { logger } from '@/utils/logger';
 
 const { width: screenWidth } = Dimensions.get('window');
 const isSmallScreen = screenWidth < 375;
@@ -31,7 +32,7 @@ export default function BookingManagementScreen() {
       // Get bookings from store
       const userBookings = getUserBookings(user.id);
       setBookings(userBookings);
-      console.log('Loaded user bookings:', userBookings.length);
+      logger.debug('Loaded user bookings', { count: userBookings.length });
     } catch (error) {
       console.error('Error loading bookings:', error);
     } finally {

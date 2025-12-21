@@ -15,6 +15,7 @@ import { StripeProvider } from "@stripe/stripe-react-native";
 import { NotificationService } from "@/services/notifications";
 import { useRouter } from "expo-router";
 import GlobalErrorBoundary from "@/components/GlobalErrorBoundary";
+import { logger } from "@/utils/logger";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -61,7 +62,7 @@ async function clearAllStorage() {
     const AsyncStorage = require('@react-native-async-storage/async-storage').default;
     const keys = await AsyncStorage.getAllKeys();
     await AsyncStorage.multiRemove(keys);
-    console.log('All storage cleared due to JSON errors');
+    logger.info('All storage cleared due to JSON errors');
   } catch (error) {
     console.error('Failed to clear all storage:', error);
   }
@@ -198,14 +199,14 @@ export default function RootLayout() {
     const setupNotifications = async () => {
       // Listener for when a notification is received (foreground)
       notificationListener = NotificationService.addNotificationReceivedListener(notification => {
-        console.log('[Notification] Received in foreground:', notification);
+        logger.debug('Notification received in foreground');
         // We could show a custom in-app toast here if we want
       });
 
       // Listener for when a user taps on a notification
       responseListener = NotificationService.addNotificationResponseReceivedListener(response => {
         const data = response.notification.request.content.data;
-        console.log('[Notification] Response received:', data);
+        logger.debug('Notification response received', { hasBookingId: !!data.bookingId, hasRideId: !!data.rideId });
 
         // Handle navigation based on notification data
         if (data?.bookingId) {
@@ -219,7 +220,7 @@ export default function RootLayout() {
       const lastResponse = await NotificationService.getLastNotificationResponse();
       if (lastResponse) {
         const data = lastResponse.notification.request.content.data;
-        console.log('[Notification] App opened from:', data);
+        logger.debug('App opened from notification', { hasBookingId: !!data.bookingId, hasRideId: !!data.rideId });
         if (data?.bookingId) {
           router.push(`/booking-management?bookingId=${data.bookingId}` as any);
         } else if (data?.rideId) {
@@ -245,8 +246,8 @@ export default function RootLayout() {
   useEffect(() => {
     const initialize = async () => {
       try {
-        console.log('[RootLayout] Starting initialization...');
-        console.log('[RootLayout] Checking environment variables...');
+        logger.info('Starting app initialization...');
+        logger.debug('Checking environment variables...');
 
         // Debug: Check if env variables are accessible at runtime
         if (__DEV__) {
@@ -256,9 +257,9 @@ export default function RootLayout() {
             'EXPO_PUBLIC_GOOGLE_PLACES_API_KEY': process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY,
           };
 
-          console.log('[RootLayout] Environment variable status:');
+          logger.debug('Environment variable status:');
           Object.entries(envCheck).forEach(([key, value]) => {
-            console.log(`  ${value ? '✓' : '✗'} ${key}: ${value ? 'Loaded' : 'Missing'}`);
+            logger.debug(`  ${value ? '✓' : '✗'} ${key}: ${value ? 'Loaded' : 'Missing'}`);
           });
         }
 
@@ -267,18 +268,18 @@ export default function RootLayout() {
 
         // Initialize settings first (required for theme)
         await loadSettings();
-        console.log('[RootLayout] Settings loaded');
+        logger.debug('Settings loaded');
 
         // Initialize Stripe
         await initializeStripe();
-        console.log('[RootLayout] Stripe initialized');
+        logger.debug('Stripe initialized');
 
         // Then initialize auth and rides
         await initializeAuth();
-        console.log('[RootLayout] Auth initialized');
+        logger.debug('Auth initialized');
 
         await initializeRides();
-        console.log('[RootLayout] Rides initialized');
+        logger.info('App initialization complete');
 
         setIsInitialized(true);
       } catch (error) {
