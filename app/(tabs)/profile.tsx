@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Linking, Image, ActionSheetIOS, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Modal, Linking, Image, ActionSheetIOS, Platform, Keyboard, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
@@ -1133,67 +1133,69 @@ export default function ProfileScreen() {
         transparent={true}
         onRequestClose={() => setShowDeleteAccountModal(false)}
       >
-        <View style={styles.dangerZoneOverlay}>
-          <View style={styles.dangerZoneModal}>
-            <View style={styles.dangerZoneHeader}>
-              <AlertTriangle size={32} color="#DC2626" />
-              <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
-            </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.dangerZoneOverlay}>
+            <View style={styles.dangerZoneModal}>
+              <View style={styles.dangerZoneHeader}>
+                <AlertTriangle size={32} color="#DC2626" />
+                <Text style={styles.dangerZoneTitle}>Danger Zone</Text>
+              </View>
 
-            <View style={styles.dangerZoneWarning}>
-              <Text style={styles.dangerZoneWarningText}>
-                ⚠️ This action is permanent and cannot be undone.
-              </Text>
-            </View>
-
-            <Text style={styles.dangerZoneDescription}>
-              Deleting your account will permanently remove:
-            </Text>
-            <View style={styles.dangerZoneList}>
-              <Text style={styles.dangerZoneListItem}>• All your personal information</Text>
-              <Text style={styles.dangerZoneListItem}>• Your ride history and bookings</Text>
-              <Text style={styles.dangerZoneListItem}>• Your driver profile and documents</Text>
-              <Text style={styles.dangerZoneListItem}>• Your payment and earnings history</Text>
-              <Text style={styles.dangerZoneListItem}>• All ratings and reviews</Text>
-            </View>
-
-            <Text style={styles.dangerZoneConfirmLabel}>
-              To confirm, type <Text style={styles.dangerZoneDeleteWord}>DELETE</Text> below:
-            </Text>
-            <Input
-              placeholder="Type DELETE to confirm"
-              value={deleteConfirmText}
-              onChangeText={setDeleteConfirmText}
-              style={styles.dangerZoneInput}
-              autoCapitalize="characters"
-            />
-
-            <View style={styles.dangerZoneButtons}>
-              <TouchableOpacity
-                style={styles.dangerZoneCancelButton}
-                onPress={() => {
-                  setShowDeleteAccountModal(false);
-                  setDeleteConfirmText('');
-                }}
-              >
-                <Text style={styles.dangerZoneCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.dangerZoneDeleteButton,
-                  deleteConfirmText !== 'DELETE' && styles.dangerZoneDeleteButtonDisabled
-                ]}
-                onPress={confirmDeleteAccount}
-                disabled={deleteConfirmText !== 'DELETE' || isDeletingAccount}
-              >
-                <Trash2 size={18} color="#FFFFFF" />
-                <Text style={styles.dangerZoneDeleteText}>
-                  {isDeletingAccount ? 'Deleting...' : 'Delete Account'}
+              <View style={styles.dangerZoneWarning}>
+                <Text style={styles.dangerZoneWarningText}>
+                  ⚠️ This action is permanent and cannot be undone.
                 </Text>
-              </TouchableOpacity>
+              </View>
+
+              <Text style={styles.dangerZoneDescription}>
+                Deleting your account will permanently remove:
+              </Text>
+              <View style={styles.dangerZoneList}>
+                <Text style={styles.dangerZoneListItem}>• All your personal information</Text>
+                <Text style={styles.dangerZoneListItem}>• Your ride history and bookings</Text>
+                <Text style={styles.dangerZoneListItem}>• Your driver profile and documents</Text>
+                <Text style={styles.dangerZoneListItem}>• Your payment and earnings history</Text>
+                <Text style={styles.dangerZoneListItem}>• All ratings and reviews</Text>
+              </View>
+
+              <Text style={styles.dangerZoneConfirmLabel}>
+                To confirm, type <Text style={styles.dangerZoneDeleteWord}>DELETE</Text> below:
+              </Text>
+              <Input
+                placeholder="Type DELETE to confirm"
+                value={deleteConfirmText}
+                onChangeText={setDeleteConfirmText}
+                style={styles.dangerZoneInput}
+                autoCapitalize="characters"
+              />
+
+              <View style={styles.dangerZoneButtons}>
+                <TouchableOpacity
+                  style={styles.dangerZoneCancelButton}
+                  onPress={() => {
+                    setShowDeleteAccountModal(false);
+                    setDeleteConfirmText('');
+                  }}
+                >
+                  <Text style={styles.dangerZoneCancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.dangerZoneDeleteButton,
+                    deleteConfirmText !== 'DELETE' && styles.dangerZoneDeleteButtonDisabled
+                  ]}
+                  onPress={confirmDeleteAccount}
+                  disabled={deleteConfirmText !== 'DELETE' || isDeletingAccount}
+                >
+                  <Trash2 size={18} color="#FFFFFF" />
+                  <Text style={styles.dangerZoneDeleteText}>
+                    {isDeletingAccount ? 'Deleting...' : 'Delete Account'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Edit Profile Modal */}

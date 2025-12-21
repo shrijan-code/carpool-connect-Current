@@ -318,6 +318,54 @@ export default function AuthScreen() {
           textContentType="newPassword"
           leftIcon={<Lock size={20} color={colors.textSecondary} />}
         />
+
+        {/* Password Strength Indicator */}
+        {formData.password.length > 0 && (
+          <View style={styles.passwordStrengthContainer}>
+            <View style={styles.passwordStrengthBars}>
+              <View style={[
+                styles.passwordStrengthBar,
+                formData.password.length >= 1 && (
+                  formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                    ? styles.passwordStrengthStrong
+                    : formData.password.length >= 6
+                      ? styles.passwordStrengthMedium
+                      : styles.passwordStrengthWeak
+                )
+              ]} />
+              <View style={[
+                styles.passwordStrengthBar,
+                formData.password.length >= 6 && (
+                  formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                    ? styles.passwordStrengthStrong
+                    : formData.password.length >= 6
+                      ? styles.passwordStrengthMedium
+                      : styles.passwordStrengthEmpty
+                )
+              ]} />
+              <View style={[
+                styles.passwordStrengthBar,
+                formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                  ? styles.passwordStrengthStrong
+                  : styles.passwordStrengthEmpty
+              ]} />
+            </View>
+            <Text style={[
+              styles.passwordStrengthText,
+              formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                ? styles.passwordStrengthTextStrong
+                : formData.password.length >= 6
+                  ? styles.passwordStrengthTextMedium
+                  : styles.passwordStrengthTextWeak
+            ]}>
+              {formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                ? '✓ Strong password'
+                : formData.password.length >= 6
+                  ? 'Medium - add uppercase & number'
+                  : 'Weak - minimum 6 characters'}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.buttonSection}>
@@ -791,5 +839,46 @@ const createStyles = (colors: ColorScheme) => StyleSheet.create({
     fontWeight: '600' as const,
     color: colors.primary,
     opacity: 0.9,
+  },
+  // Password Strength Indicator Styles
+  passwordStrengthContainer: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  passwordStrengthBars: {
+    flexDirection: 'row' as const,
+    gap: 6,
+    marginBottom: 8,
+  },
+  passwordStrengthBar: {
+    flex: 1,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.border,
+  },
+  passwordStrengthEmpty: {
+    backgroundColor: colors.border,
+  },
+  passwordStrengthWeak: {
+    backgroundColor: '#EF4444',
+  },
+  passwordStrengthMedium: {
+    backgroundColor: '#F59E0B',
+  },
+  passwordStrengthStrong: {
+    backgroundColor: '#10B981',
+  },
+  passwordStrengthText: {
+    fontSize: 12,
+    fontWeight: '500' as const,
+  },
+  passwordStrengthTextWeak: {
+    color: '#EF4444',
+  },
+  passwordStrengthTextMedium: {
+    color: '#F59E0B',
+  },
+  passwordStrengthTextStrong: {
+    color: '#10B981',
   },
 });

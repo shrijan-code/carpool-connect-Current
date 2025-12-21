@@ -278,6 +278,122 @@ export default function UserDetailPage() {
                 </div>
             )}
 
+            {/* Driver Verification Status - for drivers with pending approval */}
+            {(user.role === 'driver' || user.role === 'both') && (
+                <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6 mb-6">
+                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2 text-gray-900 dark:text-white">
+                        <Car className="w-5 h-5" />
+                        Driver Verification
+                    </h3>
+
+                    {/* Approval Status */}
+                    <div className="mb-4">
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Approval Status</p>
+                        <span className={`inline-block px-3 py-1 text-sm font-semibold rounded-full ${user.driverApproval?.status === 'approved' ? 'bg-green-100 text-green-800' :
+                                user.driverApproval?.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                                    user.driverApproval?.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                                        'bg-gray-100 text-gray-800'
+                            }`}>
+                            {user.driverApproval?.status || 'Not Submitted'}
+                        </span>
+                    </div>
+
+                    {/* Vehicle Details */}
+                    {user.carDetails && (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                            <div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">Vehicle</p>
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                    {user.carDetails.make} {user.carDetails.model} ({user.carDetails.year})
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">Color</p>
+                                <p className="font-medium text-gray-900 dark:text-white">{user.carDetails.color || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">License Plate</p>
+                                <p className="font-medium text-gray-900 dark:text-white">{user.carDetails.licensePlate || 'N/A'}</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Document Links */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div className="p-4 border dark:border-gray-700 rounded-lg">
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Registration Document</p>
+                            {user.carDetails?.registrationDocument ? (
+                                <a
+                                    href={user.carDetails.registrationDocument}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                >
+                                    📄 View Registration
+                                </a>
+                            ) : (
+                                <span className="text-gray-500 text-sm">Not uploaded</span>
+                            )}
+                        </div>
+                        <div className="p-4 border dark:border-gray-700 rounded-lg">
+                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Insurance Document</p>
+                            {user.carDetails?.insuranceDocument ? (
+                                <a
+                                    href={user.carDetails.insuranceDocument}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                >
+                                    📄 View Insurance
+                                </a>
+                            ) : (
+                                <span className="text-gray-500 text-sm">Not uploaded</span>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Approval Actions - show only if pending or can be changed */}
+                    {user.driverApproval?.status === 'pending' && (
+                        <div className="flex gap-3 pt-4 border-t dark:border-gray-700">
+                            <button
+                                onClick={() => {
+                                    if (confirm('Approve this driver? They will be able to create rides.')) {
+                                        handleAction('approve_driver');
+                                    }
+                                }}
+                                disabled={actionLoading !== null}
+                                className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                <CheckCircle className="w-4 h-4" />
+                                {actionLoading === 'approve_driver' ? 'Approving...' : 'Approve Driver'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    const reason = prompt('Enter rejection reason:');
+                                    if (reason) {
+                                        handleAction('reject_driver', { reason });
+                                    }
+                                }}
+                                disabled={actionLoading !== null}
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                                <XCircle className="w-4 h-4" />
+                                {actionLoading === 'reject_driver' ? 'Rejecting...' : 'Reject Driver'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Show rejection reason if rejected */}
+                    {user.driverApproval?.status === 'rejected' && user.driverApproval?.rejectionReason && (
+                        <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                            <p className="text-sm text-red-600 dark:text-red-400">
+                                <strong>Rejection Reason:</strong> {user.driverApproval.rejectionReason}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Emergency Contacts */}
             {user.emergencyContacts && user.emergencyContacts.length > 0 && (
                 <div className="bg-white dark:bg-gray-900 rounded-lg shadow p-6 mb-6">

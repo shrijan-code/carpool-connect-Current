@@ -298,8 +298,8 @@ export const onDriverDocumentSubmission = onDocumentUpdated(
         documentTypes.push(`Vehicle Details: ${afterData.carDetails.make} ${afterData.carDetails.model}`);
       }
 
-      // Get admin email from environment or default
-      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
+      // Get admin email from environment or use hardcoded default
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || 'shrijan.bhandari1318@gmail.com';
 
       if (adminEmail) {
         const driverInfo = {
