@@ -1,27 +1,40 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    // Profile pictures - users can only write their own, read any authenticated
+    // Helper function to check if user is admin
+    // Note: Storage rules cannot directly query Firestore, so admin check relies on custom claims
+    // Admins should have "admin" custom claim set via Firebase Admin SDK
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+    
+    // Profile pictures - PUBLIC for all authenticated users (can see other users' profiles)
     match /profile-pictures/{userId}/{allPaths=**} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null; // All authenticated users can view profile pics
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Vehicle documents - users can only access their own
+    // Vehicle documents (registration, insurance) - PRIVATE: only owner + admins
+    // These are sensitive documents that need admin review
     match /vehicle-documents/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && 
+        (request.auth.uid == userId || isAdmin());
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
     
-    // Safety report evidence - only uploader and admins can read
+    // Safety report evidence - PRIVATE: only uploader + admins
+    // Contains sensitive incident photos that should not be publicly accessible
     match /safety-reports/{reportId}/{allPaths=**} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && 
+        (resource.metadata.uploadedBy == request.auth.uid || isAdmin());
       allow write: if request.auth != null && 
         (resource == null || resource.metadata.uploadedBy == request.auth.uid);
     }
     
-    // Incident images - users can upload their own
+    // Incident images - PRIVATE: only uploader + admins
     match /incident-images/{userId}_{allPaths=**} {
-      allow read: if request.auth != null;
+      allow read: if request.auth != null && 
+        (request.auth.uid == userId || isAdmin());
       allow write: if request.auth != null && request.auth.uid == userId;
     }
     

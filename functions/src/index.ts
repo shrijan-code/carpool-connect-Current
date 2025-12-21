@@ -267,6 +267,74 @@ export const onUserCreated = onDocumentCreated(
   });
 
 // ============================================================================
+// DRIVER DOCUMENT SUBMISSION - Notify Admin for Review
+// ============================================================================
+
+export const onDriverDocumentSubmission = onDocumentUpdated(
+  { document: "users/{userId}", secrets: ["EMAIL_USER", "EMAIL_PASSWORD"] },
+  async (event) => {
+    const beforeData = event.data?.before?.data();
+    const afterData = event.data?.after?.data();
+    const userId = event.params.userId;
+
+    if (!beforeData || !afterData) return;
+
+    // Check if driverApproval status changed to 'pending'
+    const wasNotPending = !beforeData.driverApproval || beforeData.driverApproval.status !== 'pending';
+    const isNowPending = afterData.driverApproval?.status === 'pending';
+
+    if (wasNotPending && isNowPending) {
+      console.log(`🚗 Driver ${userId} submitted documents for approval`);
+
+      // Determine which documents were submitted
+      const documentTypes: string[] = [];
+      if (afterData.carDetails?.registrationDocument) {
+        documentTypes.push('Vehicle Registration Document');
+      }
+      if (afterData.carDetails?.insuranceDocument) {
+        documentTypes.push('Vehicle Insurance Document');
+      }
+      if (afterData.carDetails?.make && afterData.carDetails?.model) {
+        documentTypes.push(`Vehicle Details: ${afterData.carDetails.make} ${afterData.carDetails.model}`);
+      }
+
+      // Get admin email from environment or default
+      const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
+
+      if (adminEmail) {
+        const driverInfo = {
+          name: afterData.name || afterData.displayName || 'Unknown Driver',
+          email: afterData.email || 'No email provided',
+          userId: userId,
+        };
+
+        await sendEmail(adminEmail, "driverDocumentSubmission", [driverInfo, documentTypes]);
+        console.log(`✅ Admin notification sent for driver ${userId} document submission`);
+      } else {
+        console.warn('⚠️ No admin email configured. Set ADMIN_EMAIL or EMAIL_USER environment variable.');
+      }
+
+      // Also create in-app notification for admins (if admin notification system exists)
+      try {
+        // Get all admin users to notify them
+        const adminsSnapshot = await db.collection('admins').get();
+        for (const adminDoc of adminsSnapshot.docs) {
+          await createNotification({
+            userId: adminDoc.id,
+            title: '🚗 Driver Document Review Required',
+            body: `${afterData.name || 'A driver'} has submitted documents for approval. Please review in the Admin Dashboard.`,
+            type: 'system',
+            data: { driverId: userId },
+          });
+        }
+      } catch (notifError) {
+        console.error('Failed to create admin notifications:', notifError);
+      }
+    }
+  }
+);
+
+// ============================================================================
 // RIDE CREATION - Confirmation Email with T&C
 // ============================================================================
 

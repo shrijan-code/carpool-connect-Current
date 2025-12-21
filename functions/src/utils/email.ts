@@ -607,6 +607,58 @@ const templates = {
       `,
     };
   },
+
+  // Email to admin when driver submits documents for approval
+  driverDocumentSubmission: (driverInfo: { name: string; email: string; userId: string }, documentTypes: string[]) => ({
+    subject: "🚗 Driver Document Review Required - CarpoolConnect",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px;">
+          <h1 style="color: white; margin: 0;">📋 New Driver Document Submission</h1>
+        </div>
+        
+        <p style="font-size: 16px;">A driver has submitted documents for review and approval.</p>
+        
+        <div style="background: #F3F4F6; padding: 20px; border-radius: 10px; margin: 20px 0;">
+          <h2 style="color: #4F46E5; margin-top: 0;">Driver Information</h2>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>Name:</strong></td>
+              <td style="padding: 8px 0;">${driverInfo.name}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>Email:</strong></td>
+              <td style="padding: 8px 0;">${driverInfo.email}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>User ID:</strong></td>
+              <td style="padding: 8px 0; font-family: monospace; font-size: 12px;">${driverInfo.userId}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background: #DBEAFE; padding: 20px; border-radius: 10px; margin: 20px 0;">
+          <h3 style="color: #1E40AF; margin-top: 0;">📄 Documents Submitted</h3>
+          <ul style="color: #1E40AF; margin: 10px 0; padding-left: 20px;">
+            ${documentTypes.map(doc => `<li style="margin: 5px 0;">${doc}</li>`).join('')}
+          </ul>
+        </div>
+
+        <div style="background: #FEF3C7; border-left: 4px solid #F59E0B; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; color: #92400E;"><strong>⚠️ Action Required</strong></p>
+          <p style="color: #92400E; margin: 10px 0 0 0;">
+            Please log in to the Admin Dashboard to review the submitted documents and approve or reject the driver's application.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <p style="color: #6B7280; font-size: 12px;">
+            This is an automated notification from CarpoolConnect.
+          </p>
+        </div>
+      </div>
+    `,
+  }),
 };
 
 // Send email function
