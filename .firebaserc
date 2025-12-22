@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "carpoolconnect1-0"
+    "default": "carpoolconnect1-0",
+    "development": "carpoolconnect1-0",
+    "production": "carpoolconnect-prod"
   }
 }
