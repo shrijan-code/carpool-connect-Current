@@ -13,11 +13,10 @@ export async function GET(
     }
 
     try {
-        const resolvedParams = await params;
-        const userDoc = await db.collection('users').doc(resolvedParams.id).get();
+        const userDoc = await db.collection('users').doc(params.id).get();
 
         if (!userDoc.exists) {
-            console.log('User document not found for ID:', resolvedParams.id);
+            console.log('User document not found for ID:', params.id);
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
 
@@ -27,7 +26,7 @@ export async function GET(
         let rides: any[] = [];
         try {
             const ridesSnapshot = await db.collection('rides')
-                .where('driverId', '==', resolvedParams.id)
+                .where('driverId', '==', params.id)
                 .orderBy('createdAt', 'desc')
                 .limit(10)
                 .get();
@@ -45,7 +44,7 @@ export async function GET(
         let bookings: any[] = [];
         try {
             const bookingsSnapshot = await db.collection('bookings')
-                .where('riderId', '==', resolvedParams.id)
+                .where('riderId', '==', params.id)
                 .orderBy('createdAt', 'desc')
                 .limit(10)
                 .get();
@@ -63,7 +62,7 @@ export async function GET(
         let emergencyContacts: any[] = [];
         try {
             const contactsSnapshot = await db.collection('emergency_contacts')
-                .where('userId', '==', resolvedParams.id)
+                .where('userId', '==', params.id)
                 .get();
 
             emergencyContacts = contactsSnapshot.docs.map(doc => ({
@@ -78,7 +77,7 @@ export async function GET(
         let paymentMethodsCount = 0;
         try {
             const paymentMethodsSnapshot = await db.collection('payment_methods')
-                .where('userId', '==', resolvedParams.id)
+                .where('userId', '==', params.id)
                 .get();
             paymentMethodsCount = paymentMethodsSnapshot.size;
         } catch (paymentError) {
@@ -89,7 +88,7 @@ export async function GET(
         let adminLogs: any[] = [];
         try {
             const logsSnapshot = await db.collection('admin_logs')
-                .where('targetUserId', '==', resolvedParams.id)
+                .where('targetUserId', '==', params.id)
                 .orderBy('createdAt', 'desc')
                 .limit(10)
                 .get();
@@ -136,7 +135,6 @@ export async function PATCH(
     }
 
     try {
-        const resolvedParams = await params;
         const body = await request.json();
         const { action, ...data } = body;
 
@@ -146,7 +144,7 @@ export async function PATCH(
             return NextResponse.json({ error: 'Forbidden: Global Admin access required' }, { status: 403 });
         }
 
-        const userDoc = await db.collection('users').doc(resolvedParams.id).get();
+        const userDoc = await db.collection('users').doc(params.id).get();
         if (!userDoc.exists) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
@@ -287,14 +285,14 @@ export async function PATCH(
                 }
         }
 
-        await db.collection('users').doc(resolvedParams.id).update(updateData);
+        await db.collection('users').doc(params.id).update(updateData);
 
         // Log the admin action
         await db.collection('admin_logs').add({
             action: logAction,
             adminId: session.id,
             adminEmail: session.email,
-            targetUserId: resolvedParams.id,
+            targetUserId: params.id,
             targetEmail: userData?.email,
             previousData: { suspended: userData?.suspended, role: userData?.role },
             newData: updateData,
@@ -319,10 +317,9 @@ export async function POST(
     }
 
     try {
-        const resolvedParams = await params;
         const { action, ...data } = await request.json();
 
-        const userDoc = await db.collection('users').doc(resolvedParams.id).get();
+        const userDoc = await db.collection('users').doc(params.id).get();
         if (!userDoc.exists) {
             return NextResponse.json({ error: 'User not found' }, { status: 404 });
         }
@@ -343,7 +340,7 @@ export async function POST(
                     action: 'reset_password',
                     adminId: session.id,
                     adminEmail: session.email,
-                    targetUserId: resolvedParams.id,
+                    targetUserId: params.id,
                     targetEmail: userData.email,
                     createdAt: new Date().toISOString(),
                 });
@@ -364,7 +361,7 @@ export async function POST(
 
                 // Create notification in Firestore
                 await db.collection('notifications').add({
-                    userId: resolvedParams.id,
+                    userId: params.id,
                     title,
                     body,
                     type,
@@ -378,7 +375,7 @@ export async function POST(
                     action: 'send_notification',
                     adminId: session.id,
                     adminEmail: session.email,
-                    targetUserId: resolvedParams.id,
+                    targetUserId: params.id,
                     targetEmail: userData?.email,
                     data: { title, body },
                     createdAt: new Date().toISOString(),

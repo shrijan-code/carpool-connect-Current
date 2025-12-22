@@ -4,17 +4,15 @@ import { db } from '@/lib/firebase-admin';
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
+    { params }: { params: { id: string } }
 ) {
     const session = await getSession();
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const resolvedParams = await params;
-
     try {
-        const reportDoc = await db.collection('safety_reports').doc(resolvedParams.id).get();
+        const reportDoc = await db.collection('safety_reports').doc(params.id).get();
 
         if (!reportDoc.exists) {
             return NextResponse.json({ error: 'Report not found' }, { status: 404 });
@@ -58,7 +56,7 @@ export async function GET(
 
         // Fetch notes
         const notesSnapshot = await db.collection('safety_reports')
-            .doc(resolvedParams.id)
+            .doc(params.id)
             .collection('notes')
             .orderBy('createdAt', 'desc')
             .get();
@@ -88,19 +86,17 @@ export async function GET(
 
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: Promise<{ id: string }> }
+    { params }: { params: { id: string } }
 ) {
     const session = await getSession();
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const resolvedParams = await params;
-
     try {
         const { status } = await request.json();
 
-        await db.collection('safety_reports').doc(resolvedParams.id).update({
+        await db.collection('safety_reports').doc(params.id).update({
             status,
             updatedAt: new Date().toISOString(),
         });

@@ -12,8 +12,7 @@ export async function GET(
     }
 
     try {
-        const resolvedParams = await params;
-        const rideDoc = await db.collection('rides').doc(resolvedParams.id).get();
+        const rideDoc = await db.collection('rides').doc(params.id).get();
 
         if (!rideDoc.exists) {
             return NextResponse.json({ error: 'Ride not found' }, { status: 404 });
@@ -39,7 +38,7 @@ export async function GET(
 
         // Fetch bookings for this ride
         const bookingsSnapshot = await db.collection('bookings')
-            .where('rideId', '==', resolvedParams.id)
+            .where('rideId', '==', params.id)
             .orderBy('createdAt', 'desc')
             .get();
 
@@ -96,10 +95,9 @@ export async function PATCH(
     }
 
     try {
-        const resolvedParams = await params;
         const { action, ...data } = await request.json();
 
-        const rideDoc = await db.collection('rides').doc(resolvedParams.id).get();
+        const rideDoc = await db.collection('rides').doc(params.id).get();
         if (!rideDoc.exists) {
             return NextResponse.json({ error: 'Ride not found' }, { status: 404 });
         }
@@ -116,7 +114,7 @@ export async function PATCH(
 
                 // Also cancel all pending/confirmed bookings
                 const bookingsToCancel = await db.collection('bookings')
-                    .where('rideId', '==', resolvedParams.id)
+                    .where('rideId', '==', params.id)
                     .where('status', 'in', ['pending', 'confirmed', 'pending_driver'])
                     .get();
 
@@ -142,14 +140,14 @@ export async function PATCH(
                 return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
         }
 
-        await db.collection('rides').doc(resolvedParams.id).update(updateData);
+        await db.collection('rides').doc(params.id).update(updateData);
 
         // Log the admin action
         await db.collection('admin_logs').add({
             action: `ride_${action}`,
             adminId: session.id,
             adminEmail: session.email,
-            targetRideId: resolvedParams.id,
+            targetRideId: params.id,
             data: { ...data, previousStatus: rideData?.status },
             createdAt: new Date().toISOString(),
         });

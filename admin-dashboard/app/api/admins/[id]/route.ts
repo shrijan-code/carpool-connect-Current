@@ -16,10 +16,8 @@ export async function GET(
     if (!canManageAdmins(session.role)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
-
     try {
-        const resolvedParams = await params;
-        const adminDoc = await db.collection('admins').doc(resolvedParams.id).get();
+        const adminDoc = await db.collection('admins').doc(params.id).get();
 
         if (!adminDoc.exists) {
             return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
@@ -57,17 +55,16 @@ export async function PATCH(
     }
 
     try {
-        const resolvedParams = await params;
         const body = await request.json();
         const { action, ...data } = body;
 
-        const adminDoc = await db.collection('admins').doc(resolvedParams.id).get();
+        const adminDoc = await db.collection('admins').doc(params.id).get();
         if (!adminDoc.exists) {
             return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
         }
 
         // Prevent self-modification of critical fields
-        if (resolvedParams.id === session.id && (action === 'deactivate' || action === 'change_role')) {
+        if (params.id === session.id && (action === 'deactivate' || action === 'change_role')) {
             return NextResponse.json({ error: 'You cannot deactivate yourself or change your own role' }, { status: 400 });
         }
 
@@ -106,7 +103,7 @@ export async function PATCH(
             action: `admin_${action}`,
             adminId: session.id,
             adminName: session.name,
-            targetAdminId: resolvedParams.id,
+            targetAdminId: params.id,
             data: { action, ...data },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
@@ -133,14 +130,12 @@ export async function DELETE(
     }
 
     try {
-        const resolvedParams = await params;
-
         // Prevent self-deletion
-        if (resolvedParams.id === session.id) {
+        if (params.id === session.id) {
             return NextResponse.json({ error: 'You cannot delete yourself' }, { status: 400 });
         }
 
-        const adminDoc = await db.collection('admins').doc(resolvedParams.id).get();
+        const adminDoc = await db.collection('admins').doc(params.id).get();
         if (!adminDoc.exists) {
             return NextResponse.json({ error: 'Admin not found' }, { status: 404 });
         }
@@ -153,7 +148,7 @@ export async function DELETE(
             action: 'delete_admin',
             adminId: session.id,
             adminName: session.name,
-            targetAdminId: resolvedParams.id,
+            targetAdminId: params.id,
             targetAdminEmail: adminData?.email,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
