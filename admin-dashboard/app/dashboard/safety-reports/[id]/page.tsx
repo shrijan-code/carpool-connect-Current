@@ -1,13 +1,36 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { formatDate, getSeverityColor, getStatusColor } from '@/lib/utils';
 import { ArrowLeft } from 'lucide-react';
 
-export default function SafetyReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
-    const resolvedParams = use(params);
+// Helper function to safely render any value as a string
+const safeRender = (value: unknown): string => {
+    if (value === null || value === undefined) return 'N/A';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (value instanceof Date) return value.toISOString();
+    // Handle Firestore Timestamp-like objects
+    if (typeof value === 'object' && value !== null) {
+        const obj = value as Record<string, unknown>;
+        if ('toDate' in obj && typeof obj.toDate === 'function') {
+            return (obj.toDate as () => Date)().toISOString();
+        }
+        if ('_seconds' in obj || 'seconds' in obj) {
+            const seconds = (obj._seconds || obj.seconds) as number;
+            return new Date(seconds * 1000).toISOString();
+        }
+    }
+    // Fallback: stringify the object
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return '[Object]';
+    }
+};
+
+export default function SafetyReportDetailPage({ params }: { params: { id: string } }) {
     const router = useRouter();
     const [report, setReport] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -19,7 +42,7 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
     }, []);
 
     const fetchReport = async () => {
-        const res = await fetch(`/api/safety-reports/${resolvedParams.id}`);
+        const res = await fetch(`/api/safety-reports/${params.id}`);
         const data = await res.json();
         setReport(data.report);
         setNewStatus(data.report?.status || '');
@@ -27,7 +50,7 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
     };
 
     const handleUpdateStatus = async () => {
-        await fetch(`/api/safety-reports/${resolvedParams.id}`, {
+        await fetch(`/api/safety-reports/${params.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ status: newStatus }),
@@ -37,7 +60,7 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
 
     const handleAddNote = async () => {
         if (!note.trim()) return;
-        await fetch(`/api/safety-reports/${resolvedParams.id}/notes`, {
+        await fetch(`/api/safety-reports/${params.id}/notes`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ note }),
@@ -63,14 +86,14 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
                 <div className="flex justify-between items-start mb-6">
                     <div>
                         <h1 className="text-2xl font-bold text-gray-900 mb-2">Safety Report</h1>
-                        <p className="text-gray-600">ID: {report.id}</p>
+                        <p className="text-gray-600">ID: {safeRender(report.id)}</p>
                     </div>
                     <div className="flex gap-2">
-                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getSeverityColor(report.severity)}`}>
-                            {report.severity}
+                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getSeverityColor(safeRender(report.severity))}`}>
+                            {safeRender(report.severity)}
                         </span>
-                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(report.status)}`}>
-                            {report.status}
+                        <span className={`px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(safeRender(report.status))}`}>
+                            {safeRender(report.status)}
                         </span>
                     </div>
                 </div>
@@ -78,11 +101,11 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
                 <div className="grid grid-cols-2 gap-6 mb-6">
                     <div>
                         <h3 className="text-sm font-medium text-gray-500 mb-1">Type</h3>
-                        <p className="text-gray-900">{(report.type || 'Unknown').replace('_', ' ')}</p>
+                        <p className="text-gray-900">{safeRender(report.type).replace('_', ' ') || 'Unknown'}</p>
                     </div>
                     <div>
                         <h3 className="text-sm font-medium text-gray-500 mb-1">Created</h3>
-                        <p className="text-gray-900">{formatDate(report.createdAt)}</p>
+                        <p className="text-gray-900">{formatDate(safeRender(report.createdAt))}</p>
                     </div>
                 </div>
 
@@ -134,15 +157,15 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <p className="text-sm text-gray-500">Name</p>
-                                <p className="font-medium">{report.reporter.name || 'N/A'}</p>
+                                <p className="font-medium">{safeRender(report.reporter?.name)}</p>
                             </div>
                             <div>
                                 <p className="text-sm text-gray-500">Email</p>
-                                <p className="font-medium">{report.reporter.email || 'N/A'}</p>
+                                <p className="font-medium">{safeRender(report.reporter?.email)}</p>
                             </div>
                             <div>
                                 <p className="text-sm text-gray-500">Phone</p>
-                                <p className="font-medium">{report.reporter.phone || 'N/A'}</p>
+                                <p className="font-medium">{safeRender(report.reporter?.phone)}</p>
                             </div>
                         </div>
                     </div>
@@ -154,15 +177,15 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
                         <div className="grid grid-cols-3 gap-4">
                             <div>
                                 <p className="text-sm text-yellow-700">Name</p>
-                                <p className="font-medium text-yellow-900">{report.emergencyContact.name}</p>
+                                <p className="font-medium text-yellow-900">{safeRender(report.emergencyContact?.name)}</p>
                             </div>
                             <div>
                                 <p className="text-sm text-yellow-700">Phone</p>
-                                <p className="font-medium text-yellow-900">{report.emergencyContact.phone}</p>
+                                <p className="font-medium text-yellow-900">{safeRender(report.emergencyContact?.phone)}</p>
                             </div>
                             <div>
                                 <p className="text-sm text-yellow-700">Relationship</p>
-                                <p className="font-medium text-yellow-900">{report.emergencyContact.relationship}</p>
+                                <p className="font-medium text-yellow-900">{safeRender(report.emergencyContact?.relationship)}</p>
                             </div>
                         </div>
                     </div>
@@ -212,11 +235,11 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
                 </div>
 
                 <div className="space-y-4">
-                    {report.notes?.map((n: any) => (
-                        <div key={n.id} className="border-l-4 border-purple-500 pl-4 py-2">
-                            <p className="text-gray-900">{n.note}</p>
+                    {report.notes?.map((n: any, idx: number) => (
+                        <div key={n.id || idx} className="border-l-4 border-purple-500 pl-4 py-2">
+                            <p className="text-gray-900">{safeRender(n.note)}</p>
                             <p className="text-sm text-gray-500 mt-1">
-                                {n.adminName} • {formatDate(n.createdAt)}
+                                {safeRender(n.adminName)} • {formatDate(safeRender(n.createdAt))}
                             </p>
                         </div>
                     ))}
