@@ -237,13 +237,14 @@ export class ImageService {
   }
 
   // Upload profile picture (keeps historical versions)
+  // Path matches storage rules: /profile-pictures/{userId}/{allPaths=**}
   static async uploadProfilePicture(
     userId: string,
     uri: string
   ): Promise<string | null> {
     const timestamp = Date.now();
-    const fileName = `${userId}_profile_${timestamp}.jpg`;
-    return this.uploadImage(uri, `profile-pictures`, fileName);
+    const fileName = `profile_${timestamp}.jpg`;
+    return this.uploadImage(uri, `profile-pictures/${userId}`, fileName);
   }
 
   // Upload vehicle document (keeps historical versions)
