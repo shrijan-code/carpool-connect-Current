@@ -88,8 +88,45 @@ export default function SafetyReportDetailPage({ params }: { params: Promise<{ i
 
                 <div className="mb-6">
                     <h3 className="text-sm font-medium text-gray-500 mb-2">Description</h3>
-                    <p className="text-gray-900 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">{report.description}</p>
+                    <p className="text-gray-900 bg-gray-50 p-4 rounded-lg whitespace-pre-wrap">
+                        {typeof report.description === 'string' ? report.description : JSON.stringify(report.description, null, 2)}
+                    </p>
                 </div>
+
+                {report.location && (
+                    <div className="mb-6">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Location</h3>
+                        <p className="text-gray-900">
+                            {report.location.address || `Lat: ${report.location.latitude}, Lng: ${report.location.longitude}`}
+                        </p>
+                    </div>
+                )}
+
+                {report.evidence && (
+                    <div className="mb-6">
+                        <h3 className="text-sm font-medium text-gray-500 mb-2">Evidence</h3>
+                        <div className="flex flex-wrap gap-2">
+                            {report.evidence.photos?.map((photo: string, idx: number) => (
+                                <a key={idx} href={photo} target="_blank" rel="noopener noreferrer"
+                                    className="text-purple-600 hover:underline">
+                                    Photo {idx + 1}
+                                </a>
+                            ))}
+                            {report.evidence.audio && (
+                                <a href={report.evidence.audio} target="_blank" rel="noopener noreferrer"
+                                    className="text-purple-600 hover:underline">
+                                    Audio Recording
+                                </a>
+                            )}
+                            {report.evidence.video && (
+                                <a href={report.evidence.video} target="_blank" rel="noopener noreferrer"
+                                    className="text-purple-600 hover:underline">
+                                    Video Recording
+                                </a>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {report.reporter && (
                     <div className="border-t pt-6 mb-6">
