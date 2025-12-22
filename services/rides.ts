@@ -582,11 +582,12 @@ export class RidesService {
       if (rideDoc.exists()) {
         const rideData = rideDoc.data() as Ride;
 
-        // Get all passengers for notifications
+        // Get all passengers for notifications - include driverId for security rules
         const bookingsQuery = query(
           collection(db, 'bookings'),
           where('rideId', '==', rideId),
-          where('status', '==', 'confirmed')
+          where('status', '==', 'confirmed'),
+          where('driverId', '==', rideData.driverId)
         );
         const bookingsSnapshot = await getDocs(bookingsQuery);
 
