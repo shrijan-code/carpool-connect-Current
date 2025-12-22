@@ -843,17 +843,26 @@ export default function ProfileScreen() {
                       style={[
                         styles.documentButton,
                         user?.carDetails?.registrationDocument && styles.documentButtonUploaded,
-                        user?.driverApproval?.documentsLocked && { opacity: 0.5 }
+                        (user?.driverApproval?.documentsLocked || user?.driverApproval?.status === 'pending' || user?.driverApproval?.status === 'approved') && { opacity: 0.5 }
                       ]}
                       onPress={() => handleDocumentUpload('registration')}
-                      disabled={uploadingDocument === 'registration' || user?.driverApproval?.documentsLocked}
+                      disabled={uploadingDocument === 'registration' || user?.driverApproval?.documentsLocked || user?.driverApproval?.status === 'pending' || user?.driverApproval?.status === 'approved'}
                     >
                       {uploadingDocument === 'registration' ? (
                         <Text style={styles.documentButtonText}>Uploading...</Text>
-                      ) : user?.driverApproval?.documentsLocked ? (
+                      ) : (user?.driverApproval?.documentsLocked || user?.driverApproval?.status === 'pending' || user?.driverApproval?.status === 'approved') ? (
                         <>
-                          <Lock size={14} color={Colors.textSecondary} />
-                          <Text style={styles.documentButtonText}>Locked</Text>
+                          {user?.carDetails?.registrationDocument ? (
+                            <>
+                              <CheckCircle size={14} color={Colors.background} />
+                              <Text style={[styles.documentButtonText, styles.documentButtonTextUploaded]}>Submitted</Text>
+                            </>
+                          ) : (
+                            <>
+                              <Lock size={14} color={Colors.textSecondary} />
+                              <Text style={styles.documentButtonText}>Locked</Text>
+                            </>
+                          )}
                         </>
                       ) : (
                         <>
@@ -879,14 +888,23 @@ export default function ProfileScreen() {
                         user?.driverApproval?.documentsLocked && { opacity: 0.5 }
                       ]}
                       onPress={() => handleDocumentUpload('insurance')}
-                      disabled={uploadingDocument === 'insurance' || user?.driverApproval?.documentsLocked}
+                      disabled={uploadingDocument === 'insurance' || user?.driverApproval?.documentsLocked || user?.driverApproval?.status === 'pending' || user?.driverApproval?.status === 'approved'}
                     >
                       {uploadingDocument === 'insurance' ? (
                         <Text style={styles.documentButtonText}>Uploading...</Text>
-                      ) : user?.driverApproval?.documentsLocked ? (
+                      ) : (user?.driverApproval?.documentsLocked || user?.driverApproval?.status === 'pending' || user?.driverApproval?.status === 'approved') ? (
                         <>
-                          <Lock size={14} color={Colors.textSecondary} />
-                          <Text style={styles.documentButtonText}>Locked</Text>
+                          {user?.carDetails?.insuranceDocument ? (
+                            <>
+                              <CheckCircle size={14} color={Colors.background} />
+                              <Text style={[styles.documentButtonText, styles.documentButtonTextUploaded]}>Submitted</Text>
+                            </>
+                          ) : (
+                            <>
+                              <Lock size={14} color={Colors.textSecondary} />
+                              <Text style={styles.documentButtonText}>Locked</Text>
+                            </>
+                          )}
                         </>
                       ) : (
                         <>
@@ -912,7 +930,7 @@ export default function ProfileScreen() {
               />
 
               {/* Driver Approval Status */}
-              {user?.carDetails?.make && user?.carDetails?.registrationDocument && user?.carDetails?.insuranceDocument && (
+              {user?.carDetails?.registrationDocument && user?.carDetails?.insuranceDocument && (
                 <View style={styles.approvalSection}>
                   <Text style={styles.documentTitle}>Driver Approval Status</Text>
                   {!user?.driverApproval || user?.driverApproval?.status === 'not_submitted' ? (
@@ -1533,7 +1551,7 @@ export default function ProfileScreen() {
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+    </SafeAreaView >
   );
 }
 
