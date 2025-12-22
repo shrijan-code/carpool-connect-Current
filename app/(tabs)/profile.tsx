@@ -128,8 +128,8 @@ export default function ProfileScreen() {
     try {
       setIsLoadingStripe(true);
 
-      // Use direct Stripe Connect link (bypassing Cloud Function temporarily)
-      const connectUrl = 'https://connect.stripe.com/d/setup/e/_TZqghrCURCjJsaKmu5JoRVsZrc/YWNjdF8xU2NnejBEMXRsSFRZMkJ6/9496cf1009ab1c95a';
+      // Use Cloud Function to generate dynamic Stripe Connect URL
+      const connectUrl = await StripeConnectService.startConnectOnboarding(user);
 
       Alert.alert(
         '💳 Stripe Connect Setup',

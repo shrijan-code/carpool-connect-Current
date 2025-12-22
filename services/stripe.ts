@@ -8,9 +8,9 @@ import { User, getErrorMessage, AuditLogData } from '@/types';
 import { stripeCircuitBreaker, CircuitBreakerOpenError } from '@/utils/circuit-breaker';
 import { logger } from '@/utils/logger';
 
-// Stripe Configuration
-export const STRIPE_PUBLISHABLE_KEY = 'pk_test_51HMiYNDuXA4vn5QKRFRjdRH71bcNVlaxgaB459LlIuyAre8qUVEb53vf4haYuAKm2nVPxGssxvxaKN9Eb00kXF1n000Hg6HieO';
-const STRIPE_CONNECT_EXPRESS_URL = 'https://connect.stripe.com/d/setup/e/_Ssi0gOdCthBE4fgZQRUlmpCzGf/YWNjdF8xUnd3YVdEOHNYUnNKbjRX/e3e98a16a56c29b3c';
+// Stripe Configuration - Keys should come from environment variables
+export const STRIPE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || '';
+// Note: Stripe Connect URLs are now dynamically generated via Cloud Functions
 
 // Initialize Stripe - Web compatible version
 export const initializeStripe = async (): Promise<void> => {

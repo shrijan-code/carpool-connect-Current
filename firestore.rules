@@ -102,15 +102,15 @@ service cloud.firestore {
       // is part of a ride/booking they're involved in
       allow read: if isSignedIn() && isRecentRequest() &&
                     (
-                      // User is the sender
-                      resource.data.senderId == request.auth.uid ||
-                      // User is a participant in the thread
+                      // Direct participant check (denormalized)
                       (resource.data.participants != null && 
                        request.auth.uid in resource.data.participants) ||
-                      // User is the driver or passenger on this ride/booking
-                      resource.data.driverId == request.auth.uid ||
-                      resource.data.passengerId == request.auth.uid ||
-                      resource.data.riderId == request.auth.uid
+                      // User is the sender
+                      resource.data.senderId == request.auth.uid ||
+                      // Fallback for thread participants
+                      (resource.data.threadId != null && 
+                       get(/databases/$(database)/documents/message_threads/$(resource.data.threadId)).data.participants != null &&
+                       request.auth.uid in get(/databases/$(database)/documents/message_threads/$(resource.data.threadId)).data.participants)
                     );
       
       // Users can create messages as themselves

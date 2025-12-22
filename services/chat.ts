@@ -23,6 +23,32 @@ import { ImageService } from './image';
 import { NotificationService } from './notifications';
 
 export class ChatService {
+  // Get all participants for a ride
+  static async getParticipantsForRide(rideId: string): Promise<string[]> {
+    try {
+      const rideDoc = await getDoc(doc(db, 'rides', rideId));
+      if (!rideDoc.exists()) return [];
+
+      const rideData = rideDoc.data();
+      const participants = new Set<string>();
+
+      // Always include driver
+      if (rideData.driverId) participants.add(rideData.driverId);
+
+      // Include all passengers from all bundles/bookings
+      if (rideData.passengers && Array.isArray(rideData.passengers)) {
+        rideData.passengers.forEach((p: any) => {
+          if (p.id) participants.add(p.id);
+        });
+      }
+
+      return Array.from(participants);
+    } catch (error) {
+      console.warn('Error fetching ride participants:', error);
+      return [];
+    }
+  }
+
   // Create or get message thread
   static async createOrGetThread(
     bookingId: string,
@@ -100,6 +126,13 @@ export class ChatService {
         }
       }
 
+      // Get all participants for this ride to ensure they can all read the message
+      const participants = await this.getParticipantsForRide(rideId);
+      // Ensure sender is always in participants
+      if (!participants.includes(senderId)) {
+        participants.push(senderId);
+      }
+
       const messageData = {
         rideId,
         bookingId: bookingId || null,
@@ -109,6 +142,7 @@ export class ChatService {
         message: message.trim(),
         type: 'text' as const,
         readBy: [senderId],
+        participants,
         timestamp: serverTimestamp()
       };
 
@@ -197,6 +231,12 @@ export class ChatService {
         }
       }
 
+      // Get all participants for this ride
+      const participants = await this.getParticipantsForRide(rideId);
+      if (!participants.includes(senderId)) {
+        participants.push(senderId);
+      }
+
       const messageData = {
         rideId,
         bookingId,
@@ -207,6 +247,7 @@ export class ChatService {
         type: 'image' as const,
         imageUrl,
         readBy: [senderId],
+        participants,
         timestamp: serverTimestamp()
       };
 
@@ -231,12 +272,14 @@ export class ChatService {
   // Get latest messages for a ride with pagination (default 50)
   static async getRideMessages(
     rideId: string,
+    userId: string, // Required for security rules filtering
     pageSize: number = 50,
     cursor?: QueryDocumentSnapshot<DocumentData>
   ): Promise<{ messages: ChatMessage[]; nextCursor?: QueryDocumentSnapshot<DocumentData> }> {
     try {
       const base = [
         where('rideId', '==', rideId),
+        where('participants', 'array-contains', userId),
         orderBy('timestamp', 'desc') as any,
         limit(Math.max(1, Math.min(200, pageSize)))
       ];
@@ -261,7 +304,8 @@ export class ChatService {
           timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp,
           type: data.type || 'text',
           imageUrl: data.imageUrl,
-          readBy: data.readBy || []
+          readBy: data.readBy || [],
+          participants: data.participants || []
         });
       });
 
@@ -281,12 +325,14 @@ export class ChatService {
   // Listen to real-time messages
   static subscribeToRideMessages(
     rideId: string,
+    userId: string, // Required for security rules filtering
     callback: (messages: ChatMessage[]) => void,
     pageSize: number = 50
   ): Unsubscribe {
     const q = query(
       collection(db, 'messages'),
       where('rideId', '==', rideId),
+      where('participants', 'array-contains', userId),
       orderBy('timestamp', 'desc'),
       limit(Math.max(1, Math.min(200, pageSize)))
     );
@@ -306,7 +352,8 @@ export class ChatService {
           timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp,
           type: data.type || 'text',
           imageUrl: data.imageUrl,
-          readBy: data.readBy || []
+          readBy: data.readBy || [],
+          participants: data.participants || []
         });
       });
       callback(messages.reverse());
@@ -321,6 +368,9 @@ export class ChatService {
     message: string
   ): Promise<string> {
     try {
+      // Get participants for system message
+      const participants = await this.getParticipantsForRide(rideId);
+
       const messageData = {
         rideId,
         senderId: 'system',
@@ -328,6 +378,7 @@ export class ChatService {
         message,
         type: 'system' as const,
         readBy: [],
+        participants,
         timestamp: serverTimestamp()
       };
 
@@ -348,6 +399,7 @@ export class ChatService {
       const q = query(
         collection(db, 'messages'),
         where('rideId', '==', rideId),
+        where('participants', 'array-contains', userId),
         where('senderId', '!=', userId)
       );
 
@@ -384,6 +436,7 @@ export class ChatService {
       const q = query(
         collection(db, 'messages'),
         where('rideId', '==', rideId),
+        where('participants', 'array-contains', userId),
         where('senderId', '!=', userId)
       );
 
@@ -487,6 +540,7 @@ export class ChatService {
   ): Unsubscribe {
     const q = query(
       collection(db, 'messages'),
+      where('participants', 'array-contains', userId),
       where('senderId', '!=', userId),
       limit(200)
     );

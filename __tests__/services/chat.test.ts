@@ -86,6 +86,22 @@ describe('ChatService', () => {
             expect(messageId).toBe('mock-message-id');
         });
 
+        it('should include participants in the message', async () => {
+            const { addDoc } = require('firebase/firestore');
+
+            await ChatService.sendMessage(
+                'ride-123',
+                'sender-123',
+                'John Doe',
+                'Hello'
+            );
+
+            expect(addDoc).toHaveBeenCalled();
+            const callArgs = addDoc.mock.calls[0][1];
+            expect(callArgs.participants).toBeDefined();
+            expect(Array.isArray(callArgs.participants)).toBe(true);
+        });
+
         it('should trim message content', async () => {
             const { addDoc } = require('firebase/firestore');
 
@@ -118,13 +134,14 @@ describe('ChatService', () => {
             expect(callArgs.senderId).toBe('system');
             expect(callArgs.senderName).toBe('System');
             expect(callArgs.type).toBe('system');
+            expect(callArgs.participants).toBeDefined();
         });
     });
 
     describe('subscribeToRideMessages', () => {
         it('should return an unsubscribe function', () => {
             const callback = jest.fn();
-            const unsubscribe = ChatService.subscribeToRideMessages('ride-123', callback);
+            const unsubscribe = ChatService.subscribeToRideMessages('ride-123', 'user-123', callback);
 
             expect(typeof unsubscribe).toBe('function');
         });
@@ -134,10 +151,10 @@ describe('ChatService', () => {
             const callback = jest.fn();
 
             // Test with page size 0 (should become 1)
-            ChatService.subscribeToRideMessages('ride-123', callback, 0);
+            ChatService.subscribeToRideMessages('ride-123', 'user-123', callback, 0);
 
             // Test with page size 500 (should become 200)
-            ChatService.subscribeToRideMessages('ride-123', callback, 500);
+            ChatService.subscribeToRideMessages('ride-123', 'user-123', callback, 500);
 
             // The limit function should have been called
             expect(limit).toHaveBeenCalled();

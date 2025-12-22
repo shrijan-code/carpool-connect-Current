@@ -174,6 +174,7 @@ export interface ChatMessage {
   type: 'text' | 'system' | 'image';
   imageUrl?: string;
   readBy: string[];
+  participants: string[];
 }
 
 export interface MessageThread {

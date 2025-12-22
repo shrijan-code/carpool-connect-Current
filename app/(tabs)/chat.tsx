@@ -204,6 +204,7 @@ export default function ChatScreen() {
         // Subscribe to messages for the selected chat
         const unsubscribe = ChatService.subscribeToRideMessages(
           room.rideId,
+          user.id,
           (newMessages) => {
             logger.debug('Received messages update', { count: newMessages.length });
             const messagesWithCurrentUser = newMessages.map(msg => ({
