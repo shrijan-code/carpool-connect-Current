@@ -105,6 +105,15 @@ export class AuthService {
 
       const userCredential = await signInWithEmailAndPassword(auth, sanitizedEmail, password);
 
+      // Check if email is verified
+      if (!userCredential.user.emailVerified) {
+        // Send another verification email in case they didn't receive it
+        await sendEmailVerification(userCredential.user);
+        // Sign out the unverified user
+        await signOut(auth);
+        throw new Error('Please verify your email before logging in. A new verification email has been sent.');
+      }
+
       // Record successful login
       await SecurityManager.recordSuccessfulLogin(sanitizedEmail);
 
@@ -146,6 +155,10 @@ export class AuthService {
   ): Promise<User> {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+
+      // Send email verification
+      await sendEmailVerification(userCredential.user);
+
       const newUser: User = {
         id: userCredential.user.uid,
         displayName: userData.name || '',
@@ -159,6 +172,7 @@ export class AuthService {
         totalRides: 0,
         joinedDate: new Date().toISOString().split('T')[0],
         verified: false,
+        emailVerified: false, // Track email verification status
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
@@ -169,6 +183,9 @@ export class AuthService {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
+
+      // Sign out immediately after registration - user must verify email first
+      await signOut(auth);
 
       return newUser;
     } catch (error: any) {

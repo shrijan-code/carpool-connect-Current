@@ -94,7 +94,27 @@ export default function AuthScreen() {
         email: formData.email.trim().toLowerCase(),
         password: formData.password
       });
-      router.replace('/(tabs)/home');
+      // Show verification email sent message
+      Alert.alert(
+        '✅ Account Created!',
+        `A verification email has been sent to ${formData.email.trim().toLowerCase()}.\n\nPlease check your inbox and click the verification link before logging in.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Reset form and go to login
+              setFormData({
+                name: '',
+                email: '',
+                phone: '',
+                password: '',
+                role: 'rider',
+              });
+              setMode('login');
+            }
+          }
+        ]
+      );
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Please try again';
       Alert.alert('Registration Failed', errorMessage);
