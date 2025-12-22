@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
@@ -196,34 +196,38 @@ export default function ChatScreen() {
     }
   };
 
-  useEffect(() => {
-    if (selectedChat) {
-      const room = chatRooms.find(r => r.id === selectedChat);
-      if (room && user) {
-        logger.debug('Subscribing to messages', { rideId: room.rideId });
-        // Subscribe to messages for the selected chat
-        const unsubscribe = ChatService.subscribeToRideMessages(
-          room.rideId,
-          user.id,
-          (newMessages) => {
-            logger.debug('Received messages update', { count: newMessages.length });
-            const messagesWithCurrentUser = newMessages.map(msg => ({
-              ...msg,
-              isCurrentUser: msg.senderId === user.id
-            }));
-            setMessages(messagesWithCurrentUser);
-          }
-        );
+  // Get the rideId for the selected chat room (stable reference)
+  const selectedRideId = useMemo(() => {
+    if (!selectedChat) return null;
+    const room = chatRooms.find(r => r.id === selectedChat);
+    return room?.rideId || null;
+  }, [selectedChat, chatRooms]);
 
-        return () => {
-          logger.debug('Unsubscribing from messages', { rideId: room.rideId });
-          unsubscribe();
-        };
-      }
+  useEffect(() => {
+    if (selectedRideId && user?.id) {
+      logger.debug('Subscribing to messages', { rideId: selectedRideId });
+      // Subscribe to messages for the selected chat
+      const unsubscribe = ChatService.subscribeToRideMessages(
+        selectedRideId,
+        user.id,
+        (newMessages) => {
+          logger.debug('Received messages update', { count: newMessages.length });
+          const messagesWithCurrentUser = newMessages.map(msg => ({
+            ...msg,
+            isCurrentUser: msg.senderId === user.id
+          }));
+          setMessages(messagesWithCurrentUser);
+        }
+      );
+
+      return () => {
+        logger.debug('Unsubscribing from messages', { rideId: selectedRideId });
+        unsubscribe();
+      };
     } else {
       setMessages([]);
     }
-  }, [selectedChat, user?.id, chatRooms, user]);
+  }, [selectedRideId, user?.id]);
 
   // Subscribe to unread message counts for each chat room
   useEffect(() => {
