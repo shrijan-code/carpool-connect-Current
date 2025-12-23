@@ -58,7 +58,11 @@ export default function HomeScreen() {
     const cached = getCache(cacheKey);
     if (cached) return cached;
 
-    const filtered = rides.filter(ride => ride.driverId === user.id);
+    // Only show upcoming and active rides on home - completed/cancelled go to My Rides
+    const filtered = rides.filter(ride =>
+      ride.driverId === user.id &&
+      (ride.status === 'upcoming' || ride.status === 'active')
+    );
     setCache(cacheKey, filtered);
     return filtered;
   }, [rides, user?.id, getCache, setCache]);
@@ -186,13 +190,20 @@ export default function HomeScreen() {
       return;
     }
 
+    // Validate available seats (prevent booking rides with 0 or negative seats)
+    const validSeats = Math.max(0, availableSeats);
+    if (validSeats <= 0) {
+      Alert.alert('No Seats Available', 'This ride is fully booked.');
+      return;
+    }
+
     // Price is already stored in cents in the database
     const pricePerSeatInCents = Math.round(rideToBook.pricePerSeat);
     logger.debug('Booking ride', { rideId, priceInCents: pricePerSeatInCents, priceInDollars: (pricePerSeatInCents / 100).toFixed(2) });
 
     // Show seat selection dialog with pricing
     const seatOptions = [];
-    for (let i = 1; i <= Math.min(availableSeats, 4); i++) {
+    for (let i = 1; i <= Math.min(validSeats, 4); i++) {
       const totalPrice = ((pricePerSeatInCents / 100) * i).toFixed(2);
       const platformFee = '5.00';
       seatOptions.push({
@@ -205,7 +216,7 @@ export default function HomeScreen() {
 
     Alert.alert(
       '🚗 Book This Ride',
-      `From: ${rideToBook.from?.name || rideToBook.origin?.name}\nTo: ${rideToBook.to?.name || rideToBook.destination?.name}\nDriver: ${rideToBook.driver?.name || 'Unknown'}\n\nAvailable: ${availableSeats} seats\nPrice: ${(pricePerSeatInCents / 100).toFixed(2)}/seat`,
+      `From: ${rideToBook.from?.name || rideToBook.origin?.name}\nTo: ${rideToBook.to?.name || rideToBook.destination?.name}\nDriver: ${rideToBook.driver?.name || 'Unknown'}\n\nAvailable: ${validSeats} seats\nPrice: ${(pricePerSeatInCents / 100).toFixed(2)}/seat`,
       seatOptions
     );
   };
