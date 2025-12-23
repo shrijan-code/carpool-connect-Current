@@ -184,6 +184,109 @@ firebase deploy --only functions
 
 **Recommendation:** M365 is ideal if you already have a subscription. For high volume (>10k emails/day), consider SendGrid.
 
+### Setting Up Multiple Email Destinations (Professional Routing)
+
+Route different types of emails to dedicated company mailboxes for professional handling:
+
+#### Recommended Email Structure
+
+| Purpose | Suggested Email | Uses |
+|---------|-----------------|------|
+| General enquiries | `hello@yourcompany.com` | Contact form, general questions |
+| Safety reports | `safety@yourcompany.com` | Safety reports, emergency contacts |
+| Support/Help | `support@yourcompany.com` | User issues, technical problems |
+| Payments/Billing | `billing@yourcompany.com` | Payment issues, refund requests |
+| No-reply sender | `noreply@yourcompany.com` | Automated emails (booking confirmations) |
+| Admin notifications | `admin@yourcompany.com` | Driver documents, verification requests |
+
+#### Step 1: Create Mailboxes in Microsoft 365
+
+1. Go to [Microsoft 365 Admin Center](https://admin.microsoft.com)
+2. Navigate to: **Users** → **Active Users** → **Add a user**
+3. Create shared mailboxes for each purpose (free, no license needed):
+   - **Shared mailbox:** Best for team access
+   - **Distribution group:** Best for forwarding to multiple people
+
+#### Step 2: Add Environment Variables
+
+Add these to Firebase Secrets:
+
+```bash
+# The sender address (used in "From" field)
+firebase functions:secrets:set EMAIL_USER
+# Enter: noreply@yourcompany.com
+
+firebase functions:secrets:set EMAIL_PASSWORD
+# Enter: App password for noreply@ account
+
+# Destination emails for different purposes
+firebase functions:secrets:set SAFETY_REPORT_EMAIL
+# Enter: safety@yourcompany.com
+
+firebase functions:secrets:set ADMIN_NOTIFICATION_EMAIL
+# Enter: admin@yourcompany.com
+
+firebase functions:secrets:set SUPPORT_EMAIL
+# Enter: support@yourcompany.com
+```
+
+#### Step 3: Code Changes
+
+**File:** `functions/src/index.ts`
+
+**Line 527 - Update Safety Report Email:**
+```typescript
+// BEFORE
+const adminEmail = process.env.SAFETY_REPORT_EMAIL || "shrijan.bhandari1318@gmail.com";
+
+// AFTER - Add more email destinations
+const safetyEmail = process.env.SAFETY_REPORT_EMAIL || "safety@yourcompany.com";
+const adminEmail = process.env.ADMIN_NOTIFICATION_EMAIL || "admin@yourcompany.com";
+const supportEmail = process.env.SUPPORT_EMAIL || "support@yourcompany.com";
+```
+
+**Add email routing helper function at top of file (around line 35):**
+```typescript
+// Email routing configuration
+const getEmailDestination = (type: string): string => {
+  const destinations: Record<string, string> = {
+    safety: process.env.SAFETY_REPORT_EMAIL || "safety@yourcompany.com",
+    admin: process.env.ADMIN_NOTIFICATION_EMAIL || "admin@yourcompany.com",
+    support: process.env.SUPPORT_EMAIL || "support@yourcompany.com",
+    billing: process.env.BILLING_EMAIL || "billing@yourcompany.com",
+  };
+  return destinations[type] || destinations.admin;
+};
+```
+
+**Usage examples in your functions:**
+```typescript
+// Safety report → safety@
+await sendEmail(getEmailDestination('safety'), "safetyReport", [...]);
+
+// Driver document submission → admin@
+await sendEmail(getEmailDestination('admin'), "driverDocumentSubmission", [...]);
+
+// Payment issue → billing@
+await sendEmail(getEmailDestination('billing'), "paymentFailed", [...]);
+```
+
+#### Step 4: Deploy Changes
+
+```bash
+# Redeploy functions with new configuration
+firebase deploy --only functions
+```
+
+#### Current Email Destinations in Code
+
+| Email Type | Current Location | Line |
+|------------|-----------------|------|
+| Safety Reports | `functions/src/index.ts` | Line 527 |
+| Driver Documents | `functions/src/index.ts` | Search: `onDriverDocumentSubmitted` |
+| User Notifications | Sent to user's email | - |
+| Admin Alerts | `SAFETY_REPORT_EMAIL` | Line 527 |
+
 ---
 
 ## 🏢 Business Information
