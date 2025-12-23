@@ -99,26 +99,90 @@ export const Colors = {
 | **Sender Password** | Firebase Secrets | `firebase functions:secrets:set EMAIL_PASSWORD` |
 | **Admin Email** | `functions/src/index.ts` | Search: `SAFETY_REPORT_EMAIL` |
 
-### Using Microsoft 365 / Outlook
+### Migrating to Microsoft 365 Email
 
-To use a custom domain via Microsoft 365 instead of Gmail, you need to update the `nodemailer` transporter configuration.
+To switch from Gmail to Microsoft 365 for sending emails:
 
-1.  **Update Configuration File:** `functions/src/utils/email.ts`
-    *   Change `service: 'gmail'` to the Microsoft 365 configuration below:
-    ```typescript
-    const transporter = nodemailer.createTransport({
-      host: "smtp.office365.com",
-      port: 587,
-      secure: false, // true for 465, false for other ports
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
-      },
-    });
-    ```
-2.  **Update Secrets:**
-    *   Set `EMAIL_USER` to your full Microsoft 365 email (e.g., `support@yourdomain.com`).
-    *   Set `EMAIL_PASSWORD` to your Microsoft 365 password.
+#### Step 1: Microsoft 365 Admin Center Setup
+
+1. **Enable SMTP AUTH for the mailbox:**
+   - Go to [Microsoft 365 Admin Center](https://admin.microsoft.com)
+   - Navigate to: **Users** → **Active Users** → Select your email account
+   - Click **Mail** tab → **Email apps**
+   - Enable: **Authenticated SMTP**
+   - Click **Save changes**
+
+2. **Create an App Password (if MFA is enabled):**
+   - Go to [My Account Security](https://mysignins.microsoft.com/security-info)
+   - Click **Add sign-in method** → **App password**
+   - Name it "CarpoolConnect" and copy the generated password
+   - This password will be used instead of your regular password
+
+3. **Allow authenticated SMTP (Organization-wide):**
+   - Go to [Exchange Admin Center](https://admin.exchange.microsoft.com)
+   - Navigate to: **Settings** → **Mail flow** → **Connectors**
+   - Ensure no connector is blocking outbound SMTP
+
+#### Step 2: Code Changes
+
+**File:** `functions/src/utils/email.ts`  
+**Lines:** 19-36 (replace the `createTransporter` function)
+
+**Current Gmail configuration:**
+```typescript
+// Lines 29-35 - REMOVE THIS
+return nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: emailConfig.user,
+    pass: emailConfig.password,
+  },
+});
+```
+
+**New Microsoft 365 configuration:**
+```typescript
+// Lines 29-40 - REPLACE WITH THIS
+return nodemailer.createTransport({
+  host: "smtp.office365.com",
+  port: 587,
+  secure: false, // Use STARTTLS
+  auth: {
+    user: emailConfig.user,    // e.g., "noreply@carpoolconnect.com"
+    pass: emailConfig.password, // App password from Step 1
+  },
+  tls: {
+    ciphers: "SSLv3",
+    rejectUnauthorized: false,
+  },
+});
+```
+
+#### Step 3: Update Firebase Secrets
+
+```bash
+# Set the M365 email address
+firebase functions:secrets:set EMAIL_USER
+# Enter: noreply@yourdomain.com
+
+# Set the App Password (not your regular password)
+firebase functions:secrets:set EMAIL_PASSWORD
+# Enter: Your 16-character app password from Step 1
+
+# Redeploy functions
+firebase deploy --only functions
+```
+
+#### Why Microsoft 365 over Gmail or SendGrid?
+
+| Provider | Cost | Daily Limit | Notes |
+|----------|------|-------------|-------|
+| Gmail | Free | 500 emails | Requires Google Workspace for higher limits |
+| Microsoft 365 | Included with subscription | 10,000 emails | Professional domain support |
+| SendGrid | $19.95/mo+ | 50,000 emails | Best for high volume |
+| Mailgun | $35/mo+ | Flexible | Good API, higher cost |
+
+**Recommendation:** M365 is ideal if you already have a subscription. For high volume (>10k emails/day), consider SendGrid.
 
 ---
 
