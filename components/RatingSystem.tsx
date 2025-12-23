@@ -7,6 +7,10 @@ import {
   Modal,
   TextInput,
   Alert,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { Star, X } from 'lucide-react-native';
 import { Colors } from '@/constants/colors';
@@ -96,76 +100,83 @@ export function RatingSystem({
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
-          <TouchableOpacity
-            onPress={handleClose}
-            style={styles.closeButton}
-            testID="close-rating-modal"
-          >
-            <X size={24} color={Colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.content}>
-          {subtitle && (
-            <Text style={styles.subtitle}>{subtitle}</Text>
-          )}
-          
-          {recipientName && (
-            <Text style={styles.recipientName}>
-              Rate your experience with {recipientName}
-            </Text>
-          )}
-
-          <View style={styles.starsContainer}>
-            <View style={styles.starsRow}>
-              {renderStars()}
-            </View>
-            <Text style={styles.ratingText}>
-              {getRatingText(hoveredStar || rating)}
-            </Text>
-          </View>
-
-          <View style={styles.commentSection}>
-            <Text style={styles.commentLabel}>
-              Share your experience (optional)
-            </Text>
-            <TextInput
-              style={styles.commentInput}
-              placeholder="Tell us about your experience..."
-              placeholderTextColor={Colors.textSecondary}
-              value={comment}
-              onChangeText={setComment}
-              multiline
-              numberOfLines={4}
-              maxLength={500}
-              textAlignVertical="top"
-              testID="rating-comment-input"
-            />
-            <Text style={styles.characterCount}>
-              {comment.length}/500
-            </Text>
-          </View>
-
-          <View style={styles.buttonContainer}>
-            <Button
-              title="Skip"
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.container}
+        >
+          <View style={styles.header}>
+            <Text style={styles.title}>{title}</Text>
+            <TouchableOpacity
               onPress={handleClose}
-              style={styles.skipButton}
-              textStyle={styles.skipButtonText}
-            />
-            <Button
-              title="Submit Rating"
-              onPress={handleSubmit}
-              style={[styles.submitButton, rating === 0 && styles.submitButtonDisabled]}
-              disabled={rating === 0 || isLoading}
-              loading={isLoading}
-            />
+              style={styles.closeButton}
+              testID="close-rating-modal"
+            >
+              <X size={24} color={Colors.text} />
+            </TouchableOpacity>
           </View>
-        </View>
-      </View>
+
+          <View style={styles.content}>
+            {subtitle && (
+              <Text style={styles.subtitle}>{subtitle}</Text>
+            )}
+
+            {recipientName && (
+              <Text style={styles.recipientName}>
+                Rate your experience with {recipientName}
+              </Text>
+            )}
+
+            <View style={styles.starsContainer}>
+              <View style={styles.starsRow}>
+                {renderStars()}
+              </View>
+              <Text style={styles.ratingText}>
+                {getRatingText(hoveredStar || rating)}
+              </Text>
+            </View>
+
+            <View style={styles.commentSection}>
+              <Text style={styles.commentLabel}>
+                Share your experience (optional)
+              </Text>
+              <TextInput
+                style={styles.commentInput}
+                placeholder="Tell us about your experience..."
+                placeholderTextColor={Colors.textSecondary}
+                value={comment}
+                onChangeText={setComment}
+                multiline
+                numberOfLines={4}
+                maxLength={500}
+                textAlignVertical="top"
+                testID="rating-comment-input"
+                blurOnSubmit={true}
+                returnKeyType="done"
+              />
+              <Text style={styles.characterCount}>
+                {comment.length}/500
+              </Text>
+            </View>
+
+            <View style={styles.buttonContainer}>
+              <Button
+                title="Skip"
+                onPress={handleClose}
+                style={styles.skipButton}
+                textStyle={styles.skipButtonText}
+              />
+              <Button
+                title="Submit Rating"
+                onPress={handleSubmit}
+                style={[styles.submitButton, rating === 0 && styles.submitButtonDisabled]}
+                disabled={rating === 0 || isLoading}
+                loading={isLoading}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
     </Modal>
   );
 }
@@ -178,10 +189,10 @@ interface StarDisplayProps {
   recentRatingsCount?: number;
 }
 
-export function StarDisplay({ 
-  rating, 
-  size = 16, 
-  showNumber = true, 
+export function StarDisplay({
+  rating,
+  size = 16,
+  showNumber = true,
   totalRatings,
   recentRatingsCount,
 }: StarDisplayProps) {
