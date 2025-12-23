@@ -44,14 +44,36 @@ export default function ContactPage() {
         email: '',
         subject: '',
         message: '',
+        honeypot: '', // Hidden field to catch bots
     });
     const [submitted, setSubmitted] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        // In production, this would send to your backend
-        console.log('Form submitted:', formData);
-        setSubmitted(true);
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await fetch('/api/contact', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to send message');
+            }
+
+            setSubmitted(true);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Something went wrong');
+        } finally {
+            setLoading(false);
+        }
     };
 
     const contactInfo = [
@@ -101,7 +123,7 @@ export default function ContactPage() {
                                         Thank you for reaching out. We&apos;ll get back to you within 24 hours.
                                     </p>
                                     <button
-                                        onClick={() => { setSubmitted(false); setFormData({ name: '', email: '', subject: '', message: '' }); }}
+                                        onClick={() => { setSubmitted(false); setFormData({ name: '', email: '', subject: '', message: '', honeypot: '' }); setError(null); }}
                                         className="btn-primary px-8 py-3 rounded-full text-white font-semibold"
                                     >
                                         Send Another Message
@@ -110,6 +132,24 @@ export default function ContactPage() {
                             ) : (
                                 <form onSubmit={handleSubmit} className="space-y-6">
                                     <h2 className="text-2xl font-bold text-white mb-6">Send us a message</h2>
+
+                                    {/* Honeypot field - hidden from users, catches bots */}
+                                    <input
+                                        type="text"
+                                        name="honeypot"
+                                        value={formData.honeypot}
+                                        onChange={(e) => setFormData({ ...formData, honeypot: e.target.value })}
+                                        style={{ display: 'none' }}
+                                        tabIndex={-1}
+                                        autoComplete="off"
+                                        aria-hidden="true"
+                                    />
+
+                                    {error && (
+                                        <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-4 text-red-300">
+                                            {error}
+                                        </div>
+                                    )}
 
                                     <div>
                                         <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">
@@ -174,9 +214,10 @@ export default function ContactPage() {
 
                                     <button
                                         type="submit"
-                                        className="w-full btn-primary py-4 rounded-xl text-white font-semibold text-lg"
+                                        disabled={loading}
+                                        className={`w-full py-4 rounded-xl text-white font-semibold text-lg transition-all ${loading ? 'bg-gray-500 cursor-not-allowed' : 'btn-primary'}`}
                                     >
-                                        Send Message
+                                        {loading ? 'Sending...' : 'Send Message'}
                                     </button>
                                 </form>
                             )}
