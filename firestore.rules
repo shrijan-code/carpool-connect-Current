@@ -94,6 +94,69 @@ service cloud.firestore {
     }
 
     // ============================================================================
+    // REVIEWS - Two-way review system for drivers and riders
+    // ============================================================================
+    match /reviews/{reviewId} {
+      // Users can read reviews they wrote or received
+      allow read: if isSignedIn() && isRecentRequest() &&
+                    (resource.data.reviewerId == request.auth.uid ||
+                     resource.data.revieweeId == request.auth.uid);
+      
+      // Users can create reviews as the reviewer with valid rating
+      allow create: if isSignedIn() && isRecentRequest() &&
+                      request.resource.data.reviewerId == request.auth.uid &&
+                      request.resource.data.rating >= 1 &&
+                      request.resource.data.rating <= 5 &&
+                      request.resource.data.reviewerRole in ['driver', 'rider'] &&
+                      request.resource.data.revieweeRole in ['driver', 'rider'];
+      
+      // No updates or deletes to reviews (immutable once created)
+      allow update, delete: if false;
+    }
+
+    // ============================================================================
+    // STRIPE EVENTS - Webhook deduplication (system-only writes)
+    // ============================================================================
+    match /stripe_events/{eventId} {
+      // No client reads/writes - system only via Cloud Functions
+      allow read, write: if false;
+    }
+
+    // ============================================================================
+    // AUDIT EVENTS - Activity trail for disputes
+    // ============================================================================
+    match /audit_events/{eventId} {
+      // Admins can read all, users can read own events
+      allow read: if isSignedIn() && isRecentRequest() &&
+                    (isAdmin() || 
+                     resource.data.actorId == request.auth.uid ||
+                     resource.data.resourceId == request.auth.uid);
+      
+      // Only system writes (Cloud Functions)
+      allow write: if false;
+    }
+
+    // ============================================================================
+    // TRIP SHARE TOKENS - Live trip sharing links
+    // ============================================================================
+    match /trip_share_tokens/{tokenId} {
+      // Anyone can read tokens (for shared links)
+      allow read: if isRecentRequest();
+      
+      // Only token creator can write
+      allow create: if isSignedIn() && isRecentRequest() &&
+                      request.resource.data.riderId == request.auth.uid;
+      
+      // Creator can update location
+      allow update: if isSignedIn() && isRecentRequest() &&
+                      resource.data.riderId == request.auth.uid;
+      
+      // Creator can delete
+      allow delete: if isSignedIn() && 
+                      resource.data.riderId == request.auth.uid;
+    }
+
+    // ============================================================================
     // MESSAGES - Chat functionality with stricter access control
     // ============================================================================
     match /messages/{messageId} {

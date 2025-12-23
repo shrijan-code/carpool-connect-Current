@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { Play, Square } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { Ride } from '@/types';
 import { RidesService } from '@/services/rides';
 import { httpsCallable } from 'firebase/functions';
@@ -71,9 +72,22 @@ export default function RideDriverActions({ ride, isDriver, currentUserId, onUpd
 
               if (data.success) {
                 const summary = data.summary;
+                // Show success with option to rate riders
                 Alert.alert(
                   'Ride Completed! 🎉',
-                  `${data.message}\n\nYour payout: $${(summary?.driverPayout || 0).toFixed(2)}`
+                  `${data.message}\n\nYour payout: $${(summary?.driverPayout || 0).toFixed(2)}`,
+                  [
+                    { text: 'Maybe Later', style: 'cancel' },
+                    {
+                      text: 'Rate Riders',
+                      onPress: () => {
+                        router.push({
+                          pathname: '/ride-review' as any,
+                          params: { rideId: ride.id },
+                        });
+                      },
+                    },
+                  ]
                 );
               } else {
                 throw new Error(data.message || 'Failed to complete ride');

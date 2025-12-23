@@ -15,6 +15,7 @@ import { StripeProvider } from "@stripe/stripe-react-native";
 import { NotificationService } from "@/services/notifications";
 import { useRouter } from "expo-router";
 import GlobalErrorBoundary from "@/components/GlobalErrorBoundary";
+import { ReviewPromptManager } from "@/components/ReviewPromptManager";
 import { logger } from "@/utils/logger";
 
 SplashScreen.preventAutoHideAsync();
@@ -168,6 +169,8 @@ function RootLayoutNav() {
       <Stack.Screen name="booking-requests" options={{ title: "Booking Requests" }} />
       <Stack.Screen name="booking-management" options={{ title: "Booking Management" }} />
       <Stack.Screen name="live-dashboard" options={{ title: "Live Dashboard" }} />
+      <Stack.Screen name="ride-review" options={{ title: "Rate Your Experience", headerShown: false }} />
+      <Stack.Screen name="notification-settings" options={{ title: "Notifications", headerShown: false }} />
       <Stack.Screen name="stripe-connect-return" options={{ headerShown: false }} />
     </Stack>
   );
@@ -328,6 +331,7 @@ export default function RootLayout() {
         >
           <GestureHandlerRootView style={styles.rootContainer}>
             <RootLayoutNav />
+            <ReviewPromptManager />
           </GestureHandlerRootView>
         </StripeProvider>
       </QueryClientProvider>

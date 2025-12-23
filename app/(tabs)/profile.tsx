@@ -545,8 +545,14 @@ export default function ProfileScreen() {
     {
       icon: Settings,
       title: 'Settings',
-      subtitle: 'App preferences and notifications',
+      subtitle: 'App preferences',
       onPress: handleSettings,
+    },
+    {
+      icon: Clock, // Using Clock icon as Bell is used for NotificationBell component
+      title: 'Notifications',
+      subtitle: 'Manage notification preferences',
+      onPress: () => router.push('/notification-settings'),
     },
     {
       icon: HelpCircle,

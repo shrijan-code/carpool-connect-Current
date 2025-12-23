@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { onSnapshot, doc } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { db, functions } from '@/config/firebase';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
@@ -10,7 +10,9 @@ import { useAuthStore } from '@/store/auth-store';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { RidesService } from '@/services/rides';
-import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X, ChevronLeft, Edit3 } from 'lucide-react-native';
+import { SharingService } from '@/services/sharing';
+import { httpsCallable } from 'firebase/functions';
+import { MapPin, Clock, DollarSign, Users, Car, MessageCircle, Star, Check, X, ChevronLeft, Edit3, Share2, AlertTriangle } from 'lucide-react-native';
 import { useStripe } from '@stripe/stripe-react-native';
 import { Booking, Ride, User, RidePassenger } from '@/types';
 import { EnhancedRideTracking } from '@/components/EnhancedRideTracking';
@@ -357,6 +359,43 @@ export default function RideDetailsScreen() {
     );
   };
 
+  const handleShareRide = async () => {
+    if (!ride) return;
+    await SharingService.shareRide(ride);
+  };
+
+  const handleMarkNoShow = async (booking: Booking) => {
+    if (!user || !isDriver) return;
+
+    Alert.alert(
+      '⚠️ Mark as No-Show',
+      `Are you sure ${booking.passenger?.name || 'this passenger'} didn't show up?\n\nThis will:\n• Charge the full fare\n• Add to their no-show record`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Mark No-Show',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const markNoShowFn = httpsCallable(functions, 'markNoShow');
+              const result = await markNoShowFn({ bookingId: booking.id });
+              const data = result.data as any;
+
+              if (data.success) {
+                Alert.alert('✅ Marked as No-Show', data.message);
+                // Refresh bookings
+                const updatedBookings = await RidesService.getRideBookings(ride.id, user?.id);
+                setRideBookings(updatedBookings);
+              }
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'Failed to mark as no-show');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const getBookingStatusColor = (status: string) => {
     switch (status) {
       case 'confirmed': return Colors.warning;
@@ -451,6 +490,15 @@ export default function RideDetailsScreen() {
           >
             <ChevronLeft size={28} color={Colors.background} />
             <Text style={{ color: Colors.background, fontSize: 17, marginLeft: -4, fontWeight: '500' }}>Back</Text>
+          </TouchableOpacity>
+        ),
+        headerRight: () => (
+          <TouchableOpacity
+            onPress={handleShareRide}
+            hitSlop={{ top: 10, bottom: 10, left: 20, right: 10 }}
+            style={{ paddingLeft: 8 }}
+          >
+            <Share2 size={22} color={Colors.background} />
           </TouchableOpacity>
         ),
       }} />

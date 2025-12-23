@@ -12,9 +12,16 @@ export interface User {
 
   avatar?: string;
   rating: number;
+  ratingAsDriver?: number;       // Average rating when user is a driver (from riders)
+  ratingAsRider?: number;        // Average rating when user is a rider (from drivers)
   totalRides: number;
   totalReviews?: number;
+  totalDriverReviews?: number;   // Count of reviews received as driver
+  totalRiderReviews?: number;    // Count of reviews received as rider
   recentRatingCount?: number;
+  // Abuse tracking
+  noShowCount?: number;          // Times marked as no-show by drivers
+  cancellationCount?: number;    // Times cancelled bookings
   joinedDate: string;
   verified: boolean;
   profilePicture?: string;
@@ -30,6 +37,14 @@ export interface User {
   stripeRequirements?: string[];
   walkingDistanceTolerance?: number; // In meters
   fcmToken?: string;
+  // Notification preferences
+  notificationPreferences?: {
+    bookingUpdates: boolean;   // Booking confirmations, cancellations
+    rideReminders: boolean;    // Upcoming ride reminders
+    messages: boolean;         // Chat messages
+    paymentAlerts: boolean;    // Payment success/failure
+    promotions: boolean;       // Marketing & promotions
+  };
   verification?: {
     status: 'unverified' | 'pending' | 'verified' | 'failed';
     sessionId?: string;
@@ -91,7 +106,7 @@ export interface Ride {
   seatsTotal: number;
   seatsAvailable: number;
   pricePerSeat: number; // in cents
-  status: 'upcoming' | 'active' | 'cancelled' | 'completed';
+  status: 'upcoming' | 'active' | 'cancelled' | 'completed' | 'completed_partial' | 'expired';
   trackingStatus?: 'waiting' | 'driver_assigned' | 'pickup_confirmed' | 'passengers_onboard' | 'in_transit' | 'arrived' | 'completed';
   passengers: RidePassenger[];
   distance: string;
@@ -108,6 +123,7 @@ export interface Ride {
   inTransitAt?: string;
   arrivedAt?: string;
   completedAt?: string;
+  expiredAt?: string;           // When ride was auto-expired
   // Legacy fields for backward compatibility
   from?: Location;
   to?: Location;
@@ -134,15 +150,20 @@ export interface Booking {
   passenger: User;
   seats: number;
   amountTotal: number; // in cents
-  status: 'pending_driver' | 'confirmed' | 'declined' | 'completed' | 'cancelled_by_rider' | 'cancelled_by_driver' | 'refunded' | 'expired' | 'payment_failed';
+  status: 'pending_driver' | 'confirmed' | 'declined' | 'completed' | 'cancelled_by_rider' | 'cancelled_by_driver' | 'refunded' | 'expired' | 'payment_failed' | 'no_show';
   passengerStatus?: 'waiting' | 'ready' | 'onboard' | 'dropped_off';
   payment: {
     intentId: string;
     latestChargeId?: string;
-    status: 'authorized' | 'captured' | 'cancelled' | 'refunded' | 'authorization_failed' | 'permanently_failed';
+    status: 'authorized' | 'captured' | 'cancelled' | 'refunded' | 'authorization_failed' | 'capture_failed' | 'permanently_failed';
+    // Authorization tracking
     authorizationRetries?: number;
-    lastRetryAt?: string;
-    lastRetryError?: string;
+    lastAuthorizationAttempt?: string;
+    lastAuthorizationError?: string;
+    // Capture tracking
+    captureRetries?: number;
+    lastCaptureAttempt?: string;
+    lastCaptureError?: string;
     failedAt?: string;
   };
   createdAt: string;
@@ -154,12 +175,23 @@ export interface Booking {
   cancelledBy?: string;
   rejectedBy?: string;
   // Expiry tracking
+  expiresAt?: string;           // When pending booking will expire (48h after creation)
   expiredAt?: string;
   expiredReason?: string;
+  // Cancellation fees
+  cancellationFee?: number;     // Fee charged for cancellation (in cents)
+  refundAmount?: number;        // Amount refunded after fee (in cents)
+  // No-show tracking
+  noShowAt?: string;            // When marked as no-show
   // Passenger tracking timestamps
   passengerReadyAt?: string;
   passengerOnboardAt?: string;
   passengerDroppedOffAt?: string;
+  // Review tracking for two-way review system
+  driverReviewedRider?: boolean;  // Has driver reviewed this rider?
+  riderReviewedDriver?: boolean;  // Has rider reviewed the driver?
+  driverReviewId?: string;        // Reference to driver's review of rider
+  riderReviewId?: string;         // Reference to rider's review of driver
 }
 
 export interface ChatMessage {
@@ -193,10 +225,13 @@ export interface MessageThread {
 export interface Review {
   id: string;
   rideId: string;
+  bookingId?: string;                         // Link to specific booking
   reviewerId: string;
   revieweeId: string;
-  rating: number;
+  rating: number;                             // 1-5 star rating
   comment: string;
+  reviewerRole: 'driver' | 'rider';           // Who is writing the review
+  revieweeRole: 'driver' | 'rider';           // Who is being reviewed
   createdAt: string;
 }
 
