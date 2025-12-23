@@ -528,6 +528,14 @@ export class NotificationService {
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#4CAF50',
         });
+
+        await Notifications.setNotificationChannelAsync('messages', {
+          name: 'Messages',
+          description: 'Notifications for new chat messages',
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: '#9C27B0',
+        });
       }
 
       return currentPushToken;

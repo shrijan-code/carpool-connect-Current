@@ -5,7 +5,8 @@
 
 import * as admin from 'firebase-admin';
 
-const db = admin.firestore();
+// Get Firestore instance lazily (after initializeApp is called)
+const getDb = () => admin.firestore();
 
 export interface AuditEvent {
     id?: string;
@@ -31,7 +32,7 @@ export async function logAuditEvent(event: Omit<AuditEvent, 'id' | 'timestamp'>)
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
         };
 
-        const docRef = await db.collection('audit_events').add(auditEvent);
+        const docRef = await getDb().collection('audit_events').add(auditEvent);
         console.log(`📝 Audit event logged: ${event.eventType} | ${event.resourceType}/${event.resourceId} | Actor: ${event.actorId}`);
         return docRef.id;
     } catch (error) {

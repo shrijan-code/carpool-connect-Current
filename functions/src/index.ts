@@ -397,6 +397,96 @@ export const onRideCreated = onDocumentCreated(
   });
 
 // ============================================================================
+// MESSAGE CREATION - Push Notification to Recipient
+// ============================================================================
+
+export const onMessageCreated = onDocumentCreated(
+  { document: "messages/{messageId}" },
+  async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+
+    const messageData = snapshot.data();
+    const messageId = event.params.messageId;
+
+    // Skip system messages
+    if (messageData.type === 'system' || messageData.senderId === 'system') {
+      console.log(`Skipping push notification for system message: ${messageId}`);
+      return;
+    }
+
+    const senderId = messageData.senderId;
+    const senderName = messageData.senderName || 'Someone';
+    const messageText = messageData.message || '📷 Image';
+    const rideId = messageData.rideId;
+    const participants = messageData.participants || [];
+
+    console.log(`New message created: ${messageId} from ${senderName} in ride ${rideId}`);
+
+    try {
+      // Send push notification to all participants except sender
+      for (const participantId of participants) {
+        if (participantId === senderId) continue;
+
+        // Get participant's push tokens
+        const userDoc = await db.collection("users").doc(participantId).get();
+        if (!userDoc.exists) continue;
+
+        const userData = userDoc.data();
+        const pushTokens: string[] = userData?.pushTokens || [];
+
+        if (pushTokens.length === 0) {
+          console.log(`No push tokens for user ${participantId}`);
+          continue;
+        }
+
+        // Import Expo SDK for push notifications
+        const { Expo } = require("expo-server-sdk");
+        const expo = new Expo();
+
+        const messages = [];
+        for (const pushToken of pushTokens) {
+          if (!Expo.isExpoPushToken(pushToken)) {
+            console.warn(`Invalid Expo push token: ${pushToken}`);
+            continue;
+          }
+
+          messages.push({
+            to: pushToken,
+            sound: "default",
+            title: `💬 ${senderName}`,
+            body: messageText.length > 100 ? messageText.substring(0, 100) + '...' : messageText,
+            data: {
+              type: 'message',
+              rideId,
+              messageId,
+              senderId
+            },
+            priority: "high",
+            channelId: "messages",
+          });
+        }
+
+        if (messages.length > 0) {
+          const chunks = expo.chunkPushNotifications(messages);
+          for (const chunk of chunks) {
+            try {
+              await expo.sendPushNotificationsAsync(chunk);
+              console.log(`Push notification sent to user ${participantId} for message ${messageId}`);
+            } catch (error) {
+              console.error(`Error sending push notification to ${participantId}:`, error);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error sending message push notifications:", error);
+      // Don't throw - we don't want to fail message creation if notification fails
+    }
+  }
+);
+
+// ============================================================================
 // SAFETY REPORT CREATION - Critical Email Notification
 // ============================================================================
 
