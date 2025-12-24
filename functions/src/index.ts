@@ -1854,6 +1854,9 @@ export const completeRideAndCharge = onCall(
               completedAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
               "payment.status": "no_payment_required", // Or test mode
+              // Review tracking - enables pending review queries
+              riderReviewedDriver: false,
+              driverReviewedRider: false,
             });
             // Still count the revenue (for testing/demo purposes)
             totalRevenue += bookingAmount;
@@ -1888,6 +1891,9 @@ export const completeRideAndCharge = onCall(
               "payment.status": "captured",
               "payment.capturedAt": admin.firestore.FieldValue.serverTimestamp(),
               "payment.verifiedAmount": paymentIntentDetails.amount, // Track verified amount
+              // Review tracking - enables pending review queries
+              riderReviewedDriver: false,
+              driverReviewedRider: false,
             });
 
             totalRevenue += bookingAmount;
@@ -5037,5 +5043,6 @@ export {
 export {
   backfillRideGeohashes,
   backfillRideGeohashesHttp,
+  backfillBookingReviewFields,
   ensureRideGeohashes
 } from './geohash-migration';

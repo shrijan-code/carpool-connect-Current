@@ -4,7 +4,7 @@
  */
 
 import * as admin from "firebase-admin";
-import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { onCall, HttpsError, onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import ngeohash from "ngeohash";
 
@@ -133,8 +133,6 @@ export const backfillRideGeohashes = onCall(async (request) => {
  * 
  * Add ?key=carpoolconnect-backfill-2024 to authorize
  */
-import { onRequest } from "firebase-functions/v2/https";
-
 export const backfillRideGeohashesHttp = onRequest(async (req, res) => {
     // Simple authorization key
     const authKey = req.query.key;
@@ -272,5 +270,87 @@ export const ensureRideGeohashes = onSchedule("every 24 hours", async () => {
         }
     } catch (error) {
         console.error("❌ Error ensuring geohashes:", error);
+    }
+});
+
+/**
+ * HTTP endpoint to backfill review tracking fields on completed bookings
+ * This enables pending reviews to be found for existing rides
+ * URL: https://us-central1-carpoolconnect1-0.cloudfunctions.net/backfillBookingReviewFields?key=carpoolconnect-backfill-2024
+ */
+export const backfillBookingReviewFields = onRequest(async (req, res) => {
+    // Simple key-based auth for this one-time migration
+    const authKey = req.query.key;
+    if (authKey !== "carpoolconnect-backfill-2024") {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+    }
+
+    console.log("📝 Starting booking review fields backfill...");
+
+    try {
+        // Find completed bookings without review tracking fields
+        const bookingsSnapshot = await getDb().collection("bookings")
+            .where("status", "==", "completed")
+            .get();
+
+        let updated = 0;
+        let skipped = 0;
+        let errors = 0;
+        let batch = getDb().batch();
+        let batchCount = 0;
+        const BATCH_SIZE = 500;
+
+        for (const bookingDoc of bookingsSnapshot.docs) {
+            const data = bookingDoc.data();
+
+            // Skip if already has review tracking fields
+            if (data.riderReviewedDriver !== undefined && data.driverReviewedRider !== undefined) {
+                skipped++;
+                continue;
+            }
+
+            try {
+                batch.update(bookingDoc.ref, {
+                    riderReviewedDriver: data.riderReviewedDriver ?? false,
+                    driverReviewedRider: data.driverReviewedRider ?? false,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+
+                batchCount++;
+                updated++;
+
+                // Commit batch when full
+                if (batchCount >= BATCH_SIZE) {
+                    await batch.commit();
+                    console.log(`✅ Committed batch of ${batchCount} bookings`);
+                    batch = getDb().batch();
+                    batchCount = 0;
+                }
+            } catch (err) {
+                console.error(`❌ Error updating booking ${bookingDoc.id}:`, err);
+                errors++;
+            }
+        }
+
+        // Commit remaining
+        if (batchCount > 0) {
+            await batch.commit();
+            console.log(`✅ Committed final batch of ${batchCount} bookings`);
+        }
+
+        console.log(`🎉 Backfill complete: ${updated} updated, ${skipped} skipped, ${errors} errors`);
+
+        res.json({
+            success: true,
+            message: "Booking review fields backfill complete!",
+            updated,
+            skipped,
+            errors,
+            total: bookingsSnapshot.size,
+        });
+    } catch (error) {
+        console.error("❌ Backfill error:", error);
+        res.status(500).json({ error: "Backfill failed", details: String(error) });
     }
 });
