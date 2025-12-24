@@ -5033,3 +5033,8 @@ export {
   handleIdentityWebhook
 } from './identity-verification';
 
+// Geohash migration functions for backfilling rides
+export {
+  backfillRideGeohashes,
+  ensureRideGeohashes
+} from './geohash-migration';
