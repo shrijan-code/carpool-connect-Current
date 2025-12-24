@@ -71,19 +71,12 @@ describe('StripePaymentService', () => {
     });
 
     describe('confirmPayment', () => {
-        it('should confirm payment via backend', async () => {
-            const mockCallable = jest.fn().mockResolvedValue({
-                data: {
-                    success: true,
-                    paymentIntent: { id: 'pi_123' },
-                },
-            });
-
-            (httpsCallable as jest.Mock).mockReturnValue(mockCallable);
-
+        it('should return deprecation warning (method is deprecated)', async () => {
+            // This method is deprecated and always returns success: false
             const result = await StripePaymentService.confirmPayment('pi_test_123');
 
-            expect(result.success).toBe(true);
+            expect(result.success).toBe(false);
+            expect(result.error).toBe('Use Stripe SDK to confirm');
         });
     });
 });

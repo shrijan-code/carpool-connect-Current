@@ -230,8 +230,8 @@ export function canCancelBooking(booking: Booking, ride: Ride): ValidationResult
     feePercent?: number;
     feeAmount?: number;
 } {
-    // Cannot cancel completed or already cancelled bookings
-    if (['completed', 'cancelled', 'cancelled_by_rider', 'cancelled_by_driver', 'declined'].includes(booking.status)) {
+    // Cannot cancel completed, refunded, or already cancelled bookings
+    if (['completed', 'cancelled', 'cancelled_by_rider', 'cancelled_by_driver', 'declined', 'refunded'].includes(booking.status)) {
         return {
             allowed: false,
             reason: `Cannot cancel booking - status is "${booking.status}".`

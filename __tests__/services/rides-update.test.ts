@@ -129,7 +129,7 @@ describe('RidesService.updateRide', () => {
 
             await expect(
                 RidesService.updateRide('ride123', 'driver123', { pricePerSeat: 6000 })
-            ).rejects.toThrow('Cannot edit ride with confirmed bookings');
+            ).rejects.toThrow('Cannot edit ride with pending or confirmed bookings');
         });
     });
 

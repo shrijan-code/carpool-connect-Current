@@ -82,10 +82,14 @@ describe('RatingService', () => {
         });
 
         it('should throw error if rider already reviewed driver for this ride', async () => {
-            const { getDocs } = require('firebase/firestore');
+            const { getDocs, addDoc } = require('firebase/firestore');
+
+            // Reset mocks to clear any previous state
+            getDocs.mockReset();
+            addDoc.mockReset();
 
             // Mock hasRiderReviewedDriver to return true (already reviewed)
-            getDocs.mockResolvedValueOnce({ empty: false });
+            getDocs.mockResolvedValue({ empty: false });
 
             const reviewData: DriverReviewData = {
                 rideId: 'ride-1',
@@ -142,10 +146,14 @@ describe('RatingService', () => {
         });
 
         it('should throw error if driver already reviewed rider for this ride', async () => {
-            const { getDocs } = require('firebase/firestore');
+            const { getDocs, addDoc } = require('firebase/firestore');
+
+            // Reset mocks to clear any previous state
+            getDocs.mockReset();
+            addDoc.mockReset();
 
             // Mock hasDriverReviewedRider to return true
-            getDocs.mockResolvedValueOnce({ empty: false });
+            getDocs.mockResolvedValue({ empty: false });
 
             const reviewData: RiderReviewData = {
                 rideId: 'ride-1',
@@ -164,6 +172,7 @@ describe('RatingService', () => {
     describe('hasRiderReviewedDriver', () => {
         it('should return true when review exists', async () => {
             const { getDocs } = require('firebase/firestore');
+            getDocs.mockReset();
             getDocs.mockResolvedValueOnce({ empty: false });
 
             const result = await RatingService.hasRiderReviewedDriver('rider-1', 'ride-1');
@@ -172,6 +181,7 @@ describe('RatingService', () => {
 
         it('should return false when no review exists', async () => {
             const { getDocs } = require('firebase/firestore');
+            getDocs.mockReset();
             getDocs.mockResolvedValueOnce({ empty: true });
 
             const result = await RatingService.hasRiderReviewedDriver('rider-1', 'ride-1');
@@ -200,6 +210,7 @@ describe('RatingService', () => {
     describe('getUserDriverRatingStats', () => {
         it('should return correct stats for driver reviews', async () => {
             const { getDocs } = require('firebase/firestore');
+            getDocs.mockReset();
 
             const mockReviews = [
                 { id: 'r1', rating: 5 },
@@ -239,6 +250,7 @@ describe('RatingService', () => {
     describe('getUserRiderRatingStats', () => {
         it('should return correct stats for rider reviews', async () => {
             const { getDocs } = require('firebase/firestore');
+            getDocs.mockReset();
 
             const mockReviews = [
                 { id: 'r1', rating: 4 },

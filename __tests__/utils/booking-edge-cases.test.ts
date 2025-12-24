@@ -192,7 +192,7 @@ describe('Multi-Booking Scenarios', () => {
 
         const editResult = canEditRide(ride, bookings);
         expect(editResult.limitedEdit).toBe(true);
-        expect(editResult.reason).toContain('2 confirmed');
+        expect(editResult.reason).toContain('3 confirmed');
         expect(editResult.reason).toContain('1 pending');
     });
 

@@ -4,8 +4,19 @@ jest.mock('../../config/firebase', () => ({
     db: {},
     storage: {},
 }));
-jest.mock('firebase/auth');
-jest.mock('firebase/firestore');
+jest.mock('firebase/auth', () => ({
+    signInWithEmailAndPassword: jest.fn(),
+    createUserWithEmailAndPassword: jest.fn(),
+    signOut: jest.fn(),
+    sendEmailVerification: jest.fn().mockResolvedValue(undefined),
+}));
+jest.mock('firebase/firestore', () => ({
+    doc: jest.fn(),
+    setDoc: jest.fn().mockResolvedValue(undefined),
+    getDoc: jest.fn(),
+    updateDoc: jest.fn().mockResolvedValue(undefined),
+    serverTimestamp: jest.fn(() => ({ _serverTimestamp: true })),
+}));
 
 import { AuthService } from '../../services/auth';
 import { auth } from '../../config/firebase';
@@ -13,6 +24,7 @@ import {
     signInWithEmailAndPassword,
     createUserWithEmailAndPassword,
     signOut,
+    sendEmailVerification,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
@@ -26,6 +38,7 @@ describe('AuthService', () => {
             const mockFirebaseUser = {
                 uid: 'user123',
                 email: 'test@example.com',
+                emailVerified: true, // Required for auth flow
             };
 
             const mockUserData = {
