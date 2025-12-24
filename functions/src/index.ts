@@ -1779,6 +1779,28 @@ export const authorizeUpcomingRidePayments = onRequest(
             continue;
           }
 
+          // Check retry counter - limit to 3 attempts
+          const currentAttempts = bookingData.payment?.authorizationAttempts || 0;
+          if (currentAttempts >= 3) {
+            console.warn(`Booking ${bookingDoc.id} exceeded retry limit (${currentAttempts} attempts)`);
+
+            // Mark as failed permanently
+            await bookingDoc.ref.update({
+              "payment.status": "authorization_exceeded",
+              "payment.failureReason": "Exceeded maximum authorization attempts (3)",
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            failedCount++;
+            continue;
+          }
+
+          // Increment retry counter before attempt
+          await bookingDoc.ref.update({
+            "payment.authorizationAttempts": currentAttempts + 1,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
           try {
             const stripe = getStripe();
 
@@ -2091,7 +2113,7 @@ export const driverRespondBooking = onCall(async (request) => {
  * Step 3: Driver starts the ride
  * Updates ride status and notifies confirmed passengers
  */
-export const startRide = onCall(async (request) => {
+export const startRide = onCall({ secrets: ['STRIPE_SECRET_KEY'] }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Must be logged in");
   }
@@ -2130,6 +2152,75 @@ export const startRide = onCall(async (request) => {
       .where("status", "==", "confirmed")
       .get();
 
+    // BULLETPROOF: Verify all passengers have valid payment authorization
+    const stripe = getStripe();
+    let validPassengers = 0;
+    let paymentIssues = 0;
+
+    for (const bookingDoc of confirmedBookings.docs) {
+      const bookingData = bookingDoc.data();
+      const paymentIntentId = bookingData.payment?.paymentIntentId;
+
+      if (!paymentIntentId) {
+        // No PaymentIntent - flag as payment issue
+        console.warn(`⚠️ Booking ${bookingDoc.id} has no PaymentIntent - flagging as payment_failed`);
+        await bookingDoc.ref.update({
+          status: "payment_failed",
+          "payment.status": "missing_authorization",
+          "payment.failureReason": "No payment authorization at ride start",
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        // Notify rider
+        await createNotification({
+          userId: bookingData.riderId,
+          title: "Payment Issue - Ride Starting",
+          body: "Your payment wasn't authorized. You won't be able to join this ride.",
+          type: "payment",
+          data: { bookingId: bookingDoc.id, rideId },
+        });
+
+        paymentIssues++;
+        continue;
+      }
+
+      // Verify PaymentIntent is still valid (not expired/cancelled)
+      try {
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (paymentIntent.status === "requires_capture") {
+          // Valid authorization - passenger can ride
+          validPassengers++;
+        } else if (paymentIntent.status === "succeeded") {
+          // Already captured - also valid (shouldn't happen normally)
+          validPassengers++;
+        } else {
+          // Authorization expired or failed
+          console.warn(`⚠️ Booking ${bookingDoc.id} PaymentIntent status: ${paymentIntent.status} - flagging`);
+          await bookingDoc.ref.update({
+            status: "payment_failed",
+            "payment.status": "authorization_expired",
+            "payment.failureReason": `PaymentIntent status: ${paymentIntent.status}`,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          await createNotification({
+            userId: bookingData.riderId,
+            title: "Payment Authorization Expired",
+            body: "Your payment authorization has expired. You won't be able to join this ride.",
+            type: "payment",
+            data: { bookingId: bookingDoc.id, rideId },
+          });
+
+          paymentIssues++;
+        }
+      } catch (stripeError) {
+        console.error(`Failed to verify PaymentIntent ${paymentIntentId}:`, stripeError);
+        // Don't block ride for Stripe API errors, just log
+        validPassengers++;
+      }
+    }
+
     // Update ride status
     await rideRef.update({
       status: "active",
@@ -2137,11 +2228,17 @@ export const startRide = onCall(async (request) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    console.log(`✅ Ride started with ${confirmedBookings.size} passenger(s)`);
+    console.log(`✅ Ride started with ${validPassengers} valid passenger(s), ${paymentIssues} payment issue(s)`);
 
-    // Notify all confirmed passengers  
+    // Notify all VALID passengers (only those still confirmed)
+    const validBookings = await db
+      .collection("bookings")
+      .where("rideId", "==", rideId)
+      .where("status", "==", "confirmed")
+      .get();
+
     const rideStartedNotif = notificationTemplates.rideStarted();
-    for (const bookingDoc of confirmedBookings.docs) {
+    for (const bookingDoc of validBookings.docs) {
       const riderId = bookingDoc.data().riderId;
       await createNotification({
         userId: riderId,
@@ -2154,8 +2251,11 @@ export const startRide = onCall(async (request) => {
 
     return {
       success: true,
-      passengerCount: confirmedBookings.size,
-      message: `Ride started with ${confirmedBookings.size} passenger(s)`,
+      passengerCount: validPassengers,
+      paymentIssues,
+      message: validPassengers > 0
+        ? `Ride started with ${validPassengers} passenger(s)${paymentIssues > 0 ? ` (${paymentIssues} payment issue(s) excluded)` : ''}`
+        : "Ride started but all passengers had payment issues",
     };
   } catch (error: any) {
     console.error("❌ Start ride error:", error);
