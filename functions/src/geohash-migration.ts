@@ -128,6 +128,100 @@ export const backfillRideGeohashes = onCall(async (request) => {
 });
 
 /**
+ * HTTP endpoint for backfill - easier to call from browser
+ * URL: https://us-central1-carpoolconnect1-0.cloudfunctions.net/backfillRideGeohashesHttp
+ * 
+ * Add ?key=carpoolconnect-backfill-2024 to authorize
+ */
+import { onRequest } from "firebase-functions/v2/https";
+
+export const backfillRideGeohashesHttp = onRequest(async (req, res) => {
+    // Simple authorization key
+    const authKey = req.query.key;
+    if (authKey !== "carpoolconnect-backfill-2024") {
+        res.status(403).json({ error: "Unauthorized. Add ?key=carpoolconnect-backfill-2024" });
+        return;
+    }
+
+    console.log("🔄 Starting geohash backfill for rides (HTTP)...");
+
+    try {
+        const ridesSnapshot = await getDb().collection("rides").get();
+        let updated = 0;
+        let skipped = 0;
+        let errors = 0;
+
+        const batch = getDb().batch();
+        let batchCount = 0;
+        const MAX_BATCH = 500;
+
+        for (const rideDoc of ridesSnapshot.docs) {
+            const data = rideDoc.data();
+
+            // Skip if already has geohash
+            if (data.originGeohash && data.originGeohash4) {
+                skipped++;
+                continue;
+            }
+
+            // Get origin and destination
+            const origin = data.from || data.origin;
+            const destination = data.to || data.destination;
+
+            if (!origin?.latitude || !origin?.longitude ||
+                !destination?.latitude || !destination?.longitude) {
+                console.warn(`⚠️ Ride ${rideDoc.id} has invalid location data`);
+                errors++;
+                continue;
+            }
+
+            // Create geohash fields
+            const geohashes = createRideGeohashes(
+                origin.latitude,
+                origin.longitude,
+                destination.latitude,
+                destination.longitude
+            );
+
+            batch.update(rideDoc.ref, {
+                ...geohashes,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+
+            updated++;
+            batchCount++;
+
+            // Commit batch every 500 documents
+            if (batchCount >= MAX_BATCH) {
+                await batch.commit();
+                console.log(`✅ Committed batch of ${batchCount} rides`);
+                batchCount = 0;
+            }
+        }
+
+        // Commit remaining
+        if (batchCount > 0) {
+            await batch.commit();
+            console.log(`✅ Committed final batch of ${batchCount} rides`);
+        }
+
+        console.log(`🎉 Backfill complete: ${updated} updated, ${skipped} skipped, ${errors} errors`);
+
+        res.json({
+            success: true,
+            message: "Backfill complete!",
+            updated,
+            skipped,
+            errors,
+            total: ridesSnapshot.size,
+        });
+    } catch (error) {
+        console.error("❌ Backfill error:", error);
+        res.status(500).json({ error: "Backfill failed", details: String(error) });
+    }
+});
+
+/**
  * Scheduled job to ensure new rides have geohash (backup)
  * Runs daily to catch any rides that might have been created without geohash
  */

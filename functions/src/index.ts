@@ -5036,5 +5036,6 @@ export {
 // Geohash migration functions for backfilling rides
 export {
   backfillRideGeohashes,
+  backfillRideGeohashesHttp,
   ensureRideGeohashes
 } from './geohash-migration';
