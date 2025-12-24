@@ -17,6 +17,7 @@ import { db } from '@/config/firebase';
 import { Ride, Booking, User, AuditLogData, getErrorMessage } from '@/types';
 import { NotificationService } from './notifications';
 import { logger } from '@/utils/logger';
+import { createRideGeohashes } from '@/utils/geohash';
 
 // Audit log service
 class AuditService {
@@ -59,12 +60,22 @@ export class RidesService {
       // Ensure availableSeats is set (use totalSeats or seatsAvailable if not provided)
       const availableSeats = rideData.availableSeats ?? rideData.seatsAvailable ?? rideData.totalSeats ?? 4;
 
+      // Generate geohash for efficient spatial queries
+      const geohashes = createRideGeohashes(
+        rideData.from!.latitude,
+        rideData.from!.longitude,
+        rideData.to!.latitude,
+        rideData.to!.longitude
+      );
+
       const rideRef = await addDoc(collection(db, 'rides'), {
         ...rideData,
         availableSeats, // Ensure this is always set
         seatsAvailable: availableSeats, // Maintain both fields for compatibility
         status: 'upcoming',
         passengers: [],
+        // Geohash fields for efficient spatial queries
+        ...geohashes,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -189,6 +200,111 @@ export class RidesService {
     } catch (error) {
       logger.error('Get all available rides error', error);
       throw new Error('Failed to get available rides');
+    }
+  }
+
+  /**
+   * Get rides near a location using geohash-based query
+   * This is much more efficient than loading all rides and filtering client-side
+   * 
+   * @param latitude User's latitude
+   * @param longitude User's longitude
+   * @param radiusKm Search radius in kilometers (default: 10km)
+   * @param maxResults Maximum results to return (default: 50)
+   * @returns Array of rides within the search area
+   */
+  static async getNearbyRides(
+    latitude: number,
+    longitude: number,
+    radiusKm: number = 10,
+    maxResults: number = 50
+  ): Promise<Ride[]> {
+    try {
+      // Import dynamically to avoid circular dependency issues
+      const { encodeGeohash, getGeohashRange, getPrecisionForRadius } = await import('@/utils/geohash');
+      const { calculateLocationDistance } = await import('@/utils/haversine');
+
+      // Get appropriate precision for search radius
+      const precision = getPrecisionForRadius(radiusKm);
+      const centerHash = encodeGeohash(latitude, longitude, precision);
+      const { start, end } = getGeohashRange(centerHash);
+
+      logger.debug('Searching nearby rides', {
+        latitude,
+        longitude,
+        radiusKm,
+        geohash: centerHash,
+        precision
+      });
+
+      // Query using geohash range - much more efficient than loading all rides
+      const ridesQuery = query(
+        collection(db, 'rides'),
+        where('originGeohash' + (precision === 4 ? '4' : ''), '>=', start),
+        where('originGeohash' + (precision === 4 ? '4' : ''), '<', end),
+        where('status', '==', 'upcoming'),
+        limit(maxResults * 2) // Get extra to filter by exact distance
+      );
+
+      const querySnapshot = await getDocs(ridesQuery);
+      const now = new Date();
+
+      // Use distanceFromUser to avoid conflict with existing Ride.distance string property
+      const rides: Array<Ride & { distanceFromUser?: number }> = [];
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const departureTime = data.departureTime || data.departureAt;
+
+        // Only include future rides with available seats
+        if (departureTime && new Date(departureTime) > now) {
+          const availableSeats = Math.max(
+            data.seatsAvailable || 0,
+            data.availableSeats || 0
+          );
+
+          if (availableSeats > 0) {
+            const ride = {
+              id: doc.id,
+              ...data,
+              departureTime,
+              availableSeats,
+              seatsAvailable: availableSeats,
+            } as Ride & { distanceFromUser?: number };
+
+            // Calculate exact distance for final filtering
+            const origin = data.from || data.origin;
+            if (origin?.latitude && origin?.longitude) {
+              const distance = calculateLocationDistance(
+                { latitude, longitude },
+                { latitude: origin.latitude, longitude: origin.longitude }
+              );
+
+              // Only include if within actual radius (geohash is approximate)
+              if (distance <= radiusKm * 1000) {
+                ride.distanceFromUser = distance;
+                rides.push(ride);
+              }
+            }
+          }
+        }
+      });
+
+      // Sort by distance and limit results
+      rides.sort((a, b) => (a.distanceFromUser || 0) - (b.distanceFromUser || 0));
+
+      logger.info('Found nearby rides', {
+        count: rides.length,
+        searched: querySnapshot.size,
+        radiusKm
+      });
+
+      return rides.slice(0, maxResults);
+    } catch (error) {
+      logger.error('Get nearby rides error', error);
+      // Fallback to regular search if geohash query fails
+      logger.warn('Falling back to getAllAvailableRides');
+      return this.getAllAvailableRides(maxResults);
     }
   }
 

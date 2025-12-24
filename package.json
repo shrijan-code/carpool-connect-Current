@@ -60,6 +60,7 @@
     "lodash": "^4.17.21",
     "lucide-react-native": "^0.475.0",
     "nativewind": "^4.1.23",
+    "ngeohash": "^0.6.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-native": "0.81.5",
