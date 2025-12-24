@@ -13,6 +13,8 @@ import { logAuditEvent, logPaymentEvent, AuditEventTypes } from "./utils/audit";
 import { logger, getErrorMessage } from "./utils/logger";
 import { requireAuth, isHttpsError, isStripeError } from "./utils/errors";
 import { recalculateSeatAvailability } from "./utils/shared";
+import { checkRateLimit } from "./utils/rate-limiter";
+import { sanitizeMessage, sanitizeNotes, sanitizeReview, sanitizeNumber } from "./utils/sanitize";
 import * as functions from "firebase-functions";
 import * as functionsV1 from "firebase-functions/v1";
 import Stripe from "stripe";
@@ -974,12 +976,16 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
   const { rideId, seats } = request.data;
   const riderId = request.auth.uid;
 
+  // Rate limiting - prevent booking spam
+  await checkRateLimit(riderId, "createPendingBooking");
+
   // Input validation
   if (!rideId || !seats) {
     throw new HttpsError("invalid-argument", "Missing rideId or seats");
   }
 
-  if (seats < 1 || seats > 10) {
+  const sanitizedSeats = sanitizeNumber(seats, 1, 10, 1);
+  if (sanitizedSeats < 1 || sanitizedSeats > 10) {
     throw new HttpsError("invalid-argument", "Invalid number of seats (must be 1-10)");
   }
 
@@ -1773,6 +1779,9 @@ export const completeRideAndCharge = onCall(
       throw new HttpsError("invalid-argument", "Missing rideId");
     }
 
+    // Rate limiting - prevent spam completion attempts
+    await checkRateLimit(driverId, "completeRide");
+
     try {
       console.log(`💰 Completing ride ${rideId} and processing charges`);
 
@@ -1791,6 +1800,23 @@ export const completeRideAndCharge = onCall(
 
       if (rideData.status !== "active") {
         throw new HttpsError("failed-precondition", "Ride must be active to complete");
+      }
+
+      // SECURITY CHECK: Verify minimum ride duration to prevent instant completion fraud
+      const startedAt = rideData.startedAt?.toDate?.() || rideData.startedAt;
+      if (startedAt) {
+        const now = new Date();
+        const rideStartTime = new Date(startedAt);
+        const rideDurationMinutes = (now.getTime() - rideStartTime.getTime()) / (1000 * 60);
+
+        // Minimum 5 minutes for any ride
+        const MINIMUM_RIDE_DURATION_MINUTES = 5;
+        if (rideDurationMinutes < MINIMUM_RIDE_DURATION_MINUTES) {
+          throw new HttpsError(
+            "failed-precondition",
+            `Ride cannot be completed yet. Please wait at least ${Math.ceil(MINIMUM_RIDE_DURATION_MINUTES - rideDurationMinutes)} more minute(s).`
+          );
+        }
       }
 
       // Get all confirmed bookings
@@ -1835,6 +1861,20 @@ export const completeRideAndCharge = onCall(
             continue;
           }
 
+          // SECURITY CHECK: Verify payment amount matches booking before capture
+          const paymentIntentDetails = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+          // Ensure we're not capturing more than what was authorized
+          if (paymentIntentDetails.amount !== bookingAmount) {
+            console.warn(
+              `⚠️ Amount mismatch for booking ${bookingDoc.id}: ` +
+              `PI amount=${paymentIntentDetails.amount}, booking amount=${bookingAmount}. ` +
+              `Using original PI amount for safety.`
+            );
+            // Use the original authorized amount for safety - prevents overcharging
+            bookingAmount = paymentIntentDetails.amount;
+          }
+
           // Capture the authorized payment
           const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId, {}, {
             idempotencyKey: `capture_${bookingDoc.id}`,
@@ -1847,6 +1887,7 @@ export const completeRideAndCharge = onCall(
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
               "payment.status": "captured",
               "payment.capturedAt": admin.firestore.FieldValue.serverTimestamp(),
+              "payment.verifiedAmount": paymentIntentDetails.amount, // Track verified amount
             });
 
             totalRevenue += bookingAmount;

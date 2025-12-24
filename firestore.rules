@@ -36,8 +36,26 @@ service cloud.firestore {
     }
 
     // ============================================================================
-    // RIDES - Simplified
+    // RIDES - With Security Protections
     // ============================================================================
+    
+    // Helper: Check if critical fields are being modified
+    function isModifyingCriticalFields() {
+      return request.resource.data.pricePerSeat != resource.data.pricePerSeat ||
+             request.resource.data.seatsTotal != resource.data.seatsTotal;
+    }
+    
+    // Helper: Check if ride has active bookings (for status/seats updates only)
+    // Note: We can't query bookings from rules, so we rely on Cloud Functions
+    // for booking-related validation. This rule prevents direct price manipulation.
+    function isOnlyStatusUpdate() {
+      return request.resource.data.pricePerSeat == resource.data.pricePerSeat &&
+             request.resource.data.seatsTotal == resource.data.seatsTotal &&
+             request.resource.data.departureTime == resource.data.departureTime &&
+             request.resource.data.origin == resource.data.origin &&
+             request.resource.data.destination == resource.data.destination;
+    }
+    
     match /rides/{rideId} {
       // Signed-in users can read rides (for browsing available rides)
       allow read: if isSignedIn() && isRecentRequest();
@@ -47,15 +65,24 @@ service cloud.firestore {
                       isRecentRequest() &&
                       request.resource.data.driverId == request.auth.uid;
       
-      // Drivers can update their own rides
+      // Drivers can update their own rides with restrictions:
+      // - Cannot modify price/seats directly if ride is active/started
+      // - Critical field changes must go through Cloud Functions
       allow update: if isSignedIn() && 
                       isRecentRequest() &&
-                      resource.data.driverId == request.auth.uid;
+                      resource.data.driverId == request.auth.uid &&
+                      (
+                        // Allow any update if ride is upcoming AND not modifying critical fields
+                        (resource.data.status == 'upcoming' && !isModifyingCriticalFields()) ||
+                        // OR it's only a status/tracking update (no price/seats change)
+                        isOnlyStatusUpdate()
+                      );
       
       // Drivers can delete their own upcoming/cancelled rides
       allow delete: if isSignedIn() && 
                       isRecentRequest() &&
-                      resource.data.driverId == request.auth.uid;
+                      resource.data.driverId == request.auth.uid &&
+                      (resource.data.status == 'upcoming' || resource.data.status == 'cancelled');
     }
 
     // ============================================================================
@@ -132,7 +159,16 @@ service cloud.firestore {
                      resource.data.actorId == request.auth.uid ||
                      resource.data.resourceId == request.auth.uid);
       
-      // Only system writes (Cloud Functions)
+    }
+
+    // ============================================================================
+    // RATE LIMITS - Anti-abuse rate limiting
+    // ============================================================================
+    match /rate_limits/{userId} {
+      // Users can only read their own rate limit data
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      
+      // Only Cloud Functions can write (via admin SDK)
       allow write: if false;
     }
 
