@@ -6,6 +6,7 @@ import { Ride } from '@/types';
 import { RidesService } from '@/services/rides';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/config/firebase';
+import { usePreventDoubleClick } from '@/hooks/usePreventDoubleClick';
 
 interface RideDriverActionsProps {
   ride: Ride;
@@ -20,98 +21,104 @@ export default function RideDriverActions({ ride, isDriver, currentUserId, onUpd
   const canStart = useMemo(() => isDriver && (ride.status === 'upcoming' || (ride.status as unknown as string) === 'in_progress') && (ride.passengers?.length ?? 0) > 0, [isDriver, ride.status, ride.passengers]);
   const canComplete = useMemo(() => isDriver && (ride.status === 'active' || (ride.status as unknown as string) === 'in_progress'), [isDriver, ride.status]);
 
+  const { wrapAction } = usePreventDoubleClick();
+
   const handleStart = useCallback(() => {
-    if (!currentUserId) return;
-    Alert.alert(
-      'Start Driving?',
-      'This will notify riders that the ride has started.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Start',
-          onPress: async () => {
-            try {
-              setLoading('start');
-              console.log('[RideDriverActions] Starting ride', ride.id);
-              await RidesService.updateRideTrackingStatus(ride.id, 'passengers_onboard', currentUserId);
-              Alert.alert('Ride has started ✅');
-              if (onUpdated) onUpdated();
-            } catch (e: any) {
-              console.error('[RideDriverActions] start error', e);
-              Alert.alert('Failed to start ride', e?.message ?? 'Please try again');
-            } finally {
-              setLoading(null);
+    wrapAction(async () => {
+      if (!currentUserId) return;
+
+      Alert.alert(
+        'Start Driving?',
+        'This will notify riders that the ride has started.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Start',
+            onPress: async () => {
+              try {
+                setLoading('start');
+                console.log('[RideDriverActions] Starting ride', ride.id);
+                await RidesService.updateRideTrackingStatus(ride.id, 'passengers_onboard', currentUserId);
+                Alert.alert('Ride has started ✅');
+                if (onUpdated) onUpdated();
+              } catch (e: any) {
+                console.error('[RideDriverActions] start error', e);
+                Alert.alert('Failed to start ride', e?.message ?? 'Please try again');
+              } finally {
+                setLoading(null);
+              }
             }
           }
-        }
-      ]
-    );
-  }, [currentUserId, onUpdated, ride.id]);
-
-
+        ]
+      );
+    })();
+  }, [currentUserId, onUpdated, ride.id, wrapAction]);
 
   const handleComplete = useCallback(() => {
-    if (!currentUserId) return;
-    Alert.alert(
-      'Complete Ride?',
-      'This will process payments and send your payout.',
-      [
-        { text: 'Not yet', style: 'cancel' },
-        {
-          text: 'Complete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading('complete');
-              console.log('[RideDriverActions] Completing ride and processing payments', ride.id);
+    wrapAction(async () => {
+      if (!currentUserId) return;
 
-              // Use Cloud Function to properly process payments
-              const completeRideAndCharge = httpsCallable(functions, 'completeRideAndCharge');
-              const result = await completeRideAndCharge({ rideId: ride.id });
-              const data = result.data as any;
+      Alert.alert(
+        'Complete Ride?',
+        'This will process payments and send your payout.',
+        [
+          { text: 'Not yet', style: 'cancel' },
+          {
+            text: 'Complete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setLoading('complete');
+                console.log('[RideDriverActions] Completing ride and processing payments', ride.id);
 
-              if (data.success) {
-                const summary = data.summary;
-                // Show success with option to rate passengers
-                Alert.alert(
-                  'Ride Completed! 🎉',
-                  `Great job! Your ride has been completed successfully.\n\n💰 Earnings: $${(summary?.driverPayout || 0).toFixed(2)}\n\nWould you like to rate your passengers now?`,
-                  [
-                    {
-                      text: 'Not Now',
-                      style: 'cancel',
-                      onPress: () => {
-                        // Navigate back to rides list
-                        router.replace('/(tabs)/rides');
-                      }
-                    },
-                    {
-                      text: 'Rate Passengers',
-                      onPress: () => {
-                        router.push({
-                          pathname: '/ride-review' as any,
-                          params: { rideId: ride.id },
-                        });
+                // Use Cloud Function to properly process payments
+                const completeRideAndCharge = httpsCallable(functions, 'completeRideAndCharge');
+                const result = await completeRideAndCharge({ rideId: ride.id });
+                const data = result.data as any;
+
+                if (data.success) {
+                  const summary = data.summary;
+                  // Show success with option to rate passengers
+                  Alert.alert(
+                    'Ride Completed! 🎉',
+                    `Great job! Your ride has been completed successfully.\n\n💰 Earnings: $${(summary?.driverPayout || 0).toFixed(2)}\n\nWould you like to rate your passengers now?`,
+                    [
+                      {
+                        text: 'Not Now',
+                        style: 'cancel',
+                        onPress: () => {
+                          // Navigate back to rides list
+                          router.replace('/(tabs)/rides');
+                        }
                       },
-                    },
-                  ]
-                );
-              } else {
-                throw new Error(data.message || 'Failed to complete ride');
-              }
+                      {
+                        text: 'Rate Passengers',
+                        onPress: () => {
+                          router.push({
+                            pathname: '/ride-review' as any,
+                            params: { rideId: ride.id },
+                          });
+                        },
+                      },
+                    ]
+                  );
+                } else {
+                  throw new Error(data.message || 'Failed to complete ride');
+                }
 
-              if (onUpdated) onUpdated();
-            } catch (e: any) {
-              console.error('[RideDriverActions] complete error', e);
-              Alert.alert('Failed to complete ride', e?.message ?? 'Please try again');
-            } finally {
-              setLoading(null);
+                if (onUpdated) onUpdated();
+              } catch (e: any) {
+                console.error('[RideDriverActions] complete error', e);
+                Alert.alert('Failed to complete ride', e?.message ?? 'Please try again');
+              } finally {
+                setLoading(null);
+              }
             }
           }
-        }
-      ]
-    );
-  }, [currentUserId, onUpdated, ride.id]);
+        ]
+      );
+    })();
+  }, [currentUserId, onUpdated, ride.id, wrapAction]);
 
   if (!isDriver) return null;
 

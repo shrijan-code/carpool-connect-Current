@@ -114,7 +114,7 @@ export class RatingService {
       await this.updateBookingReviewStatus(data.bookingId, 'riderReviewedDriver', reviewRef.id);
 
       // Update the driver's rating
-      await this.updateUserDriverRating(data.driverId);
+      // this.updateUserDriverRating(data.driverId); // Moved to Cloud Function onReviewCreated
 
       return reviewRef.id;
     } catch (error) {
@@ -156,7 +156,7 @@ export class RatingService {
       await this.updateBookingReviewStatus(data.bookingId, 'driverReviewedRider', reviewRef.id);
 
       // Update the rider's rating
-      await this.updateUserRiderRating(data.riderId);
+      // this.updateUserRiderRating(data.riderId); // Moved to Cloud Function onReviewCreated
 
       return reviewRef.id;
     } catch (error) {
@@ -606,7 +606,7 @@ export class RatingService {
       logger.info('Review created (legacy)', { reviewId: reviewRef.id });
 
       // Update the reviewee's overall rating
-      await this.updateUserRating(data.revieweeId);
+      // this.updateUserRating(data.revieweeId); // Moved to Cloud Function
 
       return reviewRef.id;
     } catch (error) {

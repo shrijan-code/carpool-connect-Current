@@ -5594,6 +5594,79 @@ export const cleanupFailedAuthorizations = onSchedule(
 );
 
 
+
+/**
+ * Automatically update user ratings when a new review is created
+ */
+export const onReviewCreated = onDocumentCreated("reviews/{reviewId}", async (event) => {
+  const snapshot = event.data;
+  if (!snapshot) {
+    return;
+  }
+
+  const reviewData = snapshot.data();
+  const { revieweeId, rating, revieweeRole } = reviewData;
+
+  if (!revieweeId || !rating || !revieweeRole) {
+    console.error("Invalid review data:", reviewData);
+    return;
+  }
+
+  console.log(`⭐ New ${revieweeRole} review for ${revieweeId}: ${rating} stars`);
+
+  try {
+    await db.runTransaction(async (transaction) => {
+      const userRef = db.collection("users").doc(revieweeId);
+      const userDoc = await transaction.get(userRef);
+
+      if (!userDoc.exists) {
+        throw new Error(`User ${revieweeId} not found`);
+      }
+
+      // Query ALL reviews for this user in this role to recalculate average
+      const reviewsSnapshot = await transaction.get(
+        db.collection("reviews")
+          .where("revieweeId", "==", revieweeId)
+          .where("revieweeRole", "==", revieweeRole)
+      );
+
+      let totalRating = 0;
+      let reviewCount = 0;
+
+      reviewsSnapshot.forEach((doc) => {
+        const r = doc.data();
+        if (r.rating) {
+          totalRating += r.rating;
+          reviewCount++;
+        }
+      });
+
+      // Calculate new average
+      const averageRating = reviewCount > 0
+        ? Math.round((totalRating / reviewCount) * 10) / 10
+        : 0;
+
+      // Update fields based on role
+      const updateData: any = {};
+      if (revieweeRole === "driver") {
+        updateData.ratingAsDriver = averageRating;
+        updateData.totalDriverReviews = reviewCount;
+        // Legacy support
+        updateData.rating = averageRating;
+        updateData.totalReviews = reviewCount;
+      } else {
+        updateData.ratingAsRider = averageRating;
+        updateData.totalRiderReviews = reviewCount;
+      }
+
+      transaction.update(userRef, updateData);
+      console.log(`✅ Updated ${revieweeRole} rating for ${revieweeId}: ${averageRating} (${reviewCount} reviews)`);
+    });
+  } catch (error) {
+    console.error("Failed to update user rating:", error);
+  }
+});
+
 export {
   createVerificationSession,
   getVerificationStatus,
