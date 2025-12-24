@@ -1315,6 +1315,229 @@ export const updateBookingPaymentMethod = onCall(async (request) => {
 });
 
 /**
+ * Step 4: Driver Accepts Booking - With Immediate Payment Authorization
+ *
+ * This function is called when a driver accepts a booking request.
+ * It performs the following operations:
+ * 1. Updates booking status to 'confirmed'
+ * 2. Adds passenger to the ride
+ * 3. Creates PaymentIntent with manual capture (authorizes payment IMMEDIATELY)
+ * 4. Sends notifications to rider
+ *
+ * This replaces the 24-hour scheduled authorization, enabling same-day rides.
+ */
+export const acceptBookingWithPayment = onCall(
+  { secrets: ["STRIPE_SECRET_KEY"] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be logged in");
+    }
+
+    const { bookingId } = request.data;
+    const driverId = request.auth.uid;
+
+    if (!bookingId) {
+      throw new HttpsError("invalid-argument", "Missing bookingId");
+    }
+
+    // Rate limiting
+    await checkRateLimit(driverId, "acceptBooking");
+
+    try {
+      console.log(`📋 Driver ${driverId} accepting booking ${bookingId}`);
+
+      const bookingRef = db.collection("bookings").doc(bookingId);
+      const bookingDoc = await bookingRef.get();
+
+      if (!bookingDoc.exists) {
+        throw new HttpsError("not-found", "Booking not found");
+      }
+
+      const bookingData = bookingDoc.data()!;
+
+      // Verify driver owns this booking
+      if (bookingData.driverId !== driverId) {
+        throw new HttpsError("permission-denied", "Not authorized to accept this booking");
+      }
+
+      // Verify booking is in pending state
+      if (bookingData.status !== "pending_driver") {
+        throw new HttpsError("failed-precondition", `Booking is already ${bookingData.status}`);
+      }
+
+      // Get ride data
+      const rideRef = db.collection("rides").doc(bookingData.rideId);
+      const rideDoc = await rideRef.get();
+
+      if (!rideDoc.exists) {
+        throw new HttpsError("not-found", "Ride not found");
+      }
+
+      const rideData = rideDoc.data()!;
+
+      // Get passenger data
+      const passengerDoc = await db.collection("users").doc(bookingData.riderId).get();
+      const passengerData = passengerDoc.exists ? passengerDoc.data()! : null;
+
+      if (!passengerData) {
+        throw new HttpsError("not-found", "Passenger not found");
+      }
+
+      // === PAYMENT AUTHORIZATION ===
+      let paymentAuthResult: { success: boolean; paymentIntentId?: string; error?: string } = { success: false };
+
+      // Check if booking has saved payment method
+      if (bookingData.payment?.paymentMethodId && bookingData.payment?.customerId) {
+        try {
+          const stripe = getStripe();
+
+          // Create PaymentIntent with manual capture (authorize now, capture when ride completes)
+          const paymentIntent = await stripe.paymentIntents.create({
+            amount: bookingData.amountTotal,
+            currency: "aud",
+            customer: bookingData.payment.customerId,
+            payment_method: bookingData.payment.paymentMethodId,
+            confirm: true, // Automatically confirm with saved payment method
+            capture_method: "manual", // Hold funds for later capture when ride completes
+            automatic_payment_methods: {
+              enabled: true,
+              allow_redirects: "never",
+            },
+            metadata: {
+              bookingId: bookingId,
+              rideId: bookingData.rideId,
+              riderId: bookingData.riderId,
+              driverId: driverId,
+            },
+          }, {
+            idempotencyKey: `accept_auth_${bookingId}`,
+          });
+
+          if (paymentIntent.status === "requires_capture") {
+            // Authorization successful - funds are held
+            console.log(`✅ Payment authorized for booking ${bookingId}: $${(bookingData.amountTotal / 100).toFixed(2)} AUD`);
+            paymentAuthResult = { success: true, paymentIntentId: paymentIntent.id };
+          } else if (paymentIntent.status === "succeeded") {
+            // Some payment methods capture immediately
+            console.log(`✅ Payment captured immediately for booking ${bookingId}`);
+            paymentAuthResult = { success: true, paymentIntentId: paymentIntent.id };
+          } else {
+            console.warn(`⚠️ Unexpected payment status: ${paymentIntent.status}`);
+            paymentAuthResult = { success: false, error: `Unexpected status: ${paymentIntent.status}` };
+          }
+        } catch (stripeError: any) {
+          console.error(`❌ Payment authorization failed for booking ${bookingId}:`, stripeError);
+          paymentAuthResult = { success: false, error: stripeError.message };
+        }
+      } else {
+        console.warn(`⚠️ No payment method saved for booking ${bookingId} - proceeding without payment authorization`);
+        paymentAuthResult = { success: false, error: "No payment method saved" };
+      }
+
+      // === UPDATE BOOKING AND RIDE ===
+      const batch = db.batch();
+
+      // Update booking status
+      const paymentUpdate = paymentAuthResult.success ? {
+        "payment.paymentIntentId": paymentAuthResult.paymentIntentId,
+        "payment.status": "authorized",
+        "payment.authorizedAt": admin.firestore.FieldValue.serverTimestamp(),
+      } : {
+        "payment.status": paymentAuthResult.error ? "authorization_failed" : "no_payment_required",
+        "payment.lastError": paymentAuthResult.error || null,
+      };
+
+      batch.update(bookingRef, {
+        status: "confirmed",
+        passenger: {
+          id: bookingData.riderId,
+          name: passengerData.name || "Passenger",
+          photoURL: passengerData.photoURL || null,
+          rating: passengerData.rating || null,
+          totalRides: passengerData.totalRides || 0,
+        },
+        ...paymentUpdate,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Add passenger to ride
+      const updatedPassengers = [...(rideData.passengers || []), {
+        id: bookingData.riderId,
+        seats: bookingData.seats,
+        bookingId: bookingId,
+        user: {
+          id: bookingData.riderId,
+          name: passengerData.name || "Passenger",
+          displayName: passengerData.displayName || passengerData.name || "Passenger",
+          photoURL: passengerData.photoURL || null,
+          rating: passengerData.rating || null,
+        },
+      }];
+
+      batch.update(rideRef, {
+        passengers: updatedPassengers,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      await batch.commit();
+      console.log(`✅ Booking ${bookingId} confirmed and passenger added to ride`);
+
+      // === SEND NOTIFICATIONS ===
+      try {
+        const driverDoc = await db.collection("users").doc(driverId).get();
+        const driverData = driverDoc.data() || {};
+        const driverName = driverData.name || "Driver";
+
+        // Notify rider
+        const notif = notificationTemplates.bookingAccepted(driverName);
+        await createNotification({
+          userId: bookingData.riderId,
+          title: notif.title,
+          body: notif.body,
+          type: "booking",
+          data: { bookingId, rideId: bookingData.rideId },
+        });
+
+        // Send email to rider
+        if (passengerData.email) {
+          const rideDetails = {
+            origin: rideData.from?.name || rideData.origin?.name || "Origin",
+            destination: rideData.to?.name || rideData.destination?.name || "Destination",
+            departureTime: rideData.departureTime ? new Date(rideData.departureTime).toLocaleString() : "As scheduled",
+          };
+
+          await sendEmail(passengerData.email, "bookingAccepted", [
+            passengerData.name || "Rider",
+            driverName,
+            rideDetails,
+          ]);
+        }
+      } catch (notifError) {
+        console.error("Failed to send notifications:", notifError);
+        // Don't fail the booking for notification errors
+      }
+
+      // Log payment event
+      if (paymentAuthResult.success && paymentAuthResult.paymentIntentId) {
+        await logPaymentEvent(bookingId, AuditEventTypes.PAYMENT_AUTHORIZED, paymentAuthResult.paymentIntentId, true);
+      }
+
+      return {
+        success: true,
+        message: "Booking accepted successfully",
+        bookingId,
+        paymentAuthorized: paymentAuthResult.success,
+        paymentError: paymentAuthResult.error || null,
+      };
+    } catch (error: any) {
+      console.error("Error accepting booking:", error);
+      if (error instanceof HttpsError) throw error;
+      throw new HttpsError("internal", error.message || "Failed to accept booking");
+    }
+  }
+);
+
+/**
  * Scheduled Function: Authorize payments for rides departing in 24 hours
  * Run hourly via Cloud Scheduler
  */

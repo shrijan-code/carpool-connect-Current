@@ -13,7 +13,8 @@ import {
   runTransaction,
   Query
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/config/firebase';
 import { Ride, Booking, User, AuditLogData, getErrorMessage } from '@/types';
 import { NotificationService } from './notifications';
 import { logger } from '@/utils/logger';
@@ -833,154 +834,39 @@ export class RidesService {
     }
   }
 
-  // Accept booking (Driver action)
+  // Accept booking (Driver action) - Calls Cloud Function for immediate payment authorization
   static async acceptBooking(bookingId: string, driverId: string): Promise<void> {
     try {
-      logger.debug('Accepting booking', { bookingId, driverId });
+      logger.debug('Accepting booking via Cloud Function', { bookingId, driverId });
 
-      // Get booking data
-      const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
-      if (!bookingDoc.exists()) {
-        throw new Error('Booking not found');
+      // Call the new Cloud Function that handles booking acceptance WITH payment authorization
+      const acceptBookingWithPayment = httpsCallable(functions, 'acceptBookingWithPayment');
+      const result = await acceptBookingWithPayment({ bookingId });
+
+      const data = result.data as {
+        success: boolean;
+        message: string;
+        paymentAuthorized: boolean;
+        paymentError: string | null
+      };
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to accept booking');
       }
 
-      const bookingData = bookingDoc.data() as Booking;
-
-      if (bookingData.status !== 'pending_driver') {
-        throw new Error('Booking is not in pending state');
+      // Log payment authorization status
+      if (data.paymentAuthorized) {
+        console.log('✅ Booking accepted with payment authorization');
+      } else if (data.paymentError) {
+        console.warn('⚠️ Booking accepted but payment authorization failed:', data.paymentError);
+        // Optionally show this warning to driver
+      } else {
+        console.log('✅ Booking accepted (no payment required)');
       }
 
-      // Get ride data to update seats
-      const rideDoc = await getDoc(doc(db, 'rides', bookingData.rideId));
-      if (!rideDoc.exists()) {
-        throw new Error('Ride not found');
-      }
-
-      const rideData = rideDoc.data() as Ride;
-
-      // Note: Seats were already reserved when the booking was created (pending_driver status)
-      // So we don't need to check or decrement seats here again
-      // We just need to update booking status and add passenger to the ride
-
-      // Get passenger data if not present in booking
-      let passengerData = bookingData.passenger;
-      const passengerId = bookingData.riderId || bookingData.passenger?.id || bookingData.passengerId;
-
-      if (!passengerData && passengerId) {
-        console.log('⚠️ Booking missing passenger data, fetching user:', passengerId);
-        const userDoc = await getDoc(doc(db, 'users', passengerId));
-        if (userDoc.exists()) {
-          passengerData = userDoc.data() as User;
-        }
-      }
-
-      if (!passengerData) {
-        throw new Error('Passenger data not found');
-      }
-
-      // Use a transaction to ensure atomic updates
-      await runTransaction(db, async (transaction) => {
-        // 1. Get current booking state
-        const bookingRef = doc(db, 'bookings', bookingId);
-        const bookingDoc = await transaction.get(bookingRef);
-
-        if (!bookingDoc.exists()) {
-          throw new Error('Booking not found');
-        }
-
-        const currentBookingData = bookingDoc.data();
-        if (currentBookingData.status !== 'pending_driver') {
-          throw new Error('Booking is no longer pending approval');
-        }
-
-        // 2. Get current ride state to ensure seat availability hasn't changed (though seats are already reserved)
-        const rideRef = doc(db, 'rides', bookingData.rideId);
-        const rideDoc = await transaction.get(rideRef);
-
-        if (!rideDoc.exists()) {
-          throw new Error('Ride not found');
-        }
-
-        const currentRideData = rideDoc.data() as Ride;
-
-        // 3. Prepare updates
-        // Restore passenger data logic
-        let passengerData = currentBookingData.passenger;
-        if (!passengerData) {
-          // If we still don't have passenger data, we can't easily fetch inside transaction without potentially reading too many docs
-          // So we rely on what we passed or fail. 
-          // Ideally, we should have fetched this before the transaction if needed, but for now strict check:
-          const pId = currentBookingData.riderId || currentBookingData.passengerId;
-          // We can try to read the user doc within transaction if we have the ID
-          if (pId) {
-            const userRef = doc(db, 'users', pId);
-            const userDoc = await transaction.get(userRef);
-            if (userDoc.exists()) {
-              passengerData = userDoc.data() as User;
-            }
-          }
-        }
-
-        if (!passengerData) {
-          throw new Error('Passenger data missing and could not be retrieved');
-        }
-
-        // Update Booking
-        transaction.update(bookingRef, {
-          status: 'confirmed',
-          passenger: passengerData,
-          updatedAt: serverTimestamp()
-        });
-
-        // Update Ride Passengers
-        const updatedPassengers = [...(currentRideData.passengers || []), {
-          id: currentBookingData.riderId || currentBookingData.passengerId || '',
-          seats: currentBookingData.seats,
-          bookingId: bookingId,
-          user: passengerData
-        }];
-
-        transaction.update(rideRef, {
-          passengers: updatedPassengers,
-          updatedAt: serverTimestamp()
-        });
-      });
-
-      console.log('✅ Booking acceptance transaction committed successfully');
-
-      // Capture payment if payment intent exists (outside transaction as it's an external API call usually)
-      if (bookingData.payment?.intentId) {
-        try {
-          // Use lazy import to avoid circular dependencies if any
-          const { StripePaymentService } = require('./stripe');
-          console.log('Capturing payment:', bookingData.payment.intentId);
-          await StripePaymentService.capturePayment(bookingData.payment.intentId, bookingId);
-
-          await updateDoc(doc(db, 'bookings', bookingId), {
-            'payment.status': 'captured',
-            updatedAt: serverTimestamp()
-          });
-        } catch (paymentError) {
-          console.error('Payment capture failed:', paymentError);
-          // Don't fail the booking acceptance for payment issues, but log it
-          // In production you might want to stop here or flag it
-        }
-      }
-
-      // Send notification to passenger
-      await NotificationService.sendInAppNotification(
-        bookingData.riderId || bookingData.passenger?.id || '',
-        'Booking Confirmed!',
-        `Your booking has been accepted by the driver. You can now message them and prepare for your ride.`,
-        'booking_accepted',
-        { bookingId, rideId: bookingData.rideId }
-      );
-
-      // Log audit trail
+      // Log audit trail client-side
       await AuditService.logAction('ACCEPT_BOOKING', 'booking', bookingId, driverId, {
-        riderId: bookingData.riderId || bookingData.passenger?.id,
-        rideId: bookingData.rideId,
-        seats: bookingData.seats
+        paymentAuthorized: data.paymentAuthorized,
       });
 
       console.log('Booking accepted successfully');
