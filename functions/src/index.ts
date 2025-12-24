@@ -2429,14 +2429,55 @@ export const completeRideAndCharge = onCall(
       // Calculate driver payout with $5 flat platform fee PER RIDE (not per booking)
       const platformFee = 500; // $5 AUD flat fee in cents
 
-      if (totalRevenue < platformFee) {
-        throw new HttpsError(
-          "failed-precondition",
-          `Insufficient revenue (A$${(totalRevenue / 100).toFixed(2)}) to cover platform fee (A$5.00)`
-        );
+      // Handle case where all payments failed - complete ride but flag for review
+      if (successfulCharges === 0 && failedCharges > 0) {
+        console.error(`⚠️ CRITICAL: Ride ${rideId} completed with NO successful payments (${failedCharges} failed)`);
+
+        // Still complete the ride but mark it with payment issues
+        await rideRef.update({
+          status: "completed",
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          hasPaymentIssues: true,
+          revenue: {
+            total: 0,
+            platformFee: 0,
+            driverPayout: 0,
+            successfulCharges: 0,
+            failedCharges,
+          },
+        });
+
+        // Alert admin about payment failure
+        await createNotification({
+          userId: "admin",
+          title: "⚠️ Ride Completed with Payment Issues",
+          body: `Ride ${rideId} completed but all ${failedCharges} payments failed. Manual review required.`,
+          type: "system",
+          data: { rideId, driverId, failedCharges, severity: "high" },
+        });
+
+        return {
+          success: true,
+          warning: "Ride completed but all payments failed",
+          rideId,
+          successfulCharges: 0,
+          failedCharges,
+          totalRevenue: 0,
+          paymentIssue: true,
+        };
       }
 
-      const driverPayout = totalRevenue - platformFee;
+      // Only check platform fee if we have revenue
+      if (totalRevenue > 0 && totalRevenue < platformFee) {
+        // Not enough revenue - waive platform fee to allow completion
+        console.warn(`⚠️ Revenue $${(totalRevenue / 100).toFixed(2)} < platform fee $5.00 - waiving fee for this ride`);
+        // Platform fee waived for low revenue rides
+      }
+
+      // Calculate driver payout - ensure it doesn't go negative
+      const actualPlatformFee = totalRevenue >= platformFee ? platformFee : 0;
+      const driverPayout = totalRevenue - actualPlatformFee;
 
       // Get driver's Stripe Connect account info
       const driverDoc = await db.collection("users").doc(driverId).get();
@@ -2476,13 +2517,15 @@ export const completeRideAndCharge = onCall(
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         revenue: {
           total: totalRevenue / 100,
-          platformFee: platformFee / 100,
+          platformFee: actualPlatformFee / 100,
           driverPayout: driverPayout / 100,
           payoutId,
+          successfulCharges,
+          failedCharges,
         },
       });
 
-      console.log(`🎉 Ride completed: ${successfulCharges} charges, revenue=$${(totalRevenue / 100).toFixed(2)}, driver gets=$${(driverPayout / 100).toFixed(2)}, platform=$${(platformFee / 100).toFixed(2)}`);
+      console.log(`🎉 Ride completed: ${successfulCharges} charges, revenue=$${(totalRevenue / 100).toFixed(2)}, driver gets=$${(driverPayout / 100).toFixed(2)}, platform=$${(actualPlatformFee / 100).toFixed(2)}`);
 
       // Notify driver of payout
       await createNotification({
