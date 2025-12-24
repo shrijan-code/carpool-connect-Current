@@ -285,12 +285,28 @@ export function LocationBasedRideSearch({
     }
   }, []);
 
-  // Load all available rides with better error handling
+  // Load rides with geohash optimization when location is available
   const loadRides = useCallback(async () => {
     try {
       setIsLoading(true);
 
-      const rides = await getAllAvailableRides(50); // Reduced for better mobile performance
+      let rides: Ride[];
+
+      // Use optimized geohash search if user location is available
+      if (userLocation) {
+        // Import and use RidesService.getNearbyRides for geohash-based query
+        const { RidesService } = await import('@/services/rides');
+        rides = await RidesService.getNearbyRides(
+          userLocation.latitude,
+          userLocation.longitude,
+          filters.maxDistance,
+          100
+        );
+        console.log(`[LocationBasedRideSearch] Found ${rides.length} nearby rides using geohash`);
+      } else {
+        // Fallback to loading all rides
+        rides = await getAllAvailableRides(50);
+      }
 
       // Ensure rides have proper structure for mobile compatibility
       const processedRides = rides.map(ride => ({
@@ -314,7 +330,7 @@ export function LocationBasedRideSearch({
     } finally {
       setIsLoading(false);
     }
-  }, [getAllAvailableRides]);
+  }, [getAllAvailableRides, userLocation, filters.maxDistance]);
 
   // Filter and sort rides based on current filters
   const filteredRides = useMemo(() => {
