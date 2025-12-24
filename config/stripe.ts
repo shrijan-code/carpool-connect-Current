@@ -5,7 +5,7 @@ import Constants from 'expo-constants';
 const getStripeConfig = () => {
   // Try to get from Expo Constants first (for production builds)
   const extra = Constants.expoConfig?.extra;
-  
+
   if (extra?.stripe) {
     return {
       publishableKey: extra.stripe.publishableKey,
@@ -14,14 +14,14 @@ const getStripeConfig = () => {
 
   // Fallback to process.env for development
   return {
-    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || "pk_test_51HMiYNDuXA4vn5QKRFRjdRH71bcNVlaxgaB459LlIuyAre8qUVEb53vf4haYuAKm2nVPxGssxvxaKN9Eb00kXF1n000Hg6HieO",
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY || "",
   };
 };
 
 // Get app configuration
 const getAppConfig = () => {
   const extra = Constants.expoConfig?.extra;
-  
+
   if (extra?.app) {
     return {
       environment: extra.app.environment,
@@ -42,7 +42,7 @@ const getAppConfig = () => {
 // Get Google Maps configuration
 const getGoogleMapsConfig = () => {
   const extra = Constants.expoConfig?.extra;
-  
+
   if (extra?.googleMaps) {
     return {
       apiKey: extra.googleMaps.apiKey,
@@ -62,17 +62,17 @@ export const googleMapsConfig = getGoogleMapsConfig();
 // Stripe initialization for React Native
 export const initializeStripe = async (): Promise<void> => {
   console.log(`Stripe initialization for ${Platform.OS} platform`);
-  
+
   if (Platform.OS === 'web') {
     console.log('Stripe initialization skipped on web platform - using web-compatible payment methods');
     return Promise.resolve();
   }
-  
+
   // For native platforms, we simulate initialization
   // In production, you would properly initialize Stripe here with:
   // import { initStripe } from '@stripe/stripe-react-native';
   // await initStripe({ publishableKey: stripeConfig.publishableKey });
-  
+
   console.log('Stripe initialization completed for native platform');
   return Promise.resolve();
 };
