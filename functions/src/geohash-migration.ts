@@ -8,7 +8,8 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import ngeohash from "ngeohash";
 
-const db = admin.firestore();
+// Lazy initialization to avoid errors before admin.initializeApp()
+const getDb = () => admin.firestore();
 
 // Geohash precision levels
 const DEFAULT_PRECISION = 5;  // ~5km
@@ -52,12 +53,12 @@ export const backfillRideGeohashes = onCall(async (request) => {
     console.log("🔄 Starting geohash backfill for rides...");
 
     try {
-        const ridesSnapshot = await db.collection("rides").get();
+        const ridesSnapshot = await getDb().collection("rides").get();
         let updated = 0;
         let skipped = 0;
         let errors = 0;
 
-        const batch = db.batch();
+        const batch = getDb().batch();
         let batchCount = 0;
         const MAX_BATCH = 500;
 
@@ -135,7 +136,7 @@ export const ensureRideGeohashes = onSchedule("every 24 hours", async () => {
 
     try {
         // Find rides without originGeohash
-        const ridesSnapshot = await db.collection("rides")
+        const ridesSnapshot = await getDb().collection("rides")
             .where("originGeohash", "==", null)
             .limit(100)
             .get();
@@ -146,7 +147,7 @@ export const ensureRideGeohashes = onSchedule("every 24 hours", async () => {
         }
 
         let updated = 0;
-        const batch = db.batch();
+        const batch = getDb().batch();
 
         for (const rideDoc of ridesSnapshot.docs) {
             const data = rideDoc.data();

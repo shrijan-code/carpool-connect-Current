@@ -1,7 +1,8 @@
 import * as admin from "firebase-admin";
 import { HttpsError } from "firebase-functions/v2/https";
 
-const db = admin.firestore();
+// Lazy initialization to avoid errors before admin.initializeApp() in index.ts
+const getDb = () => admin.firestore();
 
 interface RateLimitConfig {
     windowMs: number;      // Time window in milliseconds
@@ -72,10 +73,10 @@ export async function checkRateLimit(userId: string, action: string): Promise<vo
     const windowStart = now - config.windowMs;
 
     // Collection path: rate_limits/{userId}/actions/{action}_{timestamp}
-    const rateLimitRef = db.collection("rate_limits").doc(userId);
+    const rateLimitRef = getDb().collection("rate_limits").doc(userId);
 
     try {
-        await db.runTransaction(async (transaction) => {
+        await getDb().runTransaction(async (transaction) => {
             const doc = await transaction.get(rateLimitRef);
             const data = doc.exists ? doc.data() || {} : {};
 

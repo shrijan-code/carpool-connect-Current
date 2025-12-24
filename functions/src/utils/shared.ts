@@ -6,7 +6,8 @@
 import * as admin from "firebase-admin";
 import { logger } from "./logger";
 
-const db = admin.firestore();
+// Lazy initialization to avoid errors before admin.initializeApp() in index.ts
+const getDb = () => admin.firestore();
 
 export interface SeatFixResult {
     rideId: string;
@@ -31,7 +32,7 @@ export interface SeatFixSummary {
 export async function recalculateSeatAvailability(): Promise<SeatFixSummary> {
     logger.info("Starting seat availability recalculation");
 
-    const ridesSnapshot = await db.collection("rides").get();
+    const ridesSnapshot = await getDb().collection("rides").get();
     logger.info(`Found ${ridesSnapshot.size} rides to check`);
 
     let fixedCount = 0;
@@ -45,7 +46,7 @@ export async function recalculateSeatAvailability(): Promise<SeatFixSummary> {
         const totalSeats = rideData.seatsOffered || rideData.totalSeats || rideData.seatsTotal || 4;
 
         // Count seats used by active bookings
-        const bookingsSnapshot = await db.collection("bookings")
+        const bookingsSnapshot = await getDb().collection("bookings")
             .where("rideId", "==", rideId)
             .get();
 
@@ -64,7 +65,7 @@ export async function recalculateSeatAvailability(): Promise<SeatFixSummary> {
 
         // Check if needs fixing (negative or incorrect)
         if (currentAvailable !== correctAvailable || currentAvailable < 0) {
-            await db.collection("rides").doc(rideId).update({
+            await getDb().collection("rides").doc(rideId).update({
                 availableSeats: correctAvailable,
                 seatsAvailable: correctAvailable,
                 totalSeats: totalSeats,
