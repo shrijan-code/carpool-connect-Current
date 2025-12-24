@@ -1383,51 +1383,104 @@ export const acceptBookingWithPayment = onCall(
         throw new HttpsError("not-found", "Passenger not found");
       }
 
-      // === PAYMENT AUTHORIZATION ===
-      let paymentAuthResult: { success: boolean; paymentIntentId?: string; error?: string } = { success: false };
+      // === HYBRID PAYMENT AUTHORIZATION ===
+      // Stripe authorizations expire in 7 days, so:
+      // - Rides within 7 days: authorize immediately
+      // - Rides 7+ days away: verify payment method only, rely on 24h scheduled job
+
+      const AUTHORIZATION_WINDOW_DAYS = 7;
+      const departureTime = new Date(rideData.departureTime || rideData.departureAt);
+      const now = new Date();
+      const daysUntilRide = Math.ceil((departureTime.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      const shouldAuthorizeNow = daysUntilRide <= AUTHORIZATION_WINDOW_DAYS;
+
+      console.log(`📅 Ride departure: ${departureTime.toISOString()}, Days until ride: ${daysUntilRide}, Authorize now: ${shouldAuthorizeNow}`);
+
+      let paymentAuthResult: {
+        success: boolean;
+        paymentIntentId?: string;
+        error?: string;
+        deferred?: boolean; // True if authorization deferred to scheduled job
+      } = { success: false };
 
       // Check if booking has saved payment method
       if (bookingData.payment?.paymentMethodId && bookingData.payment?.customerId) {
-        try {
-          const stripe = getStripe();
+        const stripe = getStripe();
 
-          // Create PaymentIntent with manual capture (authorize now, capture when ride completes)
-          const paymentIntent = await stripe.paymentIntents.create({
-            amount: bookingData.amountTotal,
-            currency: "aud",
-            customer: bookingData.payment.customerId,
-            payment_method: bookingData.payment.paymentMethodId,
-            confirm: true, // Automatically confirm with saved payment method
-            capture_method: "manual", // Hold funds for later capture when ride completes
-            automatic_payment_methods: {
-              enabled: true,
-              allow_redirects: "never",
-            },
-            metadata: {
-              bookingId: bookingId,
-              rideId: bookingData.rideId,
-              riderId: bookingData.riderId,
-              driverId: driverId,
-            },
-          }, {
-            idempotencyKey: `accept_auth_${bookingId}`,
-          });
+        if (shouldAuthorizeNow) {
+          // === AUTHORIZE IMMEDIATELY (ride within 7 days) ===
+          try {
+            // Create PaymentIntent with manual capture (authorize now, capture when ride completes)
+            const paymentIntent = await stripe.paymentIntents.create({
+              amount: bookingData.amountTotal,
+              currency: "aud",
+              customer: bookingData.payment.customerId,
+              payment_method: bookingData.payment.paymentMethodId,
+              confirm: true, // Automatically confirm with saved payment method
+              capture_method: "manual", // Hold funds for later capture when ride completes
+              automatic_payment_methods: {
+                enabled: true,
+                allow_redirects: "never",
+              },
+              metadata: {
+                bookingId: bookingId,
+                rideId: bookingData.rideId,
+                riderId: bookingData.riderId,
+                driverId: driverId,
+              },
+            }, {
+              idempotencyKey: `accept_auth_${bookingId}`,
+            });
 
-          if (paymentIntent.status === "requires_capture") {
-            // Authorization successful - funds are held
-            console.log(`✅ Payment authorized for booking ${bookingId}: $${(bookingData.amountTotal / 100).toFixed(2)} AUD`);
-            paymentAuthResult = { success: true, paymentIntentId: paymentIntent.id };
-          } else if (paymentIntent.status === "succeeded") {
-            // Some payment methods capture immediately
-            console.log(`✅ Payment captured immediately for booking ${bookingId}`);
-            paymentAuthResult = { success: true, paymentIntentId: paymentIntent.id };
-          } else {
-            console.warn(`⚠️ Unexpected payment status: ${paymentIntent.status}`);
-            paymentAuthResult = { success: false, error: `Unexpected status: ${paymentIntent.status}` };
+            if (paymentIntent.status === "requires_capture") {
+              // Authorization successful - funds are held for up to 7 days
+              console.log(`✅ Payment authorized for booking ${bookingId}: $${(bookingData.amountTotal / 100).toFixed(2)} AUD`);
+              paymentAuthResult = { success: true, paymentIntentId: paymentIntent.id };
+            } else if (paymentIntent.status === "succeeded") {
+              // Some payment methods capture immediately
+              console.log(`✅ Payment captured immediately for booking ${bookingId}`);
+              paymentAuthResult = { success: true, paymentIntentId: paymentIntent.id };
+            } else {
+              console.warn(`⚠️ Unexpected payment status: ${paymentIntent.status}`);
+              paymentAuthResult = { success: false, error: `Unexpected status: ${paymentIntent.status}` };
+            }
+          } catch (stripeError: any) {
+            console.error(`❌ Payment authorization failed for booking ${bookingId}:`, stripeError);
+            paymentAuthResult = { success: false, error: stripeError.message };
           }
-        } catch (stripeError: any) {
-          console.error(`❌ Payment authorization failed for booking ${bookingId}:`, stripeError);
-          paymentAuthResult = { success: false, error: stripeError.message };
+        } else {
+          // === DEFER AUTHORIZATION (ride > 7 days away) ===
+          // Just verify payment method is valid, don't authorize yet
+          try {
+            const paymentMethod = await stripe.paymentMethods.retrieve(bookingData.payment.paymentMethodId);
+
+            // Check if payment method is valid
+            if (!paymentMethod.id) {
+              throw new Error("Invalid payment method");
+            }
+
+            // Check card expiration if applicable
+            if (paymentMethod.card) {
+              const expYear = paymentMethod.card.exp_year;
+              const expMonth = paymentMethod.card.exp_month;
+              const expDate = new Date(expYear, expMonth); // First day of next month
+
+              if (expDate < departureTime) {
+                console.warn(`⚠️ Card expires ${expMonth}/${expYear}, before ride on ${departureTime.toISOString()}`);
+                // Don't fail, just warn - card might be auto-updated by bank
+              }
+            }
+
+            console.log(`📋 Payment method verified for booking ${bookingId}, authorization deferred to 24h before ride`);
+            paymentAuthResult = {
+              success: true,
+              deferred: true,
+              // No paymentIntentId yet - will be created by scheduled job
+            };
+          } catch (verifyError: any) {
+            console.error(`❌ Payment method verification failed for booking ${bookingId}:`, verifyError);
+            paymentAuthResult = { success: false, error: verifyError.message };
+          }
         }
       } else {
         console.warn(`⚠️ No payment method saved for booking ${bookingId} - proceeding without payment authorization`);
@@ -1437,15 +1490,35 @@ export const acceptBookingWithPayment = onCall(
       // === UPDATE BOOKING AND RIDE ===
       const batch = db.batch();
 
-      // Update booking status
-      const paymentUpdate = paymentAuthResult.success ? {
-        "payment.paymentIntentId": paymentAuthResult.paymentIntentId,
-        "payment.status": "authorized",
-        "payment.authorizedAt": admin.firestore.FieldValue.serverTimestamp(),
-      } : {
-        "payment.status": paymentAuthResult.error ? "authorization_failed" : "no_payment_required",
-        "payment.lastError": paymentAuthResult.error || null,
-      };
+      // Update booking status based on payment result
+      // - authorized: Payment authorized immediately (ride within 7 days)
+      // - pending_authorization: Deferred to scheduled job (ride > 7 days away)
+      // - authorization_failed: Payment failed
+      // - no_payment_required: No payment method saved
+      let paymentUpdate: Record<string, unknown>;
+
+      if (paymentAuthResult.success) {
+        if (paymentAuthResult.deferred) {
+          // Deferred authorization - scheduled job will handle 24h before ride
+          paymentUpdate = {
+            "payment.status": "pending_authorization",
+            "payment.deferredUntil": new Date(departureTime.getTime() - 24 * 60 * 60 * 1000).toISOString(), // 24h before ride
+          };
+        } else {
+          // Immediate authorization successful
+          paymentUpdate = {
+            "payment.paymentIntentId": paymentAuthResult.paymentIntentId,
+            "payment.status": "authorized",
+            "payment.authorizedAt": admin.firestore.FieldValue.serverTimestamp(),
+          };
+        }
+      } else {
+        // Authorization failed or no payment method
+        paymentUpdate = {
+          "payment.status": paymentAuthResult.error ? "authorization_failed" : "no_payment_required",
+          "payment.lastError": paymentAuthResult.error || null,
+        };
+      }
 
       batch.update(bookingRef, {
         status: "confirmed",
@@ -1526,8 +1599,10 @@ export const acceptBookingWithPayment = onCall(
         success: true,
         message: "Booking accepted successfully",
         bookingId,
-        paymentAuthorized: paymentAuthResult.success,
+        paymentAuthorized: paymentAuthResult.success && !paymentAuthResult.deferred,
+        paymentDeferred: paymentAuthResult.deferred || false,
         paymentError: paymentAuthResult.error || null,
+        daysUntilRide,
       };
     } catch (error: any) {
       console.error("Error accepting booking:", error);

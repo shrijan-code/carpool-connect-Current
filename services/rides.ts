@@ -847,7 +847,9 @@ export class RidesService {
         success: boolean;
         message: string;
         paymentAuthorized: boolean;
-        paymentError: string | null
+        paymentDeferred?: boolean;
+        paymentError: string | null;
+        daysUntilRide?: number;
       };
 
       if (!data.success) {
@@ -856,7 +858,9 @@ export class RidesService {
 
       // Log payment authorization status
       if (data.paymentAuthorized) {
-        console.log('✅ Booking accepted with payment authorization');
+        console.log('✅ Booking accepted with immediate payment authorization');
+      } else if (data.paymentDeferred) {
+        console.log(`📋 Booking accepted - payment will be authorized 24h before ride (in ~${data.daysUntilRide} days)`);
       } else if (data.paymentError) {
         console.warn('⚠️ Booking accepted but payment authorization failed:', data.paymentError);
         // Optionally show this warning to driver
