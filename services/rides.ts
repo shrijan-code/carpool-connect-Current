@@ -1209,12 +1209,24 @@ export class RidesService {
         throw new Error(`Cannot edit a ride that is ${ride.status}. Only upcoming rides can be edited.`);
       }
 
-      // 3. Check for confirmed bookings - cannot edit if bookings exist
+      // 3. SECURITY CHECK: Cannot edit if ANY active bookings exist (including pending ones with payments)
+      // This is critical because riders pay when they book (pending_driver status), not when confirmed
       const bookings = await this.getRideBookings(rideId, driverId);
-      const confirmedBookings = bookings.filter(b => b.status === 'confirmed');
 
-      if (confirmedBookings.length > 0) {
-        throw new Error('Cannot edit ride with confirmed bookings. Please contact passengers to cancel their bookings first.');
+      // Block editing if there are ANY bookings in pending_driver or confirmed status
+      // These bookings have already had payment authorized/captured
+      const activeBookings = bookings.filter(b =>
+        b.status === 'pending_driver' ||
+        b.status === 'confirmed'
+      );
+
+      if (activeBookings.length > 0) {
+        const hasPayments = activeBookings.some(b => b.payment?.intentId);
+        if (hasPayments) {
+          throw new Error('Cannot edit ride after riders have booked and paid. Please cancel existing bookings first (riders will be refunded).');
+        } else {
+          throw new Error('Cannot edit ride with pending or confirmed bookings. Please wait for bookings to be resolved first.');
+        }
       }
 
       // 4. Validate update fields
@@ -1311,8 +1323,8 @@ export class RidesService {
         throw new Error('You can only delete your own rides');
       }
 
-      // Check if ride has any active bookings
-      const bookings = await this.getRideBookings(rideId);
+      // Check if ride has any active bookings - pass driverId for security rules compliance
+      const bookings = await this.getRideBookings(rideId, driverId);
       console.log('Found bookings for ride:', bookings.length, 'bookings:', bookings.map(b => ({ id: b.id, status: b.status })));
 
       // Only allow deletion if there are no active bookings

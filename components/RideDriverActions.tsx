@@ -72,14 +72,21 @@ export default function RideDriverActions({ ride, isDriver, currentUserId, onUpd
 
               if (data.success) {
                 const summary = data.summary;
-                // Show success with option to rate riders
+                // Show success with option to rate passengers
                 Alert.alert(
                   'Ride Completed! 🎉',
-                  `${data.message}\n\nYour payout: $${(summary?.driverPayout || 0).toFixed(2)}`,
+                  `Great job! Your ride has been completed successfully.\n\n💰 Earnings: $${(summary?.driverPayout || 0).toFixed(2)}\n\nWould you like to rate your passengers now?`,
                   [
-                    { text: 'Maybe Later', style: 'cancel' },
                     {
-                      text: 'Rate Riders',
+                      text: 'Not Now',
+                      style: 'cancel',
+                      onPress: () => {
+                        // Navigate back to rides list
+                        router.replace('/(tabs)/rides');
+                      }
+                    },
+                    {
+                      text: 'Rate Passengers',
                       onPress: () => {
                         router.push({
                           pathname: '/ride-review' as any,

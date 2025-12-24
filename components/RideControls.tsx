@@ -119,8 +119,8 @@ export const RideControls: React.FC<RideControlsProps> = ({
                 const summary = data.summary;
                 Alert.alert(
                   'Ride Completed! 🎉',
-                  `${data.message}\n\nSummary:\n• ${summary.passengerCount} passenger${summary.passengerCount > 1 ? 's' : ''} charged\n• Total revenue: $${(summary.totalRevenue / 100).toFixed(2)}\n• Platform fees: $${(summary.platformFees / 100).toFixed(2)}\n• Your payout: $${(summary.driverPayout / 100).toFixed(2)}`,
-                  [{ text: 'OK', onPress: onRideUpdated }]
+                  `Great job! Your ride has been completed.\n\n📊 Summary:\n• ${summary.passengerCount} passenger${summary.passengerCount > 1 ? 's' : ''} transported\n• Total collected: $${(summary.totalRevenue / 100).toFixed(2)}\n• Platform fee: $${(summary.platformFees / 100).toFixed(2)}\n\n💰 Your earnings: $${(summary.driverPayout / 100).toFixed(2)}\n\nEarnings will be deposited within 7 business days.`,
+                  [{ text: 'Done', onPress: onRideUpdated }]
                 );
               } else {
                 throw new Error(data.message || 'Failed to complete ride');

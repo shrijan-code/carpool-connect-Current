@@ -70,7 +70,7 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
 
   const handleSwipeComplete = async () => {
     setIsProcessing(true);
-    
+
     try {
       if (rideStatus === 'not_started') {
         // Start ride
@@ -97,12 +97,12 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
                   setRideStatus('in_progress');
                   setSwipeDirection('end');
                   onRideStatusChange?.('in_progress');
-                  
+
                   Animated.spring(translateX, {
                     toValue: 0,
                     useNativeDriver: true,
                   }).start();
-                  
+
                   Alert.alert('Ride Started', 'The ride has been started. Drive safely!');
                 } catch (error) {
                   Alert.alert('Error', 'Failed to start ride. Please try again.');
@@ -135,7 +135,7 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
               onPress: async () => {
                 try {
                   await RidesService.updateRideStatus(ride.id, 'completed');
-                  
+
                   // Process payments for all passengers
                   if (ride.passengers && ride.passengers.length > 0) {
                     for (const passenger of ride.passengers) {
@@ -151,18 +151,18 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
                       }
                     }
                   }
-                  
+
                   setRideStatus('completed');
                   onRideStatusChange?.('completed');
-                  
+
                   Animated.spring(translateX, {
                     toValue: 0,
                     useNativeDriver: true,
                   }).start();
-                  
+
                   Alert.alert(
-                    'Ride Completed',
-                    'The ride has been completed successfully. Payments will be processed automatically.'
+                    'Ride Completed! 🎉',
+                    'Great job! All passengers have arrived safely. Your earnings will be processed shortly.'
                   );
                 } catch (error) {
                   Alert.alert('Error', 'Failed to end ride. Please try again.');
@@ -213,7 +213,7 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
               {rideStatus === 'completed' && 'Ride completed'}
             </Text>
           </View>
-          
+
           {rideStatus === 'in_progress' && (
             <View style={styles.progressInfo}>
               <View style={styles.infoRow}>
@@ -230,10 +230,10 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
               </View>
             </View>
           )}
-          
+
           {rideStatus === 'completed' && (
             <Text style={styles.completedText}>
-              Thank you for riding with us! Payment will be processed automatically.
+              Ride complete! 🎉 Thank you for riding with us. Your payment has been processed.
             </Text>
           )}
         </View>
@@ -266,7 +266,7 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
             <ChevronRight size={20} color="#fff" style={styles.chevron2} />
             <ChevronRight size={20} color="#fff" style={styles.chevron3} />
           </LinearGradient>
-          
+
           <Animated.View
             style={[
               styles.swipeButton,
@@ -288,7 +288,7 @@ export const RideTracking: React.FC<RideTrackingProps> = ({ ride, isDriver, onRi
           <CheckCircle size={48} color={Colors.success} />
           <Text style={styles.completedTitle}>Ride Completed Successfully</Text>
           <Text style={styles.completedSubtitle}>
-            All passengers have been charged and you will receive your payout within 7 days.
+            Payments have been processed. Your earnings will be deposited within 7 business days.
           </Text>
         </View>
       )}

@@ -10,6 +10,9 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import { sendEmail } from "./utils/email";
 import { createNotification, notificationTemplates } from "./utils/notifications";
 import { logAuditEvent, logPaymentEvent, AuditEventTypes } from "./utils/audit";
+import { logger, getErrorMessage } from "./utils/logger";
+import { requireAuth, isHttpsError, isStripeError } from "./utils/errors";
+import { recalculateSeatAvailability } from "./utils/shared";
 import * as functions from "firebase-functions";
 import * as functionsV1 from "firebase-functions/v1";
 import Stripe from "stripe";
@@ -66,74 +69,17 @@ export const fixSeatAvailability = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "Must be logged in");
   }
 
-  console.log("🔧 Starting seat availability fix...");
-
   try {
-    const ridesSnapshot = await db.collection("rides").get();
-    console.log(`Found ${ridesSnapshot.size} rides to check`);
-
-    let fixedCount = 0;
-    const results: any[] = [];
-
-    for (const rideDoc of ridesSnapshot.docs) {
-      const rideData = rideDoc.data();
-      const rideId = rideDoc.id;
-
-      // Get total seats (use various possible field names)
-      const totalSeats = rideData.totalSeats || rideData.seatsTotal ||
-        Math.max(rideData.availableSeats || 0, rideData.seatsAvailable || 0, 4);
-
-      // Count seats used by active bookings (confirmed or pending_driver)
-      const bookingsSnapshot = await db.collection("bookings")
-        .where("rideId", "==", rideId)
-        .get();
-
-      let seatsUsed = 0;
-      bookingsSnapshot.forEach((bookingDoc) => {
-        const booking = bookingDoc.data();
-        // Count seats for confirmed and pending_driver bookings
-        if (booking.status === "confirmed" || booking.status === "pending_driver") {
-          seatsUsed += booking.seats || 1;
-        }
-      });
-
-      // Calculate correct available seats (never negative)
-      const correctAvailable = Math.max(0, totalSeats - seatsUsed);
-      const currentAvailable = rideData.availableSeats ?? rideData.seatsAvailable ?? 0;
-
-      // Check if needs fixing
-      if (currentAvailable !== correctAvailable || currentAvailable < 0) {
-        await db.collection("rides").doc(rideId).update({
-          availableSeats: correctAvailable,
-          seatsAvailable: correctAvailable,
-          totalSeats: totalSeats, // Ensure totalSeats is set
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        fixedCount++;
-        results.push({
-          rideId,
-          before: currentAvailable,
-          after: correctAvailable,
-          totalSeats,
-          seatsUsed,
-        });
-        console.log(`✅ Fixed ride ${rideId}: ${currentAvailable} → ${correctAvailable}`);
-      }
-    }
-
-    console.log(`🎉 Fixed ${fixedCount} rides`);
-
+    const result = await recalculateSeatAvailability();
     return {
       success: true,
-      message: `Fixed ${fixedCount} out of ${ridesSnapshot.size} rides`,
-      fixedCount,
-      totalRides: ridesSnapshot.size,
-      details: results,
+      message: `Fixed ${result.fixedCount} out of ${result.totalRides} rides`,
+      ...result,
     };
-  } catch (error: any) {
-    console.error("❌ Error fixing seat availability:", error);
-    throw new HttpsError("internal", error.message || "Failed to fix seat availability");
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error("Error fixing seat availability", error);
+    throw new HttpsError("internal", message || "Failed to fix seat availability");
   }
 });
 
@@ -141,7 +87,7 @@ export const fixSeatAvailability = onCall(async (request) => {
  * HTTP version of seat fix - can be triggered via direct URL call
  */
 export const fixSeatAvailabilityHttp = onRequest(async (req, res) => {
-  console.log("🔧 Starting seat availability fix (HTTP)...");
+  logger.info("Starting seat availability fix (HTTP)");
 
   // Authentication check - require admin token
   const authHeader = req.headers.authorization;
@@ -154,84 +100,31 @@ export const fixSeatAvailabilityHttp = onRequest(async (req, res) => {
     const token = authHeader.split("Bearer ")[1];
     const decodedToken = await admin.auth().verifyIdToken(token);
 
-    // Verify user has admin claim or is authenticated
-    // For extra security, you can require admin claim: decodedToken.admin === true
     if (!decodedToken.uid) {
       res.status(403).json({ success: false, error: "Forbidden" });
       return;
     }
 
-    console.log(`✅ Authenticated user ${decodedToken.uid} initiating seat fix`);
-  } catch (authError: any) {
-    console.error("Authentication failed:", authError.message);
+    logger.info(`Authenticated user initiating seat fix`, { userId: decodedToken.uid });
+  } catch (authError: unknown) {
+    const message = getErrorMessage(authError);
+    logger.error("Authentication failed", authError);
     res.status(401).json({ success: false, error: "Invalid or expired token" });
     return;
   }
 
   try {
-    const ridesSnapshot = await db.collection("rides").get();
-    console.log(`Found ${ridesSnapshot.size} rides to check`);
-
-    let fixedCount = 0;
-    const results: any[] = [];
-
-    for (const rideDoc of ridesSnapshot.docs) {
-      const rideData = rideDoc.data();
-      const rideId = rideDoc.id;
-
-      // Get total seats - use seatsOffered as primary source if available
-      const totalSeats = rideData.seatsOffered || rideData.totalSeats || rideData.seatsTotal || 4;
-
-      // Count seats used by active bookings
-      const bookingsSnapshot = await db.collection("bookings")
-        .where("rideId", "==", rideId)
-        .get();
-
-      let seatsUsed = 0;
-      bookingsSnapshot.forEach((bookingDoc) => {
-        const booking = bookingDoc.data();
-        if (booking.status === "confirmed" || booking.status === "pending_driver") {
-          seatsUsed += booking.seats || 1;
-        }
-      });
-
-      // Calculate correct available seats (never negative)
-      const correctAvailable = Math.max(0, totalSeats - seatsUsed);
-      const currentAvailable = rideData.availableSeats ?? rideData.seatsAvailable ?? 0;
-
-      // Check if needs fixing (negative or incorrect)
-      if (currentAvailable !== correctAvailable || currentAvailable < 0) {
-        await db.collection("rides").doc(rideId).update({
-          availableSeats: correctAvailable,
-          seatsAvailable: correctAvailable,
-          totalSeats: totalSeats,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-
-        fixedCount++;
-        results.push({
-          rideId,
-          before: currentAvailable,
-          after: correctAvailable,
-          totalSeats,
-          seatsUsed,
-        });
-        console.log(`✅ Fixed ride ${rideId}: ${currentAvailable} → ${correctAvailable}`);
-      }
-    }
-
-    console.log(`🎉 Fixed ${fixedCount} rides`);
+    const result = await recalculateSeatAvailability();
 
     res.status(200).json({
       success: true,
-      message: `Fixed ${fixedCount} out of ${ridesSnapshot.size} rides`,
-      fixedCount,
-      totalRides: ridesSnapshot.size,
-      details: results,
+      message: `Fixed ${result.fixedCount} out of ${result.totalRides} rides`,
+      ...result,
     });
-  } catch (error: any) {
-    console.error("❌ Error fixing seat availability:", error);
-    res.status(500).json({ success: false, error: error.message });
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error("Error fixing seat availability", error);
+    res.status(500).json({ success: false, error: message });
   }
 });
 
@@ -250,7 +143,7 @@ export const onUserCreated = onDocumentCreated(
     const email = userData.email;
     const name = userData.name || userData.displayName || "there";
 
-    console.log(`New user created: ${userId} - ${email}`);
+    logger.user.created(userId, email);
 
     // Send welcome email
     if (email) {
@@ -285,7 +178,7 @@ export const onDriverDocumentSubmission = onDocumentUpdated(
     const isNowPending = afterData.driverApproval?.status === 'pending';
 
     if (wasNotPending && isNowPending) {
-      console.log(`🚗 Driver ${userId} submitted documents for approval`);
+      logger.user.documentSubmitted(userId, 'driver_approval');
 
       // Determine which documents were submitted
       const documentTypes: string[] = [];
@@ -310,9 +203,9 @@ export const onDriverDocumentSubmission = onDocumentUpdated(
         };
 
         await sendEmail(adminEmail, "driverDocumentSubmission", [driverInfo, documentTypes]);
-        console.log(`✅ Admin notification sent for driver ${userId} document submission`);
+        logger.info('Admin notification sent for driver document submission', { userId });
       } else {
-        console.warn('⚠️ No admin email configured. Set ADMIN_EMAIL or EMAIL_USER environment variable.');
+        logger.warn('No admin email configured. Set ADMIN_EMAIL or EMAIL_USER environment variable.');
       }
 
       // Also create in-app notification for admins (if admin notification system exists)
@@ -329,7 +222,7 @@ export const onDriverDocumentSubmission = onDocumentUpdated(
           });
         }
       } catch (notifError) {
-        console.error('Failed to create admin notifications:', notifError);
+        logger.error('Failed to create admin notifications', notifError);
       }
     }
   }
@@ -349,13 +242,13 @@ export const onRideCreated = onDocumentCreated(
     const rideId = event.params.rideId;
     const driverId = rideData.driverId;
 
-    console.log(`New ride created: ${rideId} by driver ${driverId}`);
+    logger.ride.created(rideId, driverId);
 
     try {
       // Get driver information
       const driverDoc = await db.collection("users").doc(driverId).get();
       if (!driverDoc.exists) {
-        console.warn(`Driver not found: ${driverId}`);
+        logger.warn('Driver not found', { driverId });
         return;
       }
 
@@ -364,7 +257,7 @@ export const onRideCreated = onDocumentCreated(
       const driverEmail = driverData?.email;
 
       if (!driverEmail) {
-        console.warn(`No email for driver: ${driverId}`);
+        logger.warn('No email for driver', { driverId });
         return;
       }
 
@@ -389,9 +282,9 @@ export const onRideCreated = onDocumentCreated(
       // Send confirmation email with T&C
       await sendEmail(driverEmail, "rideConfirmation", [driverName, rideDetails]);
 
-      console.log(`Ride confirmation email sent to ${driverEmail}`);
+      logger.info('Ride confirmation email sent', { driverEmail });
     } catch (error) {
-      console.error("Error sending ride confirmation email:", error);
+      logger.error('Error sending ride confirmation email', error);
       // Don't throw - we don't want to fail ride creation if email fails
     }
   });
@@ -411,7 +304,7 @@ export const onMessageCreated = onDocumentCreated(
 
     // Skip system messages
     if (messageData.type === 'system' || messageData.senderId === 'system') {
-      console.log(`Skipping push notification for system message: ${messageId}`);
+      logger.debug('Skipping push notification for system message', { messageId });
       return;
     }
 
@@ -421,7 +314,7 @@ export const onMessageCreated = onDocumentCreated(
     const rideId = messageData.rideId;
     const participants = messageData.participants || [];
 
-    console.log(`New message created: ${messageId} from ${senderName} in ride ${rideId}`);
+    logger.info('New message created', { messageId, senderName, rideId });
 
     try {
       // Send push notification to all participants except sender
@@ -436,7 +329,7 @@ export const onMessageCreated = onDocumentCreated(
         const pushTokens: string[] = userData?.pushTokens || [];
 
         if (pushTokens.length === 0) {
-          console.log(`No push tokens for user ${participantId}`);
+          logger.debug('No push tokens for user', { participantId });
           continue;
         }
 
@@ -447,7 +340,7 @@ export const onMessageCreated = onDocumentCreated(
         const messages = [];
         for (const pushToken of pushTokens) {
           if (!Expo.isExpoPushToken(pushToken)) {
-            console.warn(`Invalid Expo push token: ${pushToken}`);
+            logger.warn('Invalid Expo push token', { pushToken });
             continue;
           }
 
@@ -472,15 +365,15 @@ export const onMessageCreated = onDocumentCreated(
           for (const chunk of chunks) {
             try {
               await expo.sendPushNotificationsAsync(chunk);
-              console.log(`Push notification sent to user ${participantId} for message ${messageId}`);
+              logger.info('Push notification sent', { participantId, messageId });
             } catch (error) {
-              console.error(`Error sending push notification to ${participantId}:`, error);
+              logger.error('Error sending push notification', error, { participantId });
             }
           }
         }
       }
     } catch (error) {
-      console.error("Error sending message push notifications:", error);
+      logger.error('Error sending message push notifications', error);
       // Don't throw - we don't want to fail message creation if notification fails
     }
   }
@@ -908,10 +801,11 @@ export const createBooking = onCall(async (request) => {
       bookingId: docRef.id,
       message: "Booking request sent to driver",
     };
-  } catch (error: any) {
-    console.error("Error creating booking:", error);
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError("internal", error.message || "Failed to create booking");
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error('Error creating booking', error);
+    if (isHttpsError(error)) throw error;
+    throw new HttpsError("internal", message || "Failed to create booking");
   }
 });
 
@@ -984,10 +878,11 @@ export const updateBookingStatus = onCall(async (request) => {
       success: true,
       message: `Booking status updated to ${status}`,
     };
-  } catch (error: any) {
-    console.error("Error updating booking:", error);
-    if (error instanceof HttpsError) throw error;
-    throw new HttpsError("internal", error.message || "Failed to update booking");
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error('Error updating booking', error);
+    if (isHttpsError(error)) throw error;
+    throw new HttpsError("internal", message || "Failed to update booking");
   }
 });
 
@@ -1019,9 +914,10 @@ export const getUserBookings = onCall(async (request) => {
     }));
 
     return { success: true, bookings };
-  } catch (error: any) {
-    console.error("Error getting bookings:", error);
-    throw new HttpsError("internal", error.message || "Failed to get bookings");
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    logger.error('Error getting bookings', error);
+    throw new HttpsError("internal", message || "Failed to get bookings");
   }
 });
 
@@ -1088,7 +984,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
   }
 
   try {
-    console.log(`🚗 Creating booking: rider=${riderId}, ride=${rideId}, seats=${seats}`);
+    logger.booking.created('pending', rideId, riderId);
 
     // Use transaction for atomic seat checking and booking creation
     const result = await db.runTransaction(async (transaction) => {
@@ -1224,7 +1120,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         });
 
-        console.log(`💳 Created Stripe customer: ${customerId} for user ${riderId}`);
+        logger.stripe.accountCreated(customerId, riderId);
       }
 
       // Create SetupIntent to save payment method (not charge yet)
@@ -1247,7 +1143,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      console.log(`💳 SetupIntent created: ${setupIntent.id} - Payment will be authorized 24h before ride`);
+      logger.payment.initiated(setupIntent.id, result.totalAmount, result.bookingId);
 
       // Send notification and email to driver (non-blocking)
       try {
@@ -1278,7 +1174,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
           type: "booking",
           data: { bookingId: result.bookingId, rideId },
         });
-        console.log(`📱 In-app notification sent to driver ${result.driverId}`);
+        logger.info('In-app notification sent to driver', { driverId: result.driverId });
 
         // Email to Driver
         if (driverData.email) {
@@ -1287,7 +1183,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
             riderName,
             rideDetails,
           ]);
-          console.log(`📧 Email sent to driver: ${driverData.email}`);
+          logger.info('Email sent to driver', { email: driverData.email });
         }
 
         // 2. Notify Rider (Confirmation)
@@ -1297,11 +1193,11 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
             rideDetails,
             driverData.name || "the driver"
           ]);
-          console.log(`📧 Confirmation email sent to rider: ${riderData.email}`);
+          logger.info('Confirmation email sent to rider', { email: riderData.email });
         }
 
       } catch (notifError) {
-        console.error(`⚠️ Failed to send notification/email to driver:`, notifError);
+        logger.error('Failed to send notification/email to driver', notifError);
         // Don't fail booking if notification fails
       }
 
@@ -3990,27 +3886,73 @@ export const deleteUserAccount = onCall(async (request) => {
     // 1. Get user data first (for Stripe cleanup)
     const userDoc = await db.collection("users").doc(userId).get();
     const userData = userDoc.exists ? userDoc.data() : null;
+    const stripe = getStripe();
+    let refundsProcessed = 0;
+    let refundErrors = 0;
 
-    // 2. Cancel all pending/confirmed bookings where user is passenger
-    console.log(`📋 Cancelling user's bookings...`);
+    // 2. Cancel all pending/confirmed bookings where user is passenger (with refunds)
+    logger.info("Cancelling user's passenger bookings with refunds");
     const passengerBookings = await db.collection("bookings")
       .where("passengerId", "==", userId)
       .where("status", "in", ["pending", "pending_driver", "confirmed"])
       .get();
 
-    const batch1 = db.batch();
-    passengerBookings.forEach((doc) => {
-      batch1.update(doc.ref, {
+    for (const bookingDoc of passengerBookings.docs) {
+      const booking = bookingDoc.data();
+
+      // Process refund if payment exists
+      if (booking.payment?.intentId) {
+        try {
+          const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment.intentId);
+
+          if (paymentIntent.status === "requires_capture") {
+            // Cancel uncaptured payment
+            await stripe.paymentIntents.cancel(booking.payment.intentId);
+            await bookingDoc.ref.update({
+              "payment.status": "cancelled",
+              "payment.refundReason": "Passenger account deleted",
+            });
+            refundsProcessed++;
+          } else if (paymentIntent.status === "succeeded" && paymentIntent.amount_received > 0) {
+            // Refund captured payment - full refund since it's account deletion
+            await stripe.refunds.create({
+              payment_intent: booking.payment.intentId,
+              reason: "requested_by_customer",
+            });
+            await bookingDoc.ref.update({
+              "payment.status": "refunded",
+              "payment.refundReason": "Passenger account deleted - full refund",
+            });
+            refundsProcessed++;
+          }
+        } catch (refundError: unknown) {
+          logger.error("Failed to process refund for passenger booking", refundError);
+          refundErrors++;
+        }
+      }
+
+      // Restore seats to the ride
+      if (booking.rideId && booking.seats) {
+        try {
+          await db.collection("rides").doc(booking.rideId).update({
+            availableSeats: admin.firestore.FieldValue.increment(booking.seats),
+            seatsAvailable: admin.firestore.FieldValue.increment(booking.seats),
+          });
+        } catch (e) {
+          // Ride may not exist anymore
+        }
+      }
+
+      await bookingDoc.ref.update({
         status: "cancelled",
         cancelledAt: admin.firestore.FieldValue.serverTimestamp(),
         cancelReason: "User account deleted",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-    });
-    await batch1.commit();
-    console.log(`✅ Cancelled ${passengerBookings.size} passenger bookings`);
+    }
+    logger.info(`Cancelled ${passengerBookings.size} passenger bookings, ${refundsProcessed} refunds processed`);
 
-    // 3. Cancel all pending bookings where user is driver and restore seats
+    // 3. Cancel all bookings where user is driver (with refunds for passengers)
     const driverBookings = await db.collection("bookings")
       .where("driverId", "==", userId)
       .where("status", "in", ["pending", "pending_driver", "confirmed"])
@@ -4019,12 +3961,58 @@ export const deleteUserAccount = onCall(async (request) => {
     for (const bookingDoc of driverBookings.docs) {
       const booking = bookingDoc.data();
 
+      // Process refund for the passenger if payment exists
+      if (booking.payment?.intentId) {
+        try {
+          const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment.intentId);
+
+          if (paymentIntent.status === "requires_capture") {
+            await stripe.paymentIntents.cancel(booking.payment.intentId);
+            await bookingDoc.ref.update({
+              "payment.status": "cancelled",
+              "payment.refundReason": "Driver account deleted - booking cancelled",
+            });
+            refundsProcessed++;
+          } else if (paymentIntent.status === "succeeded" && paymentIntent.amount_received > 0) {
+            // Full refund since driver deleted account (not passenger's fault)
+            await stripe.refunds.create({
+              payment_intent: booking.payment.intentId,
+              reason: "requested_by_customer",
+            });
+            await bookingDoc.ref.update({
+              "payment.status": "refunded",
+              "payment.refundReason": "Driver account deleted - full refund",
+            });
+            refundsProcessed++;
+          }
+        } catch (refundError: unknown) {
+          logger.error("Failed to process refund for driver booking", refundError);
+          refundErrors++;
+        }
+      }
+
+      // Notify the passenger that their booking was cancelled
+      const passengerId = booking.passengerId || booking.riderId;
+      if (passengerId) {
+        await createNotification({
+          userId: passengerId,
+          title: "Booking Cancelled",
+          body: "Your booking was cancelled because the driver deleted their account. A full refund will be processed.",
+          type: "booking",
+          data: { bookingId: bookingDoc.id, rideId: booking.rideId },
+        });
+      }
+
       // Restore seats to the ride
       if (booking.rideId && booking.seats) {
-        await db.collection("rides").doc(booking.rideId).update({
-          availableSeats: admin.firestore.FieldValue.increment(booking.seats),
-          seatsAvailable: admin.firestore.FieldValue.increment(booking.seats),
-        });
+        try {
+          await db.collection("rides").doc(booking.rideId).update({
+            availableSeats: admin.firestore.FieldValue.increment(booking.seats),
+            seatsAvailable: admin.firestore.FieldValue.increment(booking.seats),
+          });
+        } catch (e) {
+          // Ride may not exist anymore
+        }
       }
 
       await bookingDoc.ref.update({
@@ -4034,7 +4022,7 @@ export const deleteUserAccount = onCall(async (request) => {
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
     }
-    console.log(`✅ Cancelled ${driverBookings.size} driver bookings`);
+    logger.info(`Cancelled ${driverBookings.size} driver bookings, total refunds: ${refundsProcessed}, errors: ${refundErrors}`);
 
     // 4. Cancel/delete user's rides
     console.log(`🚗 Cancelling user's rides...`);

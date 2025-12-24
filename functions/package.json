@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "Cloud Functions for Carpool App",
   "scripts": {
-    "lint": "echo 'Skipping lint for deployment'",
+    "lint": "eslint --ext .ts src/",
+    "lint:fix": "eslint --ext .ts src/ --fix",
     "build": "tsc --noEmitOnError",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
