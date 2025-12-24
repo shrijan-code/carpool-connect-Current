@@ -3,9 +3,9 @@
 
 ---
 
-**Date:** December 18, 2024  
-**Version:** 1.0  
-**Status:** Approved & Partially Implemented
+**Date:** December 24, 2024  
+**Version:** 2.0 (Bulletproof Payment)  
+**Status:** Implemented
 
 ---
 
@@ -181,25 +181,39 @@ if (hasConfirmedBookings) {
 
 ---
 
-## 5. Payment Flow
+## 5. Payment Flow (BULLETPROOF)
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        PAYMENT TIMELINE                          │
+│                   BULLETPROOF PAYMENT TIMELINE                   │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  BOOKING          24H BEFORE         RIDE START      COMPLETE   │  
-│  CREATED          DEPARTURE          ─────────►      ─────────► │
-│     │                 │                  │               │      │
-│     ▼                 ▼                  ▼               ▼      │
-│ ┌────────┐       ┌─────────┐        ┌────────┐     ┌─────────┐  │
-│ │ Save   │       │Authorize│        │  Hold  │     │ Capture │  │
-│ │Payment │       │ Payment │        │  Funds │     │ Payment │  │
-│ │ Method │       │  $$$    │        │        │     │  $$$    │  │
-│ └────────┘       └─────────┘        └────────┘     └─────────┘  │
+│  BOOKING         DRIVER       RIDE START      RIDE COMPLETE      │  
+│  REQUEST         ACCEPTS       ─────────►      ─────────►        │
+│     │               │              │               │             │
+│     ▼               ▼              ▼               ▼             │
+│ ┌────────┐    ┌─────────┐    ┌─────────┐    ┌──────────┐        │
+│ │Authorize│    │ Verify  │    │ Verify  │    │ Capture  │        │
+│ │Payment │    │ or Defer│    │ ALL     │    │ Payment  │        │
+│ │  $$$$  │    │ (>7days)│    │ Auth OK │    │   $$$$   │        │
+│ └────────┘    └─────────┘    └─────────┘    └──────────┘        │
+│     │               │              │               │             │
+│   Fail?         Fail?          Invalid?        Fail?            │
+│     ↓               ↓              ↓               ↓             │
+│  REJECT        CANCEL         EXCLUDE        ADMIN ALERT        │
+│  BOOKING       BOOKING        RIDER          + RETRY             │
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+### Key Changes (December 2024)
+
+| Before | After (Bulletproof) |
+|--------|---------------------|
+| Save card, authorize 24h before | **Authorize immediately at booking** |
+| No verification at ride start | **Verify all PaymentIntents before ride starts** |
+| Silent bypass for missing payment | **Admin alert, rider excluded** |
+| No retry limit | **Max 3 authorization attempts** |
 
 ### Payment States
 
@@ -248,14 +262,18 @@ if (hasConfirmedBookings) {
 - [ ] `components/BookingCard.tsx` - Cancellation fee display
 - [ ] Cancellation fee calculator UI
 
-### Backend (Cloud Functions)
+### Backend (Cloud Functions) ✅ IMPLEMENTED
 
-- [ ] `deleteRide` - Enforce confirmed booking check
-- [ ] `updateRide` - Enforce limited edit when confirmed
-- [ ] `cancelRide` - Process refunds atomically
-- [ ] `cancelBooking` - Calculate and apply fees
-- [ ] Scheduled: `authorizeUpcomingPayments` (24h before)
-- [ ] Webhook: Handle Stripe payment events
+- [x] `createPendingBooking` - Authorization before booking creation
+- [x] `cancelBooking` - PaymentIntent cancellation + refunds
+- [x] `startRide` - Verify all PaymentIntents before ride
+- [x] `completeRideAndCharge` - Mandatory capture with admin alerts
+- [x] `authorizeUpcomingRidePayments` - Re-auth for >7 day bookings
+- [x] Webhook: Handle Stripe payment events
+
+### Testing
+
+- [x] Test card documentation: See [docs/STRIPE_TEST_CARDS.md](docs/STRIPE_TEST_CARDS.md)
 
 ### Database (Firestore)
 
