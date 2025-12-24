@@ -973,7 +973,7 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
     throw new HttpsError("unauthenticated", "User must be logged in");
   }
 
-  const { rideId, seats } = request.data;
+  const { rideId, seats, paymentMethodId, paymentIntentId } = request.data;
   const riderId = request.auth.uid;
 
   // Rate limiting - prevent booking spam
@@ -982,6 +982,13 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
   // Input validation
   if (!rideId || !seats) {
     throw new HttpsError("invalid-argument", "Missing rideId or seats");
+  }
+
+  // BULLETPROOF: Require EITHER paymentMethodId OR paymentIntentId
+  // - paymentIntentId: From existing flow where user already authorized via Stripe Payment Sheet
+  // - paymentMethodId: For direct authorization using saved payment method
+  if (!paymentMethodId && !paymentIntentId) {
+    throw new HttpsError("invalid-argument", "Payment is required. Please provide paymentMethodId or paymentIntentId.");
   }
 
   const sanitizedSeats = sanitizeNumber(seats, 1, 10, 1);
@@ -1098,8 +1105,10 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
       };
     });
 
-    // Get or create Stripe customer and use SetupIntent to save payment method
-    // (Authorization will happen 24h before ride via scheduled function)
+    // BULLETPROOF PAYMENT: Ensure payment is authorized before completing booking
+    // Supports two flows:
+    // 1. paymentIntentId provided: Payment already authorized via Stripe Payment Sheet
+    // 2. paymentMethodId provided: Authorize payment now using saved payment method
     try {
       const stripe = getStripe();
 
@@ -1116,11 +1125,10 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
           name: riderData.name,
           metadata: { userId: riderId },
         }, {
-          idempotencyKey: `customer_${riderId}`, // Prevent duplicate customers on retry
+          idempotencyKey: `customer_${riderId}`,
         });
         customerId = customer.id;
 
-        // Save customer ID to user document
         await db.collection("users").doc(riderId).update({
           stripeCustomerId: customerId,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -1129,27 +1137,124 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
         logger.stripe.accountCreated(customerId, riderId);
       }
 
-      // Create SetupIntent to save payment method (not charge yet)
-      const setupIntent = await stripe.setupIntents.create({
-        customer: customerId,
-        payment_method_types: ['card'],
-        metadata: {
-          bookingId: result.bookingId,
-          rideId,
-          riderId,
-        },
-      });
+      let finalPaymentIntentId: string;
+      let finalPaymentMethodId: string | null = null;
 
-      // Update booking with SetupIntent details
+      if (paymentIntentId) {
+        // === FLOW 1: PaymentIntent already created via Stripe Payment Sheet ===
+        // Verify the PaymentIntent is properly authorized
+        const existingPI = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (existingPI.status !== "requires_capture" && existingPI.status !== "succeeded") {
+          // PaymentIntent not properly authorized - reject booking
+          console.error(`❌ PaymentIntent ${paymentIntentId} not authorized. Status: ${existingPI.status}`);
+
+          // Clean up booking
+          await db.runTransaction(async (transaction) => {
+            const bookingRef = db.collection("bookings").doc(result.bookingId);
+            const rideRef = db.collection("rides").doc(rideId);
+            transaction.delete(bookingRef);
+            transaction.update(rideRef, {
+              seatsAvailable: admin.firestore.FieldValue.increment(seats),
+              availableSeats: admin.firestore.FieldValue.increment(seats),
+            });
+          });
+
+          throw new HttpsError(
+            "failed-precondition",
+            "Payment must be authorized before booking. Please complete payment."
+          );
+        }
+
+        console.log(`✅ PaymentIntent ${paymentIntentId} verified as authorized (status: ${existingPI.status})`);
+        finalPaymentIntentId = paymentIntentId;
+        finalPaymentMethodId = existingPI.payment_method as string || null;
+
+        // Update PaymentIntent metadata with booking info
+        await stripe.paymentIntents.update(paymentIntentId, {
+          metadata: {
+            ...existingPI.metadata,
+            bookingId: result.bookingId,
+          },
+        });
+
+      } else if (paymentMethodId) {
+        // === FLOW 2: Create and authorize PaymentIntent using saved payment method ===
+        // Attach payment method to customer if not already
+        try {
+          const paymentMethod = await stripe.paymentMethods.retrieve(paymentMethodId);
+          if (!paymentMethod.customer) {
+            await stripe.paymentMethods.attach(paymentMethodId, { customer: customerId });
+          }
+        } catch (attachError) {
+          console.error("Failed to attach payment method:", attachError);
+        }
+
+        // CRITICAL: Authorize payment NOW (not just save it)
+        // This creates a PaymentIntent with manual capture - funds are held immediately
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: result.totalAmount,
+          currency: "aud",
+          customer: customerId,
+          payment_method: paymentMethodId,
+          confirm: true, // Authorize immediately
+          capture_method: "manual", // Hold funds, don't charge yet
+          automatic_payment_methods: {
+            enabled: true,
+            allow_redirects: "never",
+          },
+          metadata: {
+            bookingId: result.bookingId,
+            rideId,
+            riderId,
+            driverId: result.driverId,
+          },
+        }, {
+          idempotencyKey: `booking_auth_${result.bookingId}`,
+        });
+
+        // Check authorization result
+        if (paymentIntent.status !== "requires_capture" && paymentIntent.status !== "succeeded") {
+          // Authorization failed - delete the booking and restore seats
+          console.error(`❌ Payment authorization failed with status: ${paymentIntent.status}`);
+
+          await db.runTransaction(async (transaction) => {
+            const bookingRef = db.collection("bookings").doc(result.bookingId);
+            const rideRef = db.collection("rides").doc(rideId);
+
+            transaction.delete(bookingRef);
+            transaction.update(rideRef, {
+              seatsAvailable: admin.firestore.FieldValue.increment(seats),
+              availableSeats: admin.firestore.FieldValue.increment(seats),
+            });
+          });
+
+          throw new HttpsError(
+            "failed-precondition",
+            "Payment authorization failed. Please check your payment method has sufficient funds."
+          );
+        }
+
+        console.log(`✅ Payment authorized for booking ${result.bookingId}: $${(result.totalAmount / 100).toFixed(2)} AUD`);
+        finalPaymentIntentId = paymentIntent.id;
+        finalPaymentMethodId = paymentMethodId;
+      } else {
+        // This should never happen due to earlier validation
+        throw new HttpsError("invalid-argument", "Payment is required.");
+      }
+
+      // Update booking with authorized payment details (common for both flows)
       await db.collection("bookings").doc(result.bookingId).update({
-        "payment.setupIntentId": setupIntent.id,
-        "payment.clientSecret": setupIntent.client_secret,
+        "payment.paymentIntentId": finalPaymentIntentId,
+        "payment.paymentMethodId": finalPaymentMethodId,
         "payment.customerId": customerId,
-        "payment.status": "payment_method_required",
+        "payment.status": "authorized",
+        "payment.authorizedAt": admin.firestore.FieldValue.serverTimestamp(),
+        "payment.amount": result.totalAmount,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      logger.payment.initiated(setupIntent.id, result.totalAmount, result.bookingId);
+      logger.payment.initiated(finalPaymentIntentId, result.totalAmount, result.bookingId);
 
       // Send notification and email to driver (non-blocking)
       try {
@@ -1210,12 +1315,12 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
       return {
         success: true,
         bookingId: result.bookingId,
-        clientSecret: setupIntent.client_secret,
-        message: "Booking request sent to driver. You'll be notified when they respond.",
+        paymentAuthorized: true,
+        message: "Booking created with payment authorized. Your request has been sent to the driver.",
       };
     } catch (stripeError: any) {
-      // If SetupIntent creation fails, delete the booking and restore seats
-      console.error("❌ Failed to create SetupIntent:", stripeError);
+      // If PaymentIntent creation fails, delete the booking and restore seats
+      console.error("❌ Failed to authorize payment:", stripeError);
 
       try {
         await db.runTransaction(async (transaction) => {
@@ -2145,20 +2250,35 @@ export const completeRideAndCharge = onCall(
           const paymentIntentId = bookingData.payment?.paymentIntentId;
 
           if (!paymentIntentId) {
-            // No payment intent - mark booking as completed but note no payment captured
-            console.warn(`⚠️ No PaymentIntent for booking ${bookingDoc.id} - marking as completed without payment capture`);
+            // BULLETPROOF: No payment intent = payment failure - do NOT complete silently
+            console.error(`❌ CRITICAL: No PaymentIntent for booking ${bookingDoc.id} - payment required but not authorized`);
+
             await bookingDoc.ref.update({
-              status: "completed",
-              completedAt: admin.firestore.FieldValue.serverTimestamp(),
+              status: "payment_failed",
+              "payment.status": "missing_authorization",
+              "payment.failureReason": "No payment authorization found at ride completion",
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-              "payment.status": "no_payment_required", // Or test mode
-              // Review tracking - enables pending review queries
-              riderReviewedDriver: false,
-              driverReviewedRider: false,
             });
-            // Still count the revenue (for testing/demo purposes)
-            totalRevenue += bookingAmount;
-            successfulCharges++;
+
+            // Alert admin about critical payment failure
+            await createNotification({
+              userId: "admin", // Admin user ID or use a special channel
+              title: "⚠️ CRITICAL: Missing Payment Authorization",
+              body: `Booking ${bookingDoc.id} for ride ${rideId} has no payment authorization. Rider: ${bookingData.riderId}`,
+              type: "system", // Use valid type
+              data: { bookingId: bookingDoc.id, rideId, riderId: bookingData.riderId, severity: "critical" },
+            });
+
+            // Notify rider about payment issue
+            await createNotification({
+              userId: bookingData.riderId,
+              title: "Payment Issue with Your Completed Ride",
+              body: "There was a problem processing your payment. Please contact support.",
+              type: "payment", // Use valid type
+              data: { bookingId: bookingDoc.id, rideId },
+            });
+
+            failedCharges++;
             continue;
           }
 
