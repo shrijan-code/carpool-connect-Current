@@ -48,7 +48,7 @@ export default function RidesScreen() {
 
   const [activeTab, setActiveTab] = useState<'rides' | 'bookings'>('bookings');
   const [showRatingModal, setShowRatingModal] = useState<boolean>(false);
-  const [ratingTarget, setRatingTarget] = useState<{ rideId: string; recipientId: string; recipientName: string; type: 'driver' | 'rider' } | null>(null);
+  const [ratingTarget, setRatingTarget] = useState<{ rideId: string; recipientId: string; recipientName: string; type: 'driver' | 'rider'; bookingId?: string } | null>(null);
   const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
   const [showMap, setShowMap] = useState<boolean>(false);
   const [driverPendingRequests, setDriverPendingRequests] = useState<Booking[]>([]); // Driver's pending booking requests
@@ -193,8 +193,8 @@ export default function RidesScreen() {
     }).length;
   };
 
-  const handleRateUser = (rideId: string, recipientId: string, recipientName: string, type: 'driver' | 'rider') => {
-    setRatingTarget({ rideId, recipientId, recipientName, type });
+  const handleRateUser = (rideId: string, recipientId: string, recipientName: string, type: 'driver' | 'rider', bookingId?: string) => {
+    setRatingTarget({ rideId, recipientId, recipientName, type, bookingId });
     setShowRatingModal(true);
   };
 
@@ -203,14 +203,28 @@ export default function RidesScreen() {
 
     setIsSubmittingRating(true);
     try {
-      await RatingService.submitRating({
-        rating,
-        comment,
-        rideId: ratingTarget.rideId,
-        reviewerId: user.id,
-        revieweeId: ratingTarget.recipientId,
-        type: 'ride'
-      });
+      // Use the new role-specific review functions
+      if (ratingTarget.type === 'driver') {
+        // User is a rider rating a driver
+        await RatingService.submitDriverReview({
+          rideId: ratingTarget.rideId,
+          bookingId: ratingTarget.bookingId || '',
+          driverId: ratingTarget.recipientId,
+          riderId: user.id,
+          rating,
+          comment,
+        });
+      } else {
+        // User is a driver rating a rider
+        await RatingService.submitRiderReview({
+          rideId: ratingTarget.rideId,
+          bookingId: ratingTarget.bookingId || '',
+          driverId: user.id,
+          riderId: ratingTarget.recipientId,
+          rating,
+          comment,
+        });
+      }
 
       Alert.alert(
         'Rating Submitted',
@@ -223,7 +237,8 @@ export default function RidesScreen() {
       await loadData();
     } catch (err) {
       console.error('Error submitting rating:', err);
-      Alert.alert('Error', 'Failed to submit rating. Please try again.', [{ text: 'OK' }]);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to submit rating. Please try again.';
+      Alert.alert('Error', errorMessage, [{ text: 'OK' }]);
     } finally {
       setIsSubmittingRating(false);
     }
@@ -592,7 +607,8 @@ export default function RidesScreen() {
                                 ride.id,
                                 passenger.user.id,
                                 passenger.user.name || passenger.user.displayName,
-                                'rider'
+                                'rider',
+                                passenger.bookingId
                               )}
                             >
                               <Star size={16} color={colors.warning} />
@@ -604,12 +620,17 @@ export default function RidesScreen() {
                           {user.role === 'rider' && ride.driver && (
                             <TouchableOpacity
                               style={[styles.rateButton, { backgroundColor: colors.background, borderColor: colors.warning }]}
-                              onPress={() => handleRateUser(
-                                ride.id,
-                                ride.driverId,
-                                ride.driver?.name || ride.driver?.displayName || 'Driver',
-                                'driver'
-                              )}
+                              onPress={() => {
+                                // Find the booking for this ride to get the bookingId
+                                const booking = userBookings.find(b => b.rideId === ride.id);
+                                handleRateUser(
+                                  ride.id,
+                                  ride.driverId,
+                                  ride.driver?.name || ride.driver?.displayName || 'Driver',
+                                  'driver',
+                                  booking?.id
+                                );
+                              }}
                             >
                               <Star size={16} color={colors.warning} />
                               <Text style={[styles.rateButtonText, { color: colors.warning }]}>
