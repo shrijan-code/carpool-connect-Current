@@ -653,10 +653,15 @@ export default function ProfileScreen() {
                 activeOpacity={0.7}
               >
                 <Shield size={20} color={Colors.background} />
-                <Text style={[styles.statValue, { fontSize: 18 }]} numberOfLines={1}>
-                  {verificationStatus?.verificationLevel === 'premium' ? '✓' : '✗'}
-                </Text>
-                <Text style={styles.statLabel}>Verified</Text>
+                <View style={styles.verificationStatusRow}>
+                  <Text style={[styles.statValue, { fontSize: 14 }]}>
+                    {verificationStatus?.verificationLevel === 'premium' ? '✓' : '✗'}
+                  </Text>
+                  <Text style={[styles.statValue, { fontSize: 12, marginLeft: 2 }]}>
+                    {verificationStatus?.verificationLevel === 'premium' ? 'Verified' : 'Not Verified'}
+                  </Text>
+                </View>
+                <Text style={styles.statLabel}>Status</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2359,5 +2364,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
     color: '#FFFFFF',
+  },
+  verificationStatusRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
   },
 });

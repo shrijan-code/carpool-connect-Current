@@ -207,6 +207,11 @@ export interface ChatMessage {
   imageUrl?: string;
   readBy: string[];
   participants: string[];
+  // Message status tracking
+  status?: 'sending' | 'sent' | 'delivered' | 'read';
+  deliveredTo?: string[];  // User IDs who have received the message
+  deliveredAt?: string;    // ISO timestamp when first delivered
+  readAt?: string;         // ISO timestamp when first read
 }
 
 export interface MessageThread {

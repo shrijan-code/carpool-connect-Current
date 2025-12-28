@@ -8,12 +8,13 @@ import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { ChatService } from '@/services/chat';
 import { ChatMessage, Ride } from '@/types';
-import { MessageCircle, Send, Phone, MoreVertical } from 'lucide-react-native';
+import { MessageCircle, Send, Phone, MoreVertical, Check, CheckCheck } from 'lucide-react-native';
 import { logger } from '@/utils/logger';
 
 interface ChatRoom {
   id: string;
   rideId: string;
+  bookingId?: string;  // Added for message sending
   ride: Ride;
   otherUser: {
     id: string;
@@ -79,6 +80,7 @@ export default function ChatScreen() {
                 rooms.push({
                   id: chatId,
                   rideId: ride.id,
+                  bookingId: passenger.bookingId,  // Include bookingId for message sending
                   ride,
                   otherUser: {
                     id: passenger.id,
@@ -105,6 +107,7 @@ export default function ChatScreen() {
             rooms.push({
               id: chatId,
               rideId: booking.rideId,
+              bookingId: booking.id,  // Include bookingId for message sending
               ride: booking.ride,
               otherUser: {
                 id: booking.ride.driverId,
@@ -177,19 +180,21 @@ export default function ChatScreen() {
     setLoading(true);
 
     try {
-      logger.debug('Sending message', { rideId: room.rideId });
+      logger.debug('Sending message', { rideId: room.rideId, bookingId: room.bookingId });
 
       await ChatService.sendMessage(
         room.rideId,
         user.id,
         user.name,
-        messageText
+        messageText,
+        room.bookingId  // Pass bookingId to ensure participants are set correctly
       );
 
       logger.debug('Message sent successfully');
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Send message error:', error);
-      Alert.alert('Error', `Failed to send message: ${error.message || 'Unknown error'}`);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Error', `Failed to send message: ${errorMessage}`);
       setNewMessage(messageText); // Restore message on error
     } finally {
       setLoading(false);
@@ -382,16 +387,30 @@ export default function ChatScreen() {
                       {message.message}
                     </Text>
                   </View>
-                  <Text style={styles.messageTime}>
-                    {typeof message.timestamp === 'string'
-                      ? new Date(message.timestamp).toLocaleTimeString('en-US', {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                      })
-                      : message.timestamp
-                    }
-                  </Text>
+                  <View style={styles.messageFooter}>
+                    <Text style={styles.messageTime}>
+                      {typeof message.timestamp === 'string'
+                        ? new Date(message.timestamp).toLocaleTimeString('en-US', {
+                          hour: 'numeric',
+                          minute: '2-digit',
+                          hour12: true
+                        })
+                        : message.timestamp
+                      }
+                    </Text>
+                    {/* Message status indicators - only show for current user's messages */}
+                    {message.isCurrentUser && (
+                      <View style={styles.messageStatus}>
+                        {message.status === 'read' ? (
+                          <CheckCheck size={14} color={Colors.primary} />
+                        ) : message.status === 'delivered' ? (
+                          <CheckCheck size={14} color={Colors.textLight} />
+                        ) : (
+                          <Check size={14} color={Colors.textLight} />
+                        )}
+                      </View>
+                    )}
+                  </View>
                 </View>
               );
             })}
@@ -622,6 +641,14 @@ const styles = StyleSheet.create({
   messageTime: {
     fontSize: 12,
     color: Colors.textLight,
+  },
+  messageFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  messageStatus: {
+    marginLeft: 2,
   },
   messageInput: {
     flexDirection: 'row',

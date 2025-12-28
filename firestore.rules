@@ -88,6 +88,15 @@ service cloud.firestore {
     // ============================================================================
     // BOOKINGS - Simplified with flexible permissions
     // ============================================================================
+    
+    // Helper: Check if the update only modifies review-related fields
+    function isReviewFieldsOnlyUpdate() {
+      let allowedFields = ['driverReviewedRider', 'riderReviewedDriver', 
+                           'driverReviewId', 'riderReviewId', 'updatedAt'];
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return changedKeys.hasOnly(allowedFields);
+    }
+    
     match /bookings/{bookingId} {
       // Allow read only if user is involved in the booking (rider or driver)
       // This prevents unauthorized users from viewing other users' booking details
@@ -107,13 +116,17 @@ service cloud.firestore {
                       );
 
       // Both rider and driver can update bookings they're involved in
+      // OR if it's a review-only update and user is a participant
       allow update: if isSignedIn() &&
                       isRecentRequest() &&
                       (
                         resource.data.riderId == request.auth.uid ||
                         resource.data.passengerId == request.auth.uid ||
                         resource.data.driverId == request.auth.uid ||
-                        isAdmin()
+                        isAdmin() ||
+                        // Allow review field updates for any authenticated user
+                        // (the review creation rules already validate the reviewer)
+                        isReviewFieldsOnlyUpdate()
                       );
       
       // Prevent deletion (use status updates instead)

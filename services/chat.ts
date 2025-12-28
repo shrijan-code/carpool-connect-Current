@@ -23,23 +23,47 @@ import { ImageService } from './image';
 import { NotificationService } from './notifications';
 
 export class ChatService {
-  // Get all participants for a ride
+  // Get all participants for a ride (including from confirmed bookings)
   static async getParticipantsForRide(rideId: string): Promise<string[]> {
     try {
-      const rideDoc = await getDoc(doc(db, 'rides', rideId));
-      if (!rideDoc.exists()) return [];
-
-      const rideData = rideDoc.data();
       const participants = new Set<string>();
 
-      // Always include driver
-      if (rideData.driverId) participants.add(rideData.driverId);
+      // Get ride data for driver
+      const rideDoc = await getDoc(doc(db, 'rides', rideId));
+      if (rideDoc.exists()) {
+        const rideData = rideDoc.data();
 
-      // Include all passengers from all bundles/bookings
-      if (rideData.passengers && Array.isArray(rideData.passengers)) {
-        rideData.passengers.forEach((p: any) => {
-          if (p.id) participants.add(p.id);
+        // Always include driver
+        if (rideData.driverId) participants.add(rideData.driverId);
+
+        // Include all passengers from ride's passengers array
+        if (rideData.passengers && Array.isArray(rideData.passengers)) {
+          rideData.passengers.forEach((p: any) => {
+            if (p.id) participants.add(p.id);
+          });
+        }
+      }
+
+      // Also fetch from confirmed bookings to ensure riders are included
+      // This handles cases where the booking exists but rider isn't in ride.passengers yet
+      try {
+        const bookingsQuery = query(
+          collection(db, 'bookings'),
+          where('rideId', '==', rideId),
+          where('status', 'in', ['pending_driver', 'confirmed', 'completed'])
+        );
+        const bookingsSnapshot = await getDocs(bookingsQuery);
+
+        bookingsSnapshot.forEach((bookingDoc) => {
+          const bookingData = bookingDoc.data();
+          // Add rider from booking
+          if (bookingData.riderId) participants.add(bookingData.riderId);
+          if (bookingData.passengerId) participants.add(bookingData.passengerId);
+          // Also ensure driver is included
+          if (bookingData.driverId) participants.add(bookingData.driverId);
         });
+      } catch (bookingError) {
+        console.warn('Error fetching bookings for participants:', bookingError);
       }
 
       return Array.from(participants);
@@ -143,6 +167,7 @@ export class ChatService {
         type: 'text' as const,
         readBy: [senderId],
         participants,
+        status: 'sent' as const,  // Message status tracking
         timestamp: serverTimestamp()
       };
 
@@ -353,7 +378,11 @@ export class ChatService {
           type: data.type || 'text',
           imageUrl: data.imageUrl,
           readBy: data.readBy || [],
-          participants: data.participants || []
+          participants: data.participants || [],
+          status: data.status || 'sent',
+          deliveredTo: data.deliveredTo || [],
+          deliveredAt: data.deliveredAt,
+          readAt: data.readAt
         });
       });
       callback(messages.reverse());
@@ -390,7 +419,7 @@ export class ChatService {
     }
   }
 
-  // Mark messages as read
+  // Mark messages as read and update status
   static async markMessagesAsRead(
     rideId: string,
     userId: string
@@ -410,19 +439,29 @@ export class ChatService {
       }
 
       const batch = writeBatch(db);
+      const now = new Date().toISOString();
+
       querySnapshot.docs.forEach(docSnapshot => {
         const data = docSnapshot.data();
         const readBy = data.readBy || [];
 
         if (!readBy.includes(userId)) {
-          batch.update(doc(db, 'messages', docSnapshot.id), {
-            readBy: [...readBy, userId]
-          });
+          const updateData: Record<string, unknown> = {
+            readBy: [...readBy, userId],
+            status: 'read',  // Update status to read
+          };
+
+          // Only set readAt if this is the first read by someone other than sender
+          if (!data.readAt) {
+            updateData.readAt = now;
+          }
+
+          batch.update(doc(db, 'messages', docSnapshot.id), updateData);
         }
       });
 
       await batch.commit();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Mark messages as read error:', error);
     }
   }

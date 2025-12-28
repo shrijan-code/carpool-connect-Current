@@ -6,6 +6,7 @@ import {
   query,
   where,
   getDocs,
+  getDoc,
   orderBy,
   limit,
   runTransaction,
@@ -224,6 +225,42 @@ export class RatingService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - REVIEW_WINDOW_DAYS);
 
+    // Cache for fetched rides and users to avoid duplicate fetches
+    const rideCache: Map<string, any> = new Map();
+    const userCache: Map<string, any> = new Map();
+
+    // Helper function to fetch ride data
+    const fetchRide = async (rideId: string) => {
+      if (rideCache.has(rideId)) return rideCache.get(rideId);
+      try {
+        const rideDoc = await getDoc(doc(db, 'rides', rideId));
+        if (rideDoc.exists()) {
+          const rideData = { id: rideDoc.id, ...rideDoc.data() };
+          rideCache.set(rideId, rideData);
+          return rideData;
+        }
+      } catch (error) {
+        logger.warn('Failed to fetch ride for review', { rideId, error });
+      }
+      return null;
+    };
+
+    // Helper function to fetch user data
+    const fetchUser = async (userId: string) => {
+      if (userCache.has(userId)) return userCache.get(userId);
+      try {
+        const userDoc = await getDoc(doc(db, 'users', userId));
+        if (userDoc.exists()) {
+          const userData = { id: userDoc.id, ...userDoc.data() };
+          userCache.set(userId, userData);
+          return userData;
+        }
+      } catch (error) {
+        logger.warn('Failed to fetch user for review', { userId, error });
+      }
+      return null;
+    };
+
     try {
       // Get bookings where user is the rider and hasn't reviewed driver yet
       const riderBookingsQuery = query(
@@ -238,8 +275,23 @@ export class RatingService {
       for (const bookingDoc of riderBookingsSnapshot.docs) {
         const booking = { id: bookingDoc.id, ...bookingDoc.data() } as Booking;
 
+        // Fetch ride data if not in booking
+        let rideData = booking.ride;
+        if (!rideData?.origin || !rideData?.driver) {
+          const fetchedRide = await fetchRide(booking.rideId);
+          if (fetchedRide) {
+            rideData = fetchedRide;
+          }
+        }
+
+        // Fetch driver data if not in ride
+        let driverData = rideData?.driver;
+        if (!driverData?.name && booking.driverId) {
+          driverData = await fetchUser(booking.driverId);
+        }
+
         // Check if within review window
-        const rideDate = new Date(booking.ride?.departureAt || booking.createdAt);
+        const rideDate = new Date(rideData?.departureAt || booking.createdAt);
         if (rideDate < cutoffDate) continue;
 
         pendingReviews.push({
@@ -247,12 +299,12 @@ export class RatingService {
           bookingId: booking.id,
           userToReview: {
             id: booking.driverId,
-            name: booking.ride?.driver?.name || 'Driver',
-            photoURL: booking.ride?.driver?.photoURL,
+            name: driverData?.name || driverData?.displayName || 'Driver',
+            photoURL: driverData?.photoURL,
           },
-          rideDate: booking.ride?.departureAt || booking.createdAt,
-          origin: booking.ride?.origin?.name || booking.ride?.from?.name || 'Origin',
-          destination: booking.ride?.destination?.name || booking.ride?.to?.name || 'Destination',
+          rideDate: rideData?.departureAt || booking.createdAt,
+          origin: rideData?.origin?.name || rideData?.from?.name || 'Origin',
+          destination: rideData?.destination?.name || rideData?.to?.name || 'Destination',
           reviewerRole: 'rider',
         });
       }
@@ -270,8 +322,23 @@ export class RatingService {
       for (const bookingDoc of driverBookingsSnapshot.docs) {
         const booking = { id: bookingDoc.id, ...bookingDoc.data() } as Booking;
 
+        // Fetch ride data if not in booking
+        let rideData = booking.ride;
+        if (!rideData?.origin) {
+          const fetchedRide = await fetchRide(booking.rideId);
+          if (fetchedRide) {
+            rideData = fetchedRide;
+          }
+        }
+
+        // Fetch passenger data if not in booking
+        let passengerData = booking.passenger;
+        if (!passengerData?.name && booking.riderId) {
+          passengerData = await fetchUser(booking.riderId);
+        }
+
         // Check if within review window
-        const rideDate = new Date(booking.ride?.departureAt || booking.createdAt);
+        const rideDate = new Date(rideData?.departureAt || booking.createdAt);
         if (rideDate < cutoffDate) continue;
 
         pendingReviews.push({
@@ -279,12 +346,12 @@ export class RatingService {
           bookingId: booking.id,
           userToReview: {
             id: booking.riderId,
-            name: booking.passenger?.name || 'Rider',
-            photoURL: booking.passenger?.photoURL,
+            name: passengerData?.name || passengerData?.displayName || 'Rider',
+            photoURL: passengerData?.photoURL,
           },
-          rideDate: booking.ride?.departureAt || booking.createdAt,
-          origin: booking.ride?.origin?.name || booking.ride?.from?.name || 'Origin',
-          destination: booking.ride?.destination?.name || booking.ride?.to?.name || 'Destination',
+          rideDate: rideData?.departureAt || booking.createdAt,
+          origin: rideData?.origin?.name || rideData?.from?.name || 'Origin',
+          destination: rideData?.destination?.name || rideData?.to?.name || 'Destination',
           reviewerRole: 'driver',
         });
       }
@@ -298,6 +365,7 @@ export class RatingService {
       return [];
     }
   }
+
 
   // --------------------------------------------------------------------------
   // Role-Specific Rating Calculations
