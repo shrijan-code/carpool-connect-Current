@@ -69,8 +69,13 @@ export default function ChatScreen() {
     const seenIds = new Set<string>(); // Track unique IDs to prevent duplicates
 
     // For drivers: create chat rooms with passengers who have confirmed/accepted bookings
+    // Only for ongoing rides (upcoming or in_progress) - no messaging after ride completion
     if (user.role === 'driver') {
       rides.forEach((ride) => {
+        // Skip completed or cancelled rides - no messaging allowed after ride ends
+        if (ride?.status === 'completed' || ride?.status === 'cancelled') {
+          return;
+        }
         if (ride?.id && ride.passengers && ride.passengers.length > 0) {
           ride.passengers.forEach((passenger) => {
             if (passenger?.id && passenger.user?.name && passenger.bookingId) {
