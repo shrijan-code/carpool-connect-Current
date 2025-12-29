@@ -920,6 +920,21 @@ export class RidesService {
         updatedAt: serverTimestamp()
       });
 
+      // CRITICAL: Restore seats to the ride since they were decremented when booking was created
+      const seatsToRestore = bookingData.seats || seats || 1;
+      const rideRef = doc(db, 'rides', rideId);
+      const rideDoc = await getDoc(rideRef);
+
+      if (rideDoc.exists()) {
+        const { increment } = await import('firebase/firestore');
+        await updateDoc(rideRef, {
+          availableSeats: increment(seatsToRestore),
+          seatsAvailable: increment(seatsToRestore),
+          updatedAt: serverTimestamp()
+        });
+        console.log(`🪑 Restored ${seatsToRestore} seats to ride ${rideId} after rejection`);
+      }
+
       // Cancel payment if payment intent exists
       if (bookingData.payment?.intentId) {
         try {
