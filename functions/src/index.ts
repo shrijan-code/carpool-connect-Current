@@ -2960,8 +2960,56 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
             console.log(`⚠️ No refund - driver compensated: $${(driverCompensation / 100).toFixed(2)}`);
           }
 
-          // TODO: Transfer driver compensation to their Stripe Connect account
-          // This would be done via stripe.transfers.create if driverCompensation > 0
+          // =========================================================================
+          // TRANSFER DRIVER COMPENSATION VIA STRIPE CONNECT
+          // =========================================================================
+          if (driverCompensation > 0) {
+            try {
+              // Get driver's Stripe Connect account
+              const driverDoc = await db.collection("users").doc(bookingData.driverId).get();
+              const driverData = driverDoc.exists ? driverDoc.data() : null;
+
+              if (driverData?.stripeAccountId && driverData?.stripeConnectStatus === "active") {
+                const transfer = await stripe.transfers.create({
+                  amount: driverCompensation,
+                  currency: "aud",
+                  destination: driverData.stripeAccountId,
+                  description: `Cancellation compensation for booking ${bookingId}`,
+                  metadata: {
+                    bookingId,
+                    rideId: bookingData.rideId,
+                    driverId: bookingData.driverId,
+                    type: "cancellation_compensation",
+                  },
+                }, {
+                  idempotencyKey: `cancel_transfer_${bookingId}`,
+                });
+
+                // Update booking with transfer info
+                await db.collection("bookings").doc(bookingId).update({
+                  "payment.transferId": transfer.id,
+                  "payment.transferredAt": admin.firestore.FieldValue.serverTimestamp(),
+                });
+
+                console.log(`💰 Driver compensation transferred: $${(driverCompensation / 100).toFixed(2)} to ${driverData.stripeAccountId}`);
+              } else {
+                console.warn(`⚠️ Driver ${bookingData.driverId} does not have active Stripe Connect - compensation pending`);
+
+                // Mark as pending payout for later manual processing
+                await db.collection("bookings").doc(bookingId).update({
+                  "payment.pendingDriverPayout": driverCompensation,
+                  "payment.payoutPendingReason": "Driver Stripe Connect not active",
+                });
+              }
+            } catch (transferError: any) {
+              console.error(`Failed to transfer driver compensation:`, transferError);
+              // Don't throw - the cancellation is complete, compensation can be processed manually
+              await db.collection("bookings").doc(bookingId).update({
+                "payment.transferError": transferError.message || "Unknown transfer error",
+                "payment.pendingDriverPayout": driverCompensation,
+              });
+            }
+          }
 
         } else if (setupIntentId && !paymentIntentId) {
           // Only SetupIntent exists (pending booking) - no payment to cancel
