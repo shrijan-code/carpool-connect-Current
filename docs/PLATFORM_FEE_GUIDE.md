@@ -7,7 +7,9 @@ This document explains how to modify the platform fee structure in CarpoolConnec
 | Type | Amount | Description |
 |------|--------|-------------|
 | **Flat Fee** | $5.00 AUD | Charged per booking to riders |
-| **Driver Deduction** | 10% | In some functions (payouts) |
+
+> [!NOTE]
+> The $5 flat fee is charged to riders on each booking. This fee goes to the platform and covers payment processing and platform maintenance. The driver receives the full ride price set by them.
 
 ---
 
