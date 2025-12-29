@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db, functions } from '@/config/firebase';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Modal, TouchableWithoutFeedback } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { Colors } from '@/constants/colors';
@@ -41,6 +41,7 @@ export default function RideDetailsScreen() {
   const [ride, setRide] = useState<Ride | null>(null);
   const [isLoadingRide, setIsLoadingRide] = useState(false);
   const [rideNotFound, setRideNotFound] = useState(false);
+  const [seatModalVisible, setSeatModalVisible] = useState(false);
 
   // Subscribe to real-time ride updates
   useEffect(() => {
@@ -296,19 +297,74 @@ export default function RideDetailsScreen() {
   };
 
   const showBookingOptions = () => {
+    setSeatModalVisible(true);
+  };
+
+  const renderSeatSelectionModal = () => {
+    const availableSeats = ride?.availableSeats || ride?.seatsAvailable || 0;
+    const pricePerSeatInCents = Math.round(ride?.pricePerSeat || 0);
     const seatOptions = [];
-    const availableSeats = ride.availableSeats || ride.seatsAvailable || 0;
-    const pricePerSeatInCents = Math.round(ride.pricePerSeat);
-    for (let i = 1; i <= Math.min(availableSeats, 4); i++) {
+
+    // Support ALL available seats (no limit)
+    for (let i = 1; i <= availableSeats; i++) {
       const breakdown = getBookingPriceBreakdown(pricePerSeatInCents, i);
       seatOptions.push({
-        text: `${i} seat${i > 1 ? 's' : ''} - ${breakdown.total} (${breakdown.ridePrice} + ${PLATFORM_FEE_DISPLAY} fee)`,
-        onPress: () => handleBookRide(i)
+        seats: i,
+        label: `${i} seat${i > 1 ? 's' : ''}`,
+        price: breakdown.total,
+        breakdown: `${breakdown.ridePrice} + ${PLATFORM_FEE_DISPLAY} fee`,
       });
     }
-    seatOptions.push({ text: 'Cancel', style: 'cancel' as const });
 
-    Alert.alert('Request Booking', 'How many seats would you like to request?', seatOptions);
+    return (
+      <Modal
+        visible={seatModalVisible}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setSeatModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setSeatModalVisible(false)}>
+          <View style={styles.seatModalOverlay}>
+            <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+              <View style={styles.seatModalContent}>
+                <Text style={styles.seatModalTitle}>Request Booking</Text>
+                <Text style={styles.seatModalSubtitle}>How many seats would you like to request?</Text>
+
+                <ScrollView
+                  style={styles.seatOptionsScroll}
+                  showsVerticalScrollIndicator={true}
+                  contentContainerStyle={styles.seatOptionsContainer}
+                >
+                  {seatOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option.seats}
+                      style={styles.seatOptionButton}
+                      onPress={() => {
+                        setSeatModalVisible(false);
+                        handleBookRide(option.seats);
+                      }}
+                    >
+                      <View style={styles.seatOptionLeft}>
+                        <Text style={styles.seatOptionSeats}>{option.label}</Text>
+                        <Text style={styles.seatOptionBreakdown}>{option.breakdown}</Text>
+                      </View>
+                      <Text style={styles.seatOptionPrice}>{option.price}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={styles.seatModalCancelButton}
+                  onPress={() => setSeatModalVisible(false)}
+                >
+                  <Text style={styles.seatModalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+    );
   };
 
   const handleDeleteRide = async () => {
@@ -783,6 +839,9 @@ export default function RideDetailsScreen() {
           </View>
         )}
       </View>
+
+      {/* Seat Selection Modal */}
+      {renderSeatSelectionModal()}
     </SafeAreaView>
   );
 }
@@ -1170,5 +1229,84 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
     color: Colors.primary,
+  },
+  // Seat Selection Modal Styles
+  seatModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  seatModalContent: {
+    backgroundColor: Colors.background,
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    maxHeight: '80%',
+  },
+  seatModalTitle: {
+    fontSize: 20,
+    fontWeight: '600' as const,
+    color: Colors.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  seatModalSubtitle: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  seatOptionsScroll: {
+    maxHeight: 300,
+  },
+  seatOptionsContainer: {
+    paddingBottom: 8,
+  },
+  seatOptionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border || '#E5E5E5',
+  },
+  seatOptionLeft: {
+    flex: 1,
+  },
+  seatOptionSeats: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.text,
+  },
+  seatOptionBreakdown: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
+  seatOptionPrice: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    color: Colors.primary,
+  },
+  seatModalCancelButton: {
+    marginTop: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border || '#E5E5E5',
+  },
+  seatModalCancelText: {
+    fontSize: 16,
+    fontWeight: '500' as const,
+    color: Colors.textSecondary,
   },
 });
