@@ -2983,7 +2983,7 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
       }
     }
 
-    // Notify the other party
+    // Notify the other party with in-app notification
     const notificationUserId = cancelledBy === "rider" ? bookingData.driverId : bookingData.riderId;
     const cancelledNotif = notificationTemplates.bookingCancelled(cancelledBy);
 
@@ -2994,6 +2994,103 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
       type: "booking",
       data: { bookingId, reason },
     });
+
+    // =========================================================================
+    // SEND CANCELLATION EMAILS TO BOTH PARTIES
+    // =========================================================================
+    try {
+      // Get user emails
+      const riderDoc = await db.collection("users").doc(bookingData.riderId).get();
+      const driverDoc = await db.collection("users").doc(bookingData.driverId).get();
+
+      const riderData = riderDoc.exists ? riderDoc.data() : null;
+      const driverData = driverDoc.exists ? driverDoc.data() : null;
+
+      const rideFrom = rideData?.from || rideData?.origin || {};
+      const rideTo = rideData?.to || rideData?.destination || {};
+      const departureTime = rideData?.departureTime
+        ? new Date(rideData.departureTime).toLocaleString('en-AU', {
+          weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+          hour: '2-digit', minute: '2-digit', timeZone: 'Australia/Sydney'
+        })
+        : 'N/A';
+
+      const rideDetails = {
+        origin: rideFrom.name || rideFrom.address || 'Unknown',
+        destination: rideTo.name || rideTo.address || 'Unknown',
+        departureTime,
+        seats: bookingData.seats || 1,
+        reason: reason || null,
+      };
+
+      // Calculate payment info for email
+      const totalAmount = bookingData.amountTotal || 0;
+      const PLATFORM_FEE = 500;
+      const fareAmount = Math.max(0, totalAmount - PLATFORM_FEE);
+      const rideDepartureTime = rideData?.departureTime ? new Date(rideData.departureTime) : null;
+      const hoursBeforeDeparture = rideDepartureTime
+        ? (rideDepartureTime.getTime() - Date.now()) / (1000 * 60 * 60)
+        : 999;
+
+      let emailRefundAmount = 0;
+      let emailCancellationFee = 0;
+      let emailDriverCompensation = 0;
+      let emailPlatformFee = 0;
+      let refundPercentage = 0;
+
+      if (cancelledBy === "driver") {
+        emailRefundAmount = totalAmount;
+        refundPercentage = 100;
+      } else if (hoursBeforeDeparture > 24) {
+        emailRefundAmount = totalAmount;
+        refundPercentage = 100;
+      } else if (hoursBeforeDeparture > 0) {
+        emailRefundAmount = Math.round(fareAmount / 2);
+        emailDriverCompensation = Math.round(fareAmount / 2);
+        emailCancellationFee = Math.round(fareAmount / 2) + PLATFORM_FEE;
+        emailPlatformFee = PLATFORM_FEE;
+        refundPercentage = 50;
+      } else {
+        emailRefundAmount = 0;
+        emailDriverCompensation = fareAmount;
+        emailCancellationFee = totalAmount;
+        emailPlatformFee = PLATFORM_FEE;
+        refundPercentage = 0;
+      }
+
+      const paymentInfo = {
+        originalAmount: totalAmount,
+        refundAmount: emailRefundAmount,
+        cancellationFee: emailCancellationFee,
+        driverCompensation: emailDriverCompensation,
+        platformFeeRetained: emailPlatformFee,
+        hoursBeforeDeparture: Math.round(hoursBeforeDeparture),
+        refundPercentage,
+      };
+
+      // Send email to rider
+      if (riderData?.email) {
+        await sendEmail(
+          riderData.email,
+          "bookingCancelled",
+          [riderData.name || "Rider", cancelledBy, rideDetails, paymentInfo]
+        );
+        console.log(`📧 Cancellation email sent to rider: ${riderData.email}`);
+      }
+
+      // Send email to driver
+      if (driverData?.email) {
+        await sendEmail(
+          driverData.email,
+          "bookingCancelled",
+          [driverData.name || "Driver", cancelledBy, rideDetails, paymentInfo]
+        );
+        console.log(`📧 Cancellation email sent to driver: ${driverData.email}`);
+      }
+    } catch (emailError) {
+      // Don't fail the cancellation if email fails
+      console.error("Failed to send cancellation email:", emailError);
+    }
 
     return {
       success: true,

@@ -246,16 +246,147 @@ const templates = {
     `,
   }),
 
-  bookingCancelled: (userName: string, cancelledBy: string, rideDetails: any) => ({
-    subject: "🚫 Ride cancelled",
+  bookingCancelled: (userName: string, cancelledBy: string, rideDetails: any, paymentInfo?: {
+    originalAmount: number;
+    refundAmount: number;
+    cancellationFee: number;
+    driverCompensation: number;
+    platformFeeRetained: number;
+    hoursBeforeDeparture: number;
+    refundPercentage: number;
+  }) => ({
+    subject: `🚫 Booking Cancelled - ${cancelledBy === 'driver' ? 'Full Refund' : paymentInfo?.refundPercentage === 100 ? 'Full Refund' : 'Important Payment Information'}`,
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h1 style="color: #EF4444;">Ride Cancelled</h1>
-        <p>Hi ${userName},</p>
-        <p>Your ride from <strong>${rideDetails.origin}</strong> to <strong>${rideDetails.destination}</strong> has been cancelled by the ${cancelledBy}.</p>
-        ${cancelledBy === "driver" ? "<p>We recommend searching for alternative rides in the app.</p>" : ""}
-        <p>If you have any questions, please contact our support team.</p>
-        <p>Best,<br/>The CarpoolConnect Team</p>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%); padding: 30px; border-radius: 10px; margin-bottom: 20px; text-align: center;">
+          <h1 style="color: white; margin: 0;">🚫 Booking Cancelled</h1>
+        </div>
+        
+        <p style="font-size: 16px;">Hi ${userName},</p>
+        <p>Your booking has been cancelled by the <strong>${cancelledBy}</strong>.</p>
+        
+        <div style="background: #F3F4F6; padding: 20px; border-radius: 10px; margin: 20px 0;">
+          <h2 style="color: #1F2937; margin-top: 0; border-bottom: 2px solid #E5E7EB; padding-bottom: 10px;">🚗 Ride Details</h2>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>From:</strong></td>
+              <td style="padding: 8px 0;">${rideDetails.origin || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>To:</strong></td>
+              <td style="padding: 8px 0;">${rideDetails.destination || 'N/A'}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>Scheduled:</strong></td>
+              <td style="padding: 8px 0;">${rideDetails.departureTime || 'N/A'}</td>
+            </tr>
+            ${rideDetails.seats ? `
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>Seats:</strong></td>
+              <td style="padding: 8px 0;">${rideDetails.seats}</td>
+            </tr>
+            ` : ''}
+            ${rideDetails.reason ? `
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>Reason:</strong></td>
+              <td style="padding: 8px 0;">${rideDetails.reason}</td>
+            </tr>
+            ` : ''}
+          </table>
+        </div>
+
+        ${paymentInfo ? `
+        <div style="background: ${paymentInfo.refundPercentage === 100 ? '#DCFCE7' : paymentInfo.refundPercentage >= 50 ? '#FEF3C7' : '#FEE2E2'}; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid ${paymentInfo.refundPercentage === 100 ? '#22C55E' : paymentInfo.refundPercentage >= 50 ? '#F59E0B' : '#EF4444'};">
+          <h2 style="color: ${paymentInfo.refundPercentage === 100 ? '#166534' : paymentInfo.refundPercentage >= 50 ? '#92400E' : '#991B1B'}; margin-top: 0;">💰 Payment Summary</h2>
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 8px 0; color: #6B7280;"><strong>Original Booking Amount:</strong></td>
+              <td style="padding: 8px 0; text-align: right;">$${(paymentInfo.originalAmount / 100).toFixed(2)}</td>
+            </tr>
+            <tr style="border-top: 1px solid ${paymentInfo.refundPercentage === 100 ? '#86EFAC' : paymentInfo.refundPercentage >= 50 ? '#FCD34D' : '#FECACA'};">
+              <td style="padding: 8px 0; color: #166534;"><strong>✅ Refund Amount:</strong></td>
+              <td style="padding: 8px 0; text-align: right; color: #166534; font-size: 18px;"><strong>$${(paymentInfo.refundAmount / 100).toFixed(2)}</strong></td>
+            </tr>
+            ${paymentInfo.cancellationFee > 0 ? `
+            <tr>
+              <td style="padding: 8px 0; color: #991B1B;"><strong>Cancellation Fee:</strong></td>
+              <td style="padding: 8px 0; text-align: right; color: #991B1B;">$${(paymentInfo.cancellationFee / 100).toFixed(2)}</td>
+            </tr>
+            ` : ''}
+          </table>
+          
+          <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid ${paymentInfo.refundPercentage === 100 ? '#86EFAC' : paymentInfo.refundPercentage >= 50 ? '#FCD34D' : '#FECACA'};">
+            <p style="margin: 0; font-size: 14px; color: ${paymentInfo.refundPercentage === 100 ? '#166534' : paymentInfo.refundPercentage >= 50 ? '#92400E' : '#991B1B'};">
+              <strong>Refund Percentage: ${paymentInfo.refundPercentage}%</strong>
+            </p>
+            <p style="margin: 5px 0 0 0; font-size: 12px; color: #6B7280;">
+              ${paymentInfo.hoursBeforeDeparture > 24
+          ? '✅ Early cancellation (>24 hours before departure) - Full refund including platform fee applied.'
+          : paymentInfo.hoursBeforeDeparture > 0
+            ? '⚠️ Late cancellation (<24 hours before departure) - 50% cancellation fee applied per our policy.'
+            : '❌ Cancellation after departure time - No refund available per our policy.'}
+            </p>
+          </div>
+        </div>
+        ` : ''}
+
+        <div style="background: #EFF6FF; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #3B82F6;">
+          <h3 style="color: #1E40AF; margin-top: 0;">📋 Our Cancellation Policy</h3>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 8px; background: #DCFCE7; border-radius: 5px;"><strong>More than 24 hours before departure</strong></td>
+              <td style="padding: 8px; background: #DCFCE7; border-radius: 5px; text-align: right; color: #166534;"><strong>100% refund</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; background: #FEF3C7; border-radius: 5px;"><strong>Less than 24 hours before departure</strong></td>
+              <td style="padding: 8px; background: #FEF3C7; border-radius: 5px; text-align: right; color: #92400E;"><strong>50% refund</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; background: #FEE2E2; border-radius: 5px;"><strong>After departure time</strong></td>
+              <td style="padding: 8px; background: #FEE2E2; border-radius: 5px; text-align: right; color: #991B1B;"><strong>No refund</strong></td>
+            </tr>
+            <tr>
+              <td style="padding: 8px; background: #DCFCE7; border-radius: 5px;"><strong>Driver cancels</strong></td>
+              <td style="padding: 8px; background: #DCFCE7; border-radius: 5px; text-align: right; color: #166534;"><strong>100% refund (always)</strong></td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="background: #F9FAFB; padding: 20px; border-radius: 10px; margin: 20px 0;">
+          <h3 style="color: #1F2937; margin-top: 0;">📲 What Happens Next?</h3>
+          ${cancelledBy === 'driver' ? `
+          <ul style="color: #374151; line-height: 1.8; margin: 10px 0; padding-left: 20px;">
+            <li>You will receive a <strong>full refund</strong> to your original payment method</li>
+            <li>Refunds typically process within <strong>5-10 business days</strong></li>
+            <li>We recommend searching for alternative rides in the app</li>
+            <li>You can view your booking history in Profile → My Bookings</li>
+          </ul>
+          ` : `
+          <ul style="color: #374151; line-height: 1.8; margin: 10px 0; padding-left: 20px;">
+            ${paymentInfo && paymentInfo.refundAmount > 0 ? `
+            <li>Your refund of <strong>$${(paymentInfo.refundAmount / 100).toFixed(2)}</strong> will be processed to your original payment method</li>
+            <li>Refunds typically process within <strong>5-10 business days</strong></li>
+            ` : ''}
+            ${paymentInfo && paymentInfo.cancellationFee > 0 ? `
+            <li>The cancellation fee of <strong>$${(paymentInfo.cancellationFee / 100).toFixed(2)}</strong> helps compensate the driver</li>
+            ` : ''}
+            <li>You can view your booking and payment history in Profile → My Bookings</li>
+          </ul>
+          `}
+        </div>
+
+        ${cancelledBy !== 'driver' ? `
+        <div style="background: #FEF2F2; padding: 15px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #EF4444;">
+          <p style="margin: 0; color: #991B1B; font-size: 14px;">
+            <strong>💡 Tip:</strong> To avoid cancellation fees, please cancel at least 24 hours before your scheduled departure time.
+          </p>
+        </div>
+        ` : ''}
+
+        <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 2px solid #E5E7EB;">
+          <p style="color: #6B7280;">Questions about this cancellation? Contact us at <a href="mailto:support@carpoolconnect.com" style="color: #4F46E5;">support@carpoolconnect.com</a></p>
+          <p style="color: #6B7280; margin-top: 20px;">Best regards,<br/><strong>The CarpoolConnect Team</strong></p>
+        </div>
       </div>
     `,
   }),
