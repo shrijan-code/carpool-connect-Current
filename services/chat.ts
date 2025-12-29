@@ -131,8 +131,9 @@ export class ChatService {
       console.log('Attempting to send message:', { rideId, senderId, senderName, messageLength: message.length, bookingId });
 
       let threadId: string | undefined;
+      let participants: string[] = [];
 
-      // Create thread if bookingId is provided
+      // If bookingId is provided, make this a PRIVATE conversation between driver and rider only
       if (bookingId) {
         try {
           // Get booking to find driver and passenger IDs
@@ -140,19 +141,26 @@ export class ChatService {
           if (bookingDoc.exists()) {
             const bookingData = bookingDoc.data();
             const driverId = bookingData.ride?.driverId || bookingData.driverId;
-            const passengerId = bookingData.passengerId;
+            const passengerId = bookingData.riderId || bookingData.passengerId;
 
             if (driverId && passengerId) {
+              // PRIVATE conversation: only driver and this specific rider
+              participants = [driverId, passengerId];
               threadId = await this.createOrGetThread(bookingId, rideId, driverId, passengerId);
+              console.log(`📩 Private message between driver ${driverId} and rider ${passengerId}`);
             }
           }
         } catch (threadError) {
-          console.warn('Failed to create thread, continuing without thread:', threadError);
+          console.warn('Failed to create thread, falling back to ride-based participants:', threadError);
         }
       }
 
-      // Get all participants for this ride to ensure they can all read the message
-      const participants = await this.getParticipantsForRide(rideId);
+      // Fallback: If no bookingId or thread creation failed, use ride-based participants (group chat)
+      if (participants.length === 0) {
+        participants = await this.getParticipantsForRide(rideId);
+        console.log(`📢 Group message to all ride participants: ${participants.length} people`);
+      }
+
       // Ensure sender is always in participants
       if (!participants.includes(senderId)) {
         participants.push(senderId);
@@ -242,23 +250,29 @@ export class ChatService {
       }
 
       let threadId: string | undefined;
+      let participants: string[] = [];
 
-      // Create thread if bookingId is provided
+      // If bookingId is provided, make this a PRIVATE conversation between driver and rider only
       if (bookingId) {
         const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
         if (bookingDoc.exists()) {
           const bookingData = bookingDoc.data();
           const driverId = bookingData.ride?.driverId || bookingData.driverId;
-          const passengerId = bookingData.passengerId;
+          const passengerId = bookingData.riderId || bookingData.passengerId;
 
           if (driverId && passengerId) {
+            // PRIVATE conversation: only driver and this specific rider
+            participants = [driverId, passengerId];
             threadId = await this.createOrGetThread(bookingId, rideId, driverId, passengerId);
           }
         }
       }
 
-      // Get all participants for this ride
-      const participants = await this.getParticipantsForRide(rideId);
+      // Fallback: If no bookingId, use ride-based participants (group chat)
+      if (participants.length === 0) {
+        participants = await this.getParticipantsForRide(rideId);
+      }
+
       if (!participants.includes(senderId)) {
         participants.push(senderId);
       }

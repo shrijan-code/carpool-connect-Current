@@ -529,6 +529,15 @@ export class RidesService {
 
       console.log('✅ Booking request created successfully with ID:', bookingRef.id);
 
+      // CRITICAL: Decrement available seats immediately to prevent overbooking
+      const { increment } = await import('firebase/firestore');
+      await updateDoc(rideRef, {
+        availableSeats: increment(-seats),
+        seatsAvailable: increment(-seats),
+        updatedAt: serverTimestamp()
+      });
+      console.log(`🪑 Decremented ${seats} seats from ride ${rideId}`);
+
       // Log audit trail
       await AuditService.logAction('CREATE_BOOKING_REQUEST', 'booking', bookingRef.id, passengerId, {
         rideId,
