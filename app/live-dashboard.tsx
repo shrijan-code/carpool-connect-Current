@@ -89,13 +89,23 @@ export default function LiveDashboardScreen() {
       const activeRides = userRides.filter(r => r.status === 'upcoming' || r.status === 'active').length;
       const completedRides = userRides.filter(r => r.status === 'completed').length;
 
-      // Calculate earnings from completed rides
-      const totalEarnings = userRides
-        .filter(r => r.status === 'completed')
-        .reduce((sum, ride) => {
-          const passengers = ride.passengers || [];
-          const rideEarnings = passengers.reduce((rideSum, p) => rideSum + (ride.pricePerSeat * p.seats), 0);
-          return sum + rideEarnings;
+      // Calculate earnings from BOOKINGS (not ride.passengers which may be empty)
+      // Get all bookings and filter those for completed rides where this user is driver
+      const allBookings = bookings || [];
+      const completedRideIds = new Set(
+        userRides.filter(r => r.status === 'completed').map(r => r.id)
+      );
+
+      // Driver earnings = completed booking amounts minus platform fee
+      const totalEarnings = allBookings
+        .filter(b =>
+          b.status === 'completed' &&
+          completedRideIds.has(b.rideId)
+        )
+        .reduce((sum, booking) => {
+          // Driver gets total - platform fee ($5)
+          const driverEarning = (booking.amountTotal || 0) - 500;
+          return sum + Math.max(0, driverEarning);
         }, 0);
 
       // Get pending booking requests
