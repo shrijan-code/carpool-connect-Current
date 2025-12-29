@@ -136,7 +136,54 @@ The logic depends on **when** the cancellation happens relative to the departure
 
 ---
 
-## 4. Edge Cases & Safety
-*   **Authorization Expiry**: Stripe authorizations usually expire after 7 days. If the ride is scheduled far in advance, the app handles "re-authorization" or captures late.
-*   **Minimum Ride Duration**: Rides cannot be marked "Completed" until at least 5 minutes after they were "Started" to prevent fraudulent usage.
-*   **Double Cancellation**: Once cancelled (by either party), the other party cannot cancel again. Seats are immediately restored to the ride's `availableSeats` count.
+## 4. Edge Cases & Robustness
+
+### Currently Implemented ✅
+
+| Scenario | Handling |
+|---|---|
+| **Authorization Expiry (7 days)** | If a ride is scheduled >7 days out and the authorization expires, `completeRideAndCharge` automatically attempts **re-authorization** using the rider's saved payment method. |
+| **Missing PaymentIntent** | If a booking reaches completion without a payment intent, it's marked `payment_failed` with `missing_authorization`. Admin and rider are notified. |
+| **Minimum Ride Duration** | Rides cannot be completed until at least **5 minutes** after they were started to prevent fraudulent instant completions. |
+| **Re-Authorization Failure** | If re-authorization fails (e.g., card declined), the booking is marked `payment_failed` and the rider is notified to retry. |
+| **Payment Retry (Manual)** | Riders with failed payments can tap "Retry Payment" in the app. The `retryPaymentForCompletedRide` function handles this. |
+| **Payment Retry (Scheduled)** | A scheduled function (`retryFailedPaymentAuthorizations`) runs hourly to automatically retry failed authorizations (up to 3 attempts). |
+| **Outstanding Balance Block** | Riders with unpaid balances from previous rides are blocked from booking new rides until they settle their account. |
+| **Double Cancellation Prevention** | Once a booking is cancelled, the status is locked. Seats are immediately restored to `availableSeats`. |
+| **Seat Restoration on Rejection** | If a driver rejects a `pending_driver` booking, seats are restored and the hold is released. |
+| **Idempotency Keys** | All Stripe API calls use idempotency keys to prevent duplicate charges/refunds during network retries. |
+
+### Recommendations for Future Enhancements ⚠️
+
+| Scenario | Status | Notes |
+|---|---|---|
+| **Stripe Disputes (Chargebacks)** | ✅ Implemented | Webhook handlers for `charge.dispute.created` and `charge.dispute.closed` added. Blocks payouts and notifies admin/driver. |
+| **Partial Seat Cancellation** | ✅ Implemented | `reduceBookingSeats` function allows riders to reduce seat count with prorated refund. |
+| **Driver No-Show Verification** | ⚠️ Deferred | Requires UI design decisions (photo upload/GPS). Recommend discussing requirements first. |
+| **Stale Payout Prevention** | 🔜 Todo | Add scheduled job to alert admin if payout not processed within X days. |
+| **Fraud Scoring** | 🔜 Todo | Track cancellation/no-show/payment failure rates per user. |
+| **Capture Deadline Warning** | 🔜 Todo | Warn drivers approaching 7-day auth expiry. |
+
+---
+
+## 5. Status Reference
+
+| Booking Status | Description |
+|---|---|
+| `pending_driver` | Awaiting driver confirmation. Hold placed. |
+| `confirmed` | Driver accepted. Hold active. |
+| `completed` | Ride finished. Payment captured. |
+| `cancelled` | Cancelled by rider or driver. |
+| `no_show` | Passenger didn't show up. Full charge. |
+| `payment_failed` | Payment capture or authorization failed. |
+
+| Payment Status | Description |
+|---|---|
+| `authorized` | Hold placed, awaiting capture. |
+| `captured` / `paid` | Payment successfully charged. |
+| `refunded` | Partial or full refund issued. |
+| `cancelled` | Authorization was released. |
+| `authorization_expired` | Hold expired before capture. |
+| `capture_failed` | Capture attempt failed. |
+| `missing_authorization` | No PaymentIntent found at completion. |
+

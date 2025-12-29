@@ -3007,6 +3007,159 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
   }
 });
 
+// ============================================================================
+// PARTIAL SEAT CANCELLATION - Reduce seats without full cancellation
+// ============================================================================
+
+/**
+ * Reduce the number of seats in a booking (partial cancellation)
+ * Allows riders to go from e.g., 3 seats to 1 without cancelling entirely
+ */
+export const reduceBookingSeats = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const { bookingId, newSeatCount } = request.data;
+  const userId = request.auth.uid;
+
+  if (!bookingId || typeof newSeatCount !== "number") {
+    throw new HttpsError("invalid-argument", "Missing bookingId or newSeatCount");
+  }
+
+  if (newSeatCount < 1) {
+    throw new HttpsError("invalid-argument", "New seat count must be at least 1. Use cancelBooking for full cancellation.");
+  }
+
+  try {
+    console.log(`📉 Reducing seats for booking ${bookingId} to ${newSeatCount} by user ${userId}`);
+
+    const bookingDoc = await db.collection("bookings").doc(bookingId).get();
+    if (!bookingDoc.exists) {
+      throw new HttpsError("not-found", "Booking not found");
+    }
+
+    const bookingData = bookingDoc.data()!;
+
+    // Verify user is the rider
+    if (bookingData.riderId !== userId) {
+      throw new HttpsError("permission-denied", "Only the rider can reduce seats");
+    }
+
+    // Can only reduce confirmed bookings
+    if (bookingData.status !== "confirmed") {
+      throw new HttpsError("failed-precondition", `Cannot reduce seats on a ${bookingData.status} booking`);
+    }
+
+    const currentSeats = bookingData.seats || 1;
+    if (newSeatCount >= currentSeats) {
+      throw new HttpsError("invalid-argument", `New seat count must be less than current (${currentSeats})`);
+    }
+
+    const seatsToRelease = currentSeats - newSeatCount;
+    const pricePerSeat = bookingData.pricePerSeat || 0;
+    const PLATFORM_FEE = 500; // $5 flat fee (only charged once, not per seat)
+
+    // Calculate refund amount for the released seats
+    // Note: Platform fee is not refunded as it's a one-time booking fee
+    const refundAmount = pricePerSeat * seatsToRelease;
+
+    // Get ride for departure time check
+    const rideDoc = await db.collection("rides").doc(bookingData.rideId).get();
+    const rideData = rideDoc.exists ? rideDoc.data() : null;
+    const departureTime = rideData?.departureTime ? new Date(rideData.departureTime) : null;
+    const now = new Date();
+    const hoursUntilDeparture = departureTime
+      ? (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+      : 999;
+
+    // Apply cancellation policy to the refund
+    let actualRefund: number;
+    let driverCompensation = 0;
+
+    if (hoursUntilDeparture > 24) {
+      // Early: 100% refund for the reduced seats
+      actualRefund = refundAmount;
+    } else if (hoursUntilDeparture > 0) {
+      // Late: 50% refund, 50% to driver
+      actualRefund = Math.round(refundAmount / 2);
+      driverCompensation = Math.round(refundAmount / 2);
+    } else {
+      // After departure: No refund
+      throw new HttpsError("failed-precondition", "Cannot reduce seats after departure time");
+    }
+
+    // Process refund via Stripe if there's a captured payment
+    let refundResult = null;
+    if (actualRefund > 0 && bookingData.payment?.paymentIntentId && bookingData.payment?.status === "captured") {
+      const stripe = getStripe();
+
+      try {
+        const refund = await stripe.refunds.create({
+          payment_intent: bookingData.payment.paymentIntentId,
+          amount: actualRefund,
+          reason: "requested_by_customer",
+        }, {
+          idempotencyKey: `seat_reduction_${bookingId}_${newSeatCount}_${Date.now()}`,
+        });
+
+        refundResult = {
+          refundId: refund.id,
+          amount: actualRefund,
+        };
+        console.log(`✅ Refund processed: $${(actualRefund / 100).toFixed(2)}`);
+      } catch (stripeError: any) {
+        console.error("Stripe refund failed:", stripeError.message);
+        throw new HttpsError("internal", "Failed to process refund");
+      }
+    }
+
+    // Update booking
+    const newTotal = (pricePerSeat * newSeatCount) + PLATFORM_FEE;
+    await bookingDoc.ref.update({
+      seats: newSeatCount,
+      ridePrice: pricePerSeat * newSeatCount,
+      amountTotal: newTotal,
+      "seatReduction.previousSeats": currentSeats,
+      "seatReduction.refundAmount": actualRefund,
+      "seatReduction.driverCompensation": driverCompensation,
+      "seatReduction.reducedAt": admin.firestore.FieldValue.serverTimestamp(),
+      ...(refundResult ? { "seatReduction.refundId": refundResult.refundId } : {}),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Restore seats to ride
+    await db.collection("rides").doc(bookingData.rideId).update({
+      seatsAvailable: admin.firestore.FieldValue.increment(seatsToRelease),
+      availableSeats: admin.firestore.FieldValue.increment(seatsToRelease),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Notify driver
+    await createNotification({
+      userId: bookingData.driverId,
+      title: "Booking Updated",
+      body: `A passenger reduced their booking from ${currentSeats} to ${newSeatCount} seat(s).`,
+      type: "booking",
+      data: { bookingId, seatsReduced: seatsToRelease },
+    });
+
+    console.log(`✅ Booking ${bookingId} reduced: ${currentSeats} -> ${newSeatCount} seats, ${seatsToRelease} seats restored`);
+
+    return {
+      success: true,
+      message: `Reduced to ${newSeatCount} seat(s). ${seatsToRelease} seat(s) released.`,
+      refund: actualRefund > 0 ? {
+        amount: actualRefund / 100,
+        driverCompensation: driverCompensation / 100,
+      } : null,
+    };
+  } catch (error: any) {
+    console.error("❌ Reduce seats error:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", error.message || "Failed to reduce seats");
+  }
+});
 
 // ============================================================================
 // BOOKING STATUS CHANGE TRIGGERS - Notifications
@@ -3777,6 +3930,138 @@ export const stripeWebhook = onRequest({ secrets: ["STRIPE_WEBHOOK_SECRET", "STR
         const paymentFailed = event.data.object as Stripe.PaymentIntent;
         console.error(`Webhook: PaymentIntent failed ${paymentFailed.id}`);
         break;
+
+      // =========================================================================
+      // DISPUTE (CHARGEBACK) HANDLING
+      // =========================================================================
+      case "charge.dispute.created":
+        const dispute = event.data.object as Stripe.Dispute;
+        console.log(`⚠️ Webhook: Dispute created ${dispute.id} for charge ${dispute.charge}`);
+
+        try {
+          // Find the booking associated with this charge
+          const chargeId = typeof dispute.charge === "string" ? dispute.charge : dispute.charge?.id;
+          if (!chargeId) {
+            console.error("Dispute has no charge ID");
+            break;
+          }
+
+          // Get the charge to find the payment intent
+          const charge = await getStripe().charges.retrieve(chargeId);
+          const disputePaymentIntentId = typeof charge.payment_intent === "string"
+            ? charge.payment_intent
+            : charge.payment_intent?.id;
+
+          if (!disputePaymentIntentId) {
+            console.error("Charge has no payment intent");
+            break;
+          }
+
+          // Find booking by payment intent ID
+          const disputeBookingsSnapshot = await db
+            .collection("bookings")
+            .where("payment.paymentIntentId", "==", disputePaymentIntentId)
+            .limit(1)
+            .get();
+
+          if (disputeBookingsSnapshot.empty) {
+            console.warn(`No booking found for disputed payment intent ${disputePaymentIntentId}`);
+            break;
+          }
+
+          const disputeBookingDoc = disputeBookingsSnapshot.docs[0];
+          const disputeBookingData = disputeBookingDoc.data();
+
+          // Mark booking as disputed and block payout
+          await disputeBookingDoc.ref.update({
+            "dispute.id": dispute.id,
+            "dispute.status": dispute.status,
+            "dispute.reason": dispute.reason,
+            "dispute.amount": dispute.amount,
+            "dispute.createdAt": admin.firestore.FieldValue.serverTimestamp(),
+            payoutStatus: "blocked_dispute",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          // Notify admin
+          await createNotification({
+            userId: "admin",
+            title: "⚠️ CHARGEBACK ALERT",
+            body: `Dispute opened for $${(dispute.amount / 100).toFixed(2)} on booking ${disputeBookingDoc.id}. Reason: ${dispute.reason}`,
+            type: "system",
+            data: {
+              bookingId: disputeBookingDoc.id,
+              disputeId: dispute.id,
+              reason: dispute.reason,
+              severity: "critical",
+            },
+          });
+
+          // Notify driver
+          await createNotification({
+            userId: disputeBookingData.driverId,
+            title: "Payment Dispute Opened",
+            body: `A passenger has disputed a payment. Your payout for this ride is temporarily on hold pending resolution.`,
+            type: "payment",
+            data: { bookingId: disputeBookingDoc.id, disputeId: dispute.id },
+          });
+
+          console.log(`✅ Dispute ${dispute.id} processed, booking ${disputeBookingDoc.id} marked as disputed`);
+        } catch (disputeError) {
+          console.error("Error processing dispute webhook:", disputeError);
+        }
+        break;
+
+      case "charge.dispute.closed":
+        const closedDispute = event.data.object as Stripe.Dispute;
+        console.log(`Webhook: Dispute closed ${closedDispute.id} with status ${closedDispute.status}`);
+
+        try {
+          // Find booking by dispute ID
+          const closedDisputeBookingsSnapshot = await db
+            .collection("bookings")
+            .where("dispute.id", "==", closedDispute.id)
+            .limit(1)
+            .get();
+
+          if (closedDisputeBookingsSnapshot.empty) {
+            console.warn(`No booking found for closed dispute ${closedDispute.id}`);
+            break;
+          }
+
+          const closedDisputeBookingDoc = closedDisputeBookingsSnapshot.docs[0];
+          const closedDisputeBookingData = closedDisputeBookingDoc.data();
+
+          // Determine outcome
+          const disputeWon = closedDispute.status === "won";
+          const newPayoutStatus = disputeWon ? "pending" : "chargebacked";
+
+          await closedDisputeBookingDoc.ref.update({
+            "dispute.status": closedDispute.status,
+            "dispute.closedAt": admin.firestore.FieldValue.serverTimestamp(),
+            payoutStatus: newPayoutStatus,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          // Notify driver of outcome
+          const outcomeMessage = disputeWon
+            ? "Good news! The payment dispute was resolved in your favor. Your payout is now available."
+            : "Unfortunately, the payment dispute was lost. The funds have been returned to the passenger.";
+
+          await createNotification({
+            userId: closedDisputeBookingData.driverId,
+            title: disputeWon ? "Dispute Won ✅" : "Dispute Lost ❌",
+            body: outcomeMessage,
+            type: "payment",
+            data: { bookingId: closedDisputeBookingDoc.id, disputeId: closedDispute.id, outcome: closedDispute.status },
+          });
+
+          console.log(`✅ Dispute ${closedDispute.id} closed (${closedDispute.status}), booking updated`);
+        } catch (closedDisputeError) {
+          console.error("Error processing dispute closed webhook:", closedDisputeError);
+        }
+        break;
+
       default:
         console.log(`Webhook: Unhandled event type ${event.type}`);
     }
