@@ -421,11 +421,15 @@ export const useRidesStore = create<RidesState>((set, get) => ({
           );
         }
 
-        // Send system message
-        await ChatService.sendSystemMessage(
-          rideId,
-          `This ride has been cancelled by the driver. Reason: ${reason}. All passengers will receive full refunds.`
-        );
+        // Send system message (fire-and-forget, don't block cancellation)
+        try {
+          await ChatService.sendSystemMessage(
+            rideId,
+            `This ride has been cancelled by the driver. Reason: ${reason}. All passengers will receive full refunds.`
+          );
+        } catch (msgError) {
+          console.warn('System message failed, but cancellation succeeded:', msgError);
+        }
       }
 
       // Refresh rides
@@ -497,11 +501,15 @@ export const useRidesStore = create<RidesState>((set, get) => ({
           );
         }
 
-        // Send system message
-        await ChatService.sendSystemMessage(
-          rideId,
-          `Booking cancelled (${cancellationType}). ${seats} seat(s) affected. Reason: ${reason}`
-        );
+        // Send system message (fire-and-forget, don't block cancellation)
+        try {
+          await ChatService.sendSystemMessage(
+            rideId,
+            `Booking cancelled (${cancellationType}). ${seats} seat(s) affected. Reason: ${reason}`
+          );
+        } catch (msgError) {
+          console.warn('System message failed, but cancellation succeeded:', msgError);
+        }
       }
 
       // Refresh bookings and rides
@@ -1131,11 +1139,15 @@ export const useRidesStore = create<RidesState>((set, get) => ({
           );
         }
 
-        // Send system message
-        await ChatService.sendSystemMessage(
-          rideId,
-          'This ride has been completed. Thank you for using CarpoolConnect!'
-        );
+        // Send system message (fire-and-forget, don't block completion)
+        try {
+          await ChatService.sendSystemMessage(
+            rideId,
+            'This ride has been completed. Thank you for using CarpoolConnect!'
+          );
+        } catch (msgError) {
+          console.warn('System message failed, but ride completion succeeded:', msgError);
+        }
       }
 
       // Refresh rides

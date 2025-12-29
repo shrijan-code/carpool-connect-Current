@@ -6370,6 +6370,90 @@ export const onReviewCreated = onDocumentCreated("reviews/{reviewId}", async (ev
   }
 });
 
+// ============================================================================
+// SYSTEM MESSAGES - Server-side message sending (bypasses client Firestore rules)
+// ============================================================================
+
+/**
+ * Send a system message to a ride's chat
+ * This Cloud Function bypasses security rules that require senderId == uid
+ */
+export const sendSystemMessageFn = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const { rideId, message } = request.data;
+  const userId = request.auth.uid;
+
+  if (!rideId || !message) {
+    throw new HttpsError("invalid-argument", "Missing rideId or message");
+  }
+
+  try {
+    // Verify user is involved in this ride (driver or passenger)
+    const rideDoc = await db.collection("rides").doc(rideId).get();
+    if (!rideDoc.exists) {
+      throw new HttpsError("not-found", "Ride not found");
+    }
+
+    const rideData = rideDoc.data()!;
+    const isDriver = rideData.driverId === userId;
+
+    // Check if user has a booking for this ride
+    const bookingSnapshot = await db.collection("bookings")
+      .where("rideId", "==", rideId)
+      .where("riderId", "==", userId)
+      .limit(1)
+      .get();
+
+    const isPassenger = !bookingSnapshot.empty;
+
+    if (!isDriver && !isPassenger) {
+      throw new HttpsError("permission-denied", "You are not involved in this ride");
+    }
+
+    // Get all participants for this ride
+    const participants: string[] = [rideData.driverId];
+
+    // Add all passengers with active bookings
+    const activeBookings = await db.collection("bookings")
+      .where("rideId", "==", rideId)
+      .where("status", "in", ["confirmed", "pending_driver"])
+      .get();
+
+    activeBookings.docs.forEach(doc => {
+      const riderId = doc.data().riderId;
+      if (riderId && !participants.includes(riderId)) {
+        participants.push(riderId);
+      }
+    });
+
+    // Create system message
+    const messageRef = await db.collection("messages").add({
+      rideId,
+      senderId: "system",
+      senderName: "System",
+      message: sanitizeMessage(message),
+      type: "system",
+      readBy: [],
+      participants,
+      timestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`✅ System message sent for ride ${rideId}: ${messageRef.id}`);
+
+    return {
+      success: true,
+      messageId: messageRef.id
+    };
+  } catch (error: any) {
+    console.error("Send system message error:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", error.message || "Failed to send system message");
+  }
+});
+
 export {
   createVerificationSession,
   getVerificationStatus,

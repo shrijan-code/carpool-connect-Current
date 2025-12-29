@@ -17,7 +17,8 @@ import {
   QueryDocumentSnapshot,
   DocumentData
 } from 'firebase/firestore';
-import { db } from '@/config/firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '@/config/firebase';
 import { ChatMessage, MessageThread } from '@/types';
 import { ImageService } from './image';
 import { NotificationService } from './notifications';
@@ -391,31 +392,28 @@ export class ChatService {
     });
   }
 
-  // Send system message
+  // Send system message via Cloud Function (bypasses security rules)
   static async sendSystemMessage(
     rideId: string,
     message: string
   ): Promise<string> {
     try {
-      // Get participants for system message
-      const participants = await this.getParticipantsForRide(rideId);
+      // Use Cloud Function to send system message (runs with admin privileges)
+      const sendSystemMessageFn = httpsCallable(functions, 'sendSystemMessageFn');
+      const result = await sendSystemMessageFn({ rideId, message });
+      const data = result.data as { success: boolean; messageId: string };
 
-      const messageData = {
-        rideId,
-        senderId: 'system',
-        senderName: 'System',
-        message,
-        type: 'system' as const,
-        readBy: [],
-        participants,
-        timestamp: serverTimestamp()
-      };
+      if (!data.success) {
+        throw new Error('Failed to send system message');
+      }
 
-      const messageRef = await addDoc(collection(db, 'messages'), messageData);
-      return messageRef.id;
+      return data.messageId;
     } catch (error: any) {
       console.error('Send system message error:', error);
-      throw new Error('Failed to send system message');
+      // Don't throw - system messages are non-critical
+      // Log it and continue without blocking the main operation
+      console.warn('System message failed, continuing without it');
+      return '';
     }
   }
 

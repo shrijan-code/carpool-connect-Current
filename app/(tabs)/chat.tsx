@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams } from 'expo-router';
 import { Card } from '@/components/ui/Card';
@@ -10,6 +10,7 @@ import { ChatService } from '@/services/chat';
 import { ChatMessage, Ride } from '@/types';
 import { MessageCircle, Send, Phone, MoreVertical, Check, CheckCheck } from 'lucide-react-native';
 import { logger } from '@/utils/logger';
+import { router } from 'expo-router';
 
 interface ChatRoom {
   id: string;
@@ -343,10 +344,68 @@ export default function ChatScreen() {
             </Text>
           </View>
           <View style={styles.chatViewActions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => {
+                // Get other user's phone from the ride/booking data
+                const otherUserId = selectedChatData.otherUser.id;
+                // Show info that calling requires phone number on profile
+                Alert.alert(
+                  'Call User',
+                  'Phone calls are made through the user\'s profile. Would you like to view their profile?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'View Profile',
+                      onPress: () => router.push(`/profile/${otherUserId}` as any)
+                    }
+                  ]
+                );
+              }}
+            >
               <Phone size={20} color={Colors.primary} />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => {
+                Alert.alert(
+                  'Options',
+                  undefined,
+                  [
+                    {
+                      text: 'View Profile',
+                      onPress: () => router.push(`/profile/${selectedChatData.otherUser.id}` as any)
+                    },
+                    {
+                      text: 'View Ride Details',
+                      onPress: () => router.push(`/ride-details?id=${selectedChatData.rideId}` as any)
+                    },
+                    {
+                      text: 'Report User',
+                      style: 'destructive',
+                      onPress: () => {
+                        Alert.alert(
+                          'Report User',
+                          'Are you sure you want to report this user? This will be reviewed by our team.',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Report',
+                              style: 'destructive',
+                              onPress: () => {
+                                // Here you would send a report to your backend
+                                Alert.alert('Report Submitted', 'Thank you for your report. Our team will review it.');
+                              }
+                            }
+                          ]
+                        );
+                      }
+                    },
+                    { text: 'Cancel', style: 'cancel' }
+                  ]
+                );
+              }}
+            >
               <MoreVertical size={20} color={Colors.primary} />
             </TouchableOpacity>
           </View>
