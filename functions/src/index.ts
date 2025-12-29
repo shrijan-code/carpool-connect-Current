@@ -2348,6 +2348,8 @@ export const completeRideAndCharge = onCall(
 
         try {
           const paymentIntentId = bookingData.payment?.paymentIntentId;
+          const paymentMethodId = bookingData.payment?.paymentMethodId;
+          const riderId = bookingData.riderId;
 
           if (!paymentIntentId) {
             // BULLETPROOF: No payment intent = payment failure - do NOT complete silently
@@ -2364,14 +2366,14 @@ export const completeRideAndCharge = onCall(
             await createNotification({
               userId: "admin", // Admin user ID or use a special channel
               title: "⚠️ CRITICAL: Missing Payment Authorization",
-              body: `Booking ${bookingDoc.id} for ride ${rideId} has no payment authorization. Rider: ${bookingData.riderId}`,
+              body: `Booking ${bookingDoc.id} for ride ${rideId} has no payment authorization. Rider: ${riderId}`,
               type: "system", // Use valid type
-              data: { bookingId: bookingDoc.id, rideId, riderId: bookingData.riderId, severity: "critical" },
+              data: { bookingId: bookingDoc.id, rideId, riderId, severity: "critical" },
             });
 
             // Notify rider about payment issue
             await createNotification({
-              userId: bookingData.riderId,
+              userId: riderId,
               title: "Payment Issue with Your Completed Ride",
               body: "There was a problem processing your payment. Please contact support.",
               type: "payment", // Use valid type
@@ -2382,33 +2384,165 @@ export const completeRideAndCharge = onCall(
             continue;
           }
 
-          // SECURITY CHECK: Verify payment amount matches booking before capture
+          // SECURITY CHECK: Verify payment status and handle expired authorizations
           const paymentIntentDetails = await stripe.paymentIntents.retrieve(paymentIntentId);
+          let capturedPaymentIntent;
+          let reauthorized = false;
 
-          // Ensure we're not capturing more than what was authorized
-          if (paymentIntentDetails.amount !== bookingAmount) {
-            console.warn(
-              `⚠️ Amount mismatch for booking ${bookingDoc.id}: ` +
-              `PI amount=${paymentIntentDetails.amount}, booking amount=${bookingAmount}. ` +
-              `Using original PI amount for safety.`
-            );
-            // Use the original authorized amount for safety - prevents overcharging
+          // Check if authorization has expired or been canceled
+          if (paymentIntentDetails.status === "canceled" ||
+            paymentIntentDetails.status === "requires_payment_method" ||
+            paymentIntentDetails.status === "requires_confirmation") {
+
+            console.log(`⚠️ Authorization expired for booking ${bookingDoc.id} (status: ${paymentIntentDetails.status}). Attempting re-authorization...`);
+
+            // Attempt to re-authorize using the saved payment method
+            if (!paymentMethodId) {
+              // Try to get payment method from user's Stripe customer
+              const riderDoc = await db.collection("users").doc(riderId).get();
+              const riderData = riderDoc.data();
+
+              if (!riderData?.stripeCustomerId) {
+                throw new Error("No payment method available for re-authorization");
+              }
+
+              // Get customer's default payment method
+              const customer = await stripe.customers.retrieve(riderData.stripeCustomerId);
+              if (!customer || customer.deleted) {
+                throw new Error("Customer not found for re-authorization");
+              }
+
+              const customerPaymentMethods = await stripe.paymentMethods.list({
+                customer: riderData.stripeCustomerId,
+                type: "card",
+                limit: 1,
+              });
+
+              if (customerPaymentMethods.data.length === 0) {
+                throw new Error("No saved payment methods found for re-authorization");
+              }
+
+              const savedPaymentMethodId = customerPaymentMethods.data[0].id;
+
+              // Create a new PaymentIntent with immediate capture
+              console.log(`🔄 Creating new PaymentIntent for expired authorization on booking ${bookingDoc.id}`);
+
+              const newPaymentIntent = await stripe.paymentIntents.create({
+                amount: bookingAmount,
+                currency: "aud",
+                customer: riderData.stripeCustomerId,
+                payment_method: savedPaymentMethodId,
+                off_session: true,
+                confirm: true,
+                capture_method: "automatic", // Capture immediately
+                description: `Re-authorized payment for ride ${rideId}`,
+                metadata: {
+                  rideId,
+                  bookingId: bookingDoc.id,
+                  riderId,
+                  reauthorized: "true",
+                  originalPaymentIntentId: paymentIntentId,
+                },
+              }, {
+                idempotencyKey: `reauth_${bookingDoc.id}_${Date.now()}`,
+              });
+
+              if (newPaymentIntent.status === "succeeded") {
+                capturedPaymentIntent = newPaymentIntent;
+                reauthorized = true;
+                console.log(`✅ Re-authorization successful for booking ${bookingDoc.id}`);
+
+                // Update booking with new payment intent ID
+                await bookingDoc.ref.update({
+                  "payment.originalPaymentIntentId": paymentIntentId,
+                  "payment.paymentIntentId": newPaymentIntent.id,
+                  "payment.reauthorizedAt": admin.firestore.FieldValue.serverTimestamp(),
+                });
+              } else {
+                throw new Error(`Re-authorization failed: ${newPaymentIntent.status}`);
+              }
+            } else {
+              // Use the saved payment method ID directly
+              const riderDoc = await db.collection("users").doc(riderId).get();
+              const riderData = riderDoc.data();
+
+              if (!riderData?.stripeCustomerId) {
+                throw new Error("No Stripe customer ID for re-authorization");
+              }
+
+              console.log(`🔄 Re-authorizing with saved payment method for booking ${bookingDoc.id}`);
+
+              const newPaymentIntent = await stripe.paymentIntents.create({
+                amount: bookingAmount,
+                currency: "aud",
+                customer: riderData.stripeCustomerId,
+                payment_method: paymentMethodId,
+                off_session: true,
+                confirm: true,
+                capture_method: "automatic", // Capture immediately
+                description: `Re-authorized payment for ride ${rideId}`,
+                metadata: {
+                  rideId,
+                  bookingId: bookingDoc.id,
+                  riderId,
+                  reauthorized: "true",
+                  originalPaymentIntentId: paymentIntentId,
+                },
+              }, {
+                idempotencyKey: `reauth_pm_${bookingDoc.id}_${Date.now()}`,
+              });
+
+              if (newPaymentIntent.status === "succeeded") {
+                capturedPaymentIntent = newPaymentIntent;
+                reauthorized = true;
+                console.log(`✅ Re-authorization with saved payment method successful for booking ${bookingDoc.id}`);
+
+                // Update booking with new payment intent ID
+                await bookingDoc.ref.update({
+                  "payment.originalPaymentIntentId": paymentIntentId,
+                  "payment.paymentIntentId": newPaymentIntent.id,
+                  "payment.reauthorizedAt": admin.firestore.FieldValue.serverTimestamp(),
+                });
+              } else {
+                throw new Error(`Re-authorization failed: ${newPaymentIntent.status}`);
+              }
+            }
+          } else if (paymentIntentDetails.status === "requires_capture") {
+            // Normal flow - authorization is valid, capture it
+            // Ensure we're not capturing more than what was authorized
+            if (paymentIntentDetails.amount !== bookingAmount) {
+              console.warn(
+                `⚠️ Amount mismatch for booking ${bookingDoc.id}: ` +
+                `PI amount=${paymentIntentDetails.amount}, booking amount=${bookingAmount}. ` +
+                `Using original PI amount for safety.`
+              );
+              // Use the original authorized amount for safety - prevents overcharging
+              bookingAmount = paymentIntentDetails.amount;
+            }
+
+            // Capture the authorized payment
+            capturedPaymentIntent = await stripe.paymentIntents.capture(paymentIntentId, {}, {
+              idempotencyKey: `capture_${bookingDoc.id}`,
+            });
+          } else if (paymentIntentDetails.status === "succeeded") {
+            // Already captured - use as is
+            console.log(`ℹ️ Payment already captured for booking ${bookingDoc.id}`);
+            capturedPaymentIntent = paymentIntentDetails;
             bookingAmount = paymentIntentDetails.amount;
+          } else {
+            // Unexpected status
+            throw new Error(`Unexpected PaymentIntent status: ${paymentIntentDetails.status}`);
           }
 
-          // Capture the authorized payment
-          const paymentIntent = await stripe.paymentIntents.capture(paymentIntentId, {}, {
-            idempotencyKey: `capture_${bookingDoc.id}`,
-          });
-
-          if (paymentIntent.status === "succeeded") {
+          if (capturedPaymentIntent && capturedPaymentIntent.status === "succeeded") {
             await bookingDoc.ref.update({
               status: "completed",
               completedAt: admin.firestore.FieldValue.serverTimestamp(),
               updatedAt: admin.firestore.FieldValue.serverTimestamp(),
               "payment.status": "captured",
               "payment.capturedAt": admin.firestore.FieldValue.serverTimestamp(),
-              "payment.verifiedAmount": paymentIntentDetails.amount, // Track verified amount
+              "payment.verifiedAmount": bookingAmount, // Track verified amount
+              "payment.wasReauthorized": reauthorized, // Track if re-authorization was needed
               // Review tracking - enables pending review queries
               riderReviewedDriver: false,
               driverReviewedRider: false,
@@ -2416,12 +2550,30 @@ export const completeRideAndCharge = onCall(
 
             totalRevenue += bookingAmount;
             successfulCharges++;
-            console.log(`✅ Captured payment for booking ${bookingDoc.id}: $${(bookingAmount / 100).toFixed(2)}`);
+            console.log(`✅ ${reauthorized ? 'Re-authorized and captured' : 'Captured'} payment for booking ${bookingDoc.id}: $${(bookingAmount / 100).toFixed(2)}`);
           } else {
-            throw new Error(`Payment capture failed: ${paymentIntent.status}`);
+            throw new Error(`Payment capture failed: ${capturedPaymentIntent?.status || 'unknown'}`);
           }
-        } catch (error) {
+        } catch (error: any) {
           console.error(`❌ Failed to capture payment for booking ${bookingDoc.id}:`, error);
+
+          // Update booking with failure details
+          await bookingDoc.ref.update({
+            status: "payment_failed",
+            "payment.status": "capture_failed",
+            "payment.failureReason": error.message || "Unknown error during payment capture",
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+          // Notify rider about payment failure
+          await createNotification({
+            userId: bookingData.riderId,
+            title: "Payment Failed",
+            body: "We couldn't process your payment for the completed ride. Please update your payment method.",
+            type: "payment",
+            data: { bookingId: bookingDoc.id, rideId },
+          });
+
           failedCharges++;
         }
       }
