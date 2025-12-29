@@ -7,7 +7,8 @@ import { Colors } from '@/constants/colors';
 import { useAuthStore } from '@/store/auth-store';
 import { useRidesStore } from '@/store/rides-store';
 import { Booking } from '@/types';
-import { Clock, User, DollarSign, AlertTriangle, CheckCircle, XCircle, RefreshCw, Eye, MessageCircle } from 'lucide-react-native';
+import { Clock, User, DollarSign, AlertTriangle, CheckCircle, XCircle, RefreshCw, Eye, MessageCircle, AlertCircle, CreditCard } from 'lucide-react-native';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { CancellationModal } from '@/src/components/CancellationModal';
 import { router } from 'expo-router';
 import { logger } from '@/utils/logger';
@@ -22,7 +23,8 @@ export default function BookingManagementScreen() {
   const [loadingBookings, setLoadingBookings] = useState(true);
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [showCancellationModal, setShowCancellationModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'confirmed' | 'declined'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'confirmed' | 'declined' | 'failed'>('all');
+  const [retryingPayment, setRetryingPayment] = useState<string | null>(null);
 
   const loadBookings = useCallback(async () => {
     if (!user?.id) return;
@@ -76,6 +78,7 @@ export default function BookingManagementScreen() {
       case 'declined':
       case 'cancelled_rider':
       case 'cancelled_driver':
+      case 'payment_failed':
         return Colors.error;
       case 'completed':
         return Colors.primary;
@@ -96,6 +99,8 @@ export default function BookingManagementScreen() {
       case 'cancelled_rider':
       case 'cancelled_driver':
         return <XCircle size={16} color={Colors.error} />;
+      case 'payment_failed':
+        return <AlertCircle size={16} color={Colors.error} />;
       case 'completed':
         return <CheckCircle size={16} color={Colors.primary} />;
       default:
@@ -117,10 +122,48 @@ export default function BookingManagementScreen() {
         return 'Cancelled by You';
       case 'cancelled_driver':
         return 'Cancelled by Driver';
+      case 'payment_failed':
+        return 'Payment Failed';
       case 'completed':
         return 'Completed';
       default:
         return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+  };
+
+  const handleRetryPayment = async (booking: Booking) => {
+    if (retryingPayment) return; // Prevent double-clicks
+
+    setRetryingPayment(booking.id);
+    try {
+      const functions = getFunctions();
+      const retryPayment = httpsCallable(functions, 'retryPaymentForCompletedRide');
+
+      const result = await retryPayment({ bookingId: booking.id });
+      const data = result.data as { success: boolean; message: string; requiresAction?: boolean };
+
+      if (data.success) {
+        Alert.alert(
+          'Payment Successful! ✅',
+          data.message,
+          [{ text: 'OK', onPress: loadBookings }]
+        );
+      } else if (data.requiresAction) {
+        Alert.alert(
+          'Additional Verification Required',
+          'Please try again or contact support if the issue persists.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('Retry payment error:', error);
+      Alert.alert(
+        'Payment Failed',
+        error.message || 'Failed to process payment. Please try again.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setRetryingPayment(null);
     }
   };
 
@@ -208,6 +251,7 @@ export default function BookingManagementScreen() {
     if (activeTab === 'pending') return ['pending_driver', 'requested'].includes(booking.status);
     if (activeTab === 'confirmed') return ['accepted', 'confirmed'].includes(booking.status);
     if (activeTab === 'declined') return ['declined', 'cancelled_rider', 'cancelled_driver'].includes(booking.status);
+    if (activeTab === 'failed') return booking.status === 'payment_failed';
     return true;
   });
 
@@ -216,6 +260,7 @@ export default function BookingManagementScreen() {
     if (tab === 'pending') return bookings.filter(b => ['pending_driver', 'requested'].includes(b.status)).length;
     if (tab === 'confirmed') return bookings.filter(b => ['accepted', 'confirmed'].includes(b.status)).length;
     if (tab === 'declined') return bookings.filter(b => ['declined', 'cancelled_rider', 'cancelled_driver'].includes(b.status)).length;
+    if (tab === 'failed') return bookings.filter(b => b.status === 'payment_failed').length;
     return 0;
   };
 
@@ -238,7 +283,8 @@ export default function BookingManagementScreen() {
             { key: 'all', label: 'All' },
             { key: 'pending', label: 'Pending' },
             { key: 'confirmed', label: 'Confirmed' },
-            { key: 'declined', label: 'Declined' }
+            { key: 'declined', label: 'Declined' },
+            { key: 'failed', label: 'Failed' }
           ].map((tab) => (
             <TouchableOpacity
               key={tab.key}
@@ -402,6 +448,20 @@ export default function BookingManagementScreen() {
                       >
                         <XCircle size={16} color={Colors.error} />
                         <Text style={styles.cancelButtonText}>Cancel Booking</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* Retry Payment Button for Failed Payments */}
+                    {booking.status === 'payment_failed' && (
+                      <TouchableOpacity
+                        style={[styles.actionButton, styles.retryButton]}
+                        onPress={() => handleRetryPayment(booking)}
+                        disabled={retryingPayment === booking.id}
+                      >
+                        <CreditCard size={16} color={Colors.background} />
+                        <Text style={styles.actionButtonText}>
+                          {retryingPayment === booking.id ? 'Processing...' : 'Retry Payment'}
+                        </Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -697,6 +757,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     borderWidth: 1.5,
     borderColor: Colors.error,
+  },
+  retryButton: {
+    backgroundColor: Colors.warning,
   },
   actionButtonText: {
     fontSize: 14,

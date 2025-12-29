@@ -979,6 +979,32 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
   // Rate limiting - prevent booking spam
   await checkRateLimit(riderId, "createPendingBooking");
 
+  // =========================================================================
+  // OUTSTANDING BALANCE CHECK
+  // Block new bookings if rider has unpaid failed payments from completed rides
+  // =========================================================================
+  const failedPaymentBookings = await db.collection("bookings")
+    .where("riderId", "==", riderId)
+    .where("status", "==", "payment_failed")
+    .limit(5)
+    .get();
+
+  if (!failedPaymentBookings.empty) {
+    // Calculate total outstanding amount
+    let totalOwed = 0;
+    failedPaymentBookings.forEach(doc => {
+      const data = doc.data();
+      totalOwed += data.amountTotal || 0;
+    });
+
+    console.log(`🚫 Rider ${riderId} has ${failedPaymentBookings.size} failed payment(s), total: $${(totalOwed / 100).toFixed(2)}`);
+
+    throw new HttpsError(
+      "failed-precondition",
+      `You have $${(totalOwed / 100).toFixed(2)} in outstanding payments from ${failedPaymentBookings.size} completed ride(s). Please settle your balance before booking new rides.`
+    );
+  }
+
   // Input validation
   if (!rideId || !seats) {
     throw new HttpsError("invalid-argument", "Missing rideId or seats");
@@ -5670,6 +5696,188 @@ export const retryCapturePayment = onCall(
       });
 
       throw new HttpsError("internal", error.message || "Failed to capture");
+    }
+  }
+);
+
+/**
+ * Retry Payment for Completed Ride
+ * 
+ * Called by rider when their payment failed during ride completion.
+ * Creates a new PaymentIntent with immediate capture since the ride is already completed.
+ * 
+ * This handles the case where:
+ * - Authorization expired before ride completion
+ * - Card was declined during capture
+ * - Re-authorization failed during completeRideAndCharge
+ * 
+ * @requires auth - User must be the rider of this booking
+ * @param bookingId - The ID of the booking with failed payment
+ * @returns { success, message }
+ */
+export const retryPaymentForCompletedRide = onCall(
+  { secrets: ["STRIPE_SECRET_KEY"] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be logged in");
+    }
+
+    const { bookingId } = request.data;
+    const userId = request.auth.uid;
+
+    if (!bookingId) {
+      throw new HttpsError("invalid-argument", "Missing bookingId");
+    }
+
+    console.log(`💳 Rider ${userId} retrying payment for booking ${bookingId}`);
+
+    const bookingDoc = await db.collection("bookings").doc(bookingId).get();
+    if (!bookingDoc.exists) {
+      throw new HttpsError("not-found", "Booking not found");
+    }
+
+    const bookingData = bookingDoc.data()!;
+
+    // Only rider can retry their own payment
+    if (bookingData.riderId !== userId) {
+      throw new HttpsError("permission-denied", "Only the rider can retry this payment");
+    }
+
+    // Check if payment needs retry - accept both payment_failed status and capture_failed payment status
+    const validStatuses = ["payment_failed"];
+    const validPaymentStatuses = ["capture_failed", "missing_authorization", "authorization_expired"];
+
+    const needsRetry = validStatuses.includes(bookingData.status) ||
+      validPaymentStatuses.includes(bookingData.payment?.status);
+
+    if (!needsRetry) {
+      throw new HttpsError(
+        "failed-precondition",
+        `This booking doesn't need payment retry (status: ${bookingData.status}, payment: ${bookingData.payment?.status})`
+      );
+    }
+
+    try {
+      const stripe = getStripe();
+
+      // Get rider's Stripe customer ID
+      const riderDoc = await db.collection("users").doc(userId).get();
+      const riderData = riderDoc.data();
+
+      if (!riderData?.stripeCustomerId) {
+        throw new HttpsError("failed-precondition", "No payment method on file. Please add a card first.");
+      }
+
+      // Get saved payment method
+      let paymentMethodId = bookingData.payment?.paymentMethodId;
+
+      if (!paymentMethodId) {
+        // Try to get from customer's default payment method
+        const paymentMethods = await stripe.paymentMethods.list({
+          customer: riderData.stripeCustomerId,
+          type: "card",
+          limit: 1,
+        });
+
+        if (paymentMethods.data.length === 0) {
+          throw new HttpsError("failed-precondition", "No payment method found. Please add a card.");
+        }
+
+        paymentMethodId = paymentMethods.data[0].id;
+      }
+
+      const amount = bookingData.amountTotal || 0;
+      if (amount <= 0) {
+        throw new HttpsError("failed-precondition", "Invalid payment amount");
+      }
+
+      console.log(`🔄 Creating new PaymentIntent for retry: $${(amount / 100).toFixed(2)}`);
+
+      // Create new PaymentIntent with immediate capture (automatic)
+      // Since ride is already completed, we capture immediately
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount,
+        currency: "aud",
+        customer: riderData.stripeCustomerId,
+        payment_method: paymentMethodId,
+        off_session: true,
+        confirm: true,
+        capture_method: "automatic", // Capture immediately
+        description: `Retry payment for completed ride - Booking ${bookingId}`,
+        metadata: {
+          bookingId,
+          rideId: bookingData.rideId,
+          riderId: userId,
+          isRetryPayment: "true",
+          originalPaymentIntentId: bookingData.payment?.paymentIntentId || "",
+        },
+      }, {
+        idempotencyKey: `retry_payment_${bookingId}_${Date.now()}`,
+      });
+
+      if (paymentIntent.status === "succeeded") {
+        // Payment successful - update booking to completed
+        await bookingDoc.ref.update({
+          status: "completed",
+          "payment.paymentIntentId": paymentIntent.id,
+          "payment.status": "captured",
+          "payment.capturedAt": admin.firestore.FieldValue.serverTimestamp(),
+          "payment.retrySuccessful": true,
+          "payment.retryCount": admin.firestore.FieldValue.increment(1),
+          "payment.retryCompletedAt": admin.firestore.FieldValue.serverTimestamp(),
+          completedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          // Enable reviews now that payment is complete
+          riderReviewedDriver: false,
+          driverReviewedRider: false,
+        });
+
+        console.log(`✅ Retry payment successful for booking ${bookingId}`);
+
+        await logPaymentEvent(bookingId, AuditEventTypes.PAYMENT_CAPTURED, paymentIntent.id, true);
+
+        // Notify rider of successful payment
+        await createNotification({
+          userId,
+          title: "Payment Successful! ✅",
+          body: `Your payment of $${(amount / 100).toFixed(2)} for the ride has been processed.`,
+          type: "payment",
+          data: { bookingId, rideId: bookingData.rideId },
+        });
+
+        return {
+          success: true,
+          message: "Payment processed successfully",
+          amount: amount / 100,
+        };
+      } else if (paymentIntent.status === "requires_action") {
+        // 3D Secure or other authentication required
+        // Return client secret for frontend to complete
+        return {
+          success: false,
+          requiresAction: true,
+          clientSecret: paymentIntent.client_secret,
+          message: "Additional authentication required",
+        };
+      } else {
+        throw new Error(`Payment failed with status: ${paymentIntent.status}`);
+      }
+    } catch (error: any) {
+      console.error(`❌ Retry payment failed for booking ${bookingId}:`, error);
+
+      // Update booking with retry attempt
+      await bookingDoc.ref.update({
+        "payment.retryCount": admin.firestore.FieldValue.increment(1),
+        "payment.lastRetryAttempt": admin.firestore.FieldValue.serverTimestamp(),
+        "payment.lastRetryError": error.message || "Unknown error",
+      });
+
+      // Check for specific Stripe errors
+      if (error.type === "StripeCardError") {
+        throw new HttpsError("failed-precondition", error.message || "Card was declined. Please try a different card.");
+      }
+
+      throw new HttpsError("internal", error.message || "Failed to process payment");
     }
   }
 );
