@@ -982,26 +982,47 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
   // =========================================================================
   // OUTSTANDING BALANCE CHECK
   // Block new bookings if rider has unpaid failed payments from completed rides
+  // NOTE: Check both riderId and passengerId for legacy data compatibility
   // =========================================================================
-  const failedPaymentBookings = await db.collection("bookings")
+  const failedByRiderId = await db.collection("bookings")
     .where("riderId", "==", riderId)
     .where("status", "==", "payment_failed")
     .limit(5)
     .get();
 
-  if (!failedPaymentBookings.empty) {
-    // Calculate total outstanding amount
-    let totalOwed = 0;
-    failedPaymentBookings.forEach(doc => {
-      const data = doc.data();
-      totalOwed += data.amountTotal || 0;
-    });
+  const failedByPassengerId = await db.collection("bookings")
+    .where("passengerId", "==", riderId)
+    .where("status", "==", "payment_failed")
+    .limit(5)
+    .get();
 
-    console.log(`🚫 Rider ${riderId} has ${failedPaymentBookings.size} failed payment(s), total: $${(totalOwed / 100).toFixed(2)}`);
+  // Merge results, avoiding duplicates
+  const failedBookingIds = new Set<string>();
+  let totalOwed = 0;
+  let failedCount = 0;
+
+  failedByRiderId.forEach(doc => {
+    if (!failedBookingIds.has(doc.id)) {
+      failedBookingIds.add(doc.id);
+      totalOwed += doc.data().amountTotal || 0;
+      failedCount++;
+    }
+  });
+
+  failedByPassengerId.forEach(doc => {
+    if (!failedBookingIds.has(doc.id)) {
+      failedBookingIds.add(doc.id);
+      totalOwed += doc.data().amountTotal || 0;
+      failedCount++;
+    }
+  });
+
+  if (failedCount > 0) {
+    console.log(`🚫 Rider ${riderId} has ${failedCount} failed payment(s), total: $${(totalOwed / 100).toFixed(2)}`);
 
     throw new HttpsError(
       "failed-precondition",
-      `You have $${(totalOwed / 100).toFixed(2)} in outstanding payments from ${failedPaymentBookings.size} completed ride(s). Please settle your balance before booking new rides.`
+      `You have $${(totalOwed / 100).toFixed(2)} in outstanding payments from ${failedCount} completed ride(s). Please settle your balance before booking new rides.`
     );
   }
 
@@ -1089,9 +1110,20 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
 
       // Create booking document
       const bookingRef = db.collection("bookings").doc();
+
+      // Generate idempotency key to prevent duplicates from rapid clicks
+      // Format: booking_{rideId}_{riderId}_{timestamp}
+      const idempotencyKey = `booking_${rideId}_${riderId}_${Date.now()}`;
+
+      // Set expiration time (48 hours) for pending bookings
+      // Scheduled function will expire stale pending_driver bookings
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
       const bookingData = {
         rideId,
         riderId,
+        // Also set passengerId for compatibility with legacy code
+        passengerId: riderId,
         driverId: rideData.driverId,
         seats,
         pricePerSeat,
@@ -1099,6 +1131,8 @@ export const createPendingBooking = onCall({ secrets: ['STRIPE_SECRET_KEY', 'EMA
         platformFee,
         amountTotal: totalAmount,
         status: "pending_driver",
+        idempotencyKey,
+        expiresAt,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         payment: {
@@ -2901,19 +2935,28 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
             driverCompensation = fareAmount;
             platformFee = PLATFORM_FEE;
             console.log(`⏰ After departure - no refund, driver compensated: $${(driverCompensation / 100).toFixed(2)}`);
-          } else if (hoursUntilDeparture <= 24) {
-            // Late cancellation (<24h): 50% refund, 50% to driver, platform keeps $5
+          } else if (hoursUntilDeparture <= 12) {
+            // Very late cancellation (<12h): 50% refund, 50% to driver, platform keeps $5
             const halfFare = Math.round(fareAmount / 2);
             refundAmount = halfFare;
             driverCompensation = halfFare;
             platformFee = PLATFORM_FEE;
-            console.log(`⚡ Late cancellation - 50% refund: $${(refundAmount / 100).toFixed(2)}, driver: $${(driverCompensation / 100).toFixed(2)}`);
+            console.log(`🔥 Very late cancellation (<12h) - 50% refund: $${(refundAmount / 100).toFixed(2)}, driver: $${(driverCompensation / 100).toFixed(2)}`);
+          } else if (hoursUntilDeparture <= 24) {
+            // Late cancellation (12-24h): 75% refund, 25% to driver, platform keeps $5
+            const refundPortion = Math.round(fareAmount * 0.75);
+            const driverPortion = fareAmount - refundPortion;
+            refundAmount = refundPortion;
+            driverCompensation = driverPortion;
+            platformFee = PLATFORM_FEE;
+            console.log(`⚡ Late cancellation (12-24h) - 75% refund: $${(refundAmount / 100).toFixed(2)}, driver: $${(driverCompensation / 100).toFixed(2)}`);
           } else {
-            // Early cancellation (>24h): 100% refund (Full fare + platform fee)
-            refundAmount = totalAmount;
+            // Early cancellation (>24h): 95% refund, 5% goes to platform (covers processing fees)
+            const fee = Math.round(totalAmount * 0.05);
+            refundAmount = totalAmount - fee;
             driverCompensation = 0;
-            platformFee = 0;
-            console.log(`✅ Early cancellation - 100% refund to rider: $${(refundAmount / 100).toFixed(2)}`);
+            platformFee = fee;
+            console.log(`✅ Early cancellation (>24h) - 95% refund: $${(refundAmount / 100).toFixed(2)}, platform fee: $${(fee / 100).toFixed(2)}`);
           }
 
           if (refundAmount > 0) {
@@ -5158,13 +5201,14 @@ export const deleteUserAccount = onCall(async (request) => {
       const booking = bookingDoc.data();
 
       // Process refund if payment exists
-      if (booking.payment?.intentId) {
+      // NOTE: Field is paymentIntentId (not intentId) to match booking schema
+      if (booking.payment?.paymentIntentId) {
         try {
-          const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment.intentId);
+          const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment.paymentIntentId);
 
           if (paymentIntent.status === "requires_capture") {
             // Cancel uncaptured payment
-            await stripe.paymentIntents.cancel(booking.payment.intentId);
+            await stripe.paymentIntents.cancel(booking.payment.paymentIntentId);
             await bookingDoc.ref.update({
               "payment.status": "cancelled",
               "payment.refundReason": "Passenger account deleted",
@@ -5173,7 +5217,7 @@ export const deleteUserAccount = onCall(async (request) => {
           } else if (paymentIntent.status === "succeeded" && paymentIntent.amount_received > 0) {
             // Refund captured payment - full refund since it's account deletion
             await stripe.refunds.create({
-              payment_intent: booking.payment.intentId,
+              payment_intent: booking.payment.paymentIntentId,
               reason: "requested_by_customer",
             });
             await bookingDoc.ref.update({
@@ -5219,12 +5263,13 @@ export const deleteUserAccount = onCall(async (request) => {
       const booking = bookingDoc.data();
 
       // Process refund for the passenger if payment exists
-      if (booking.payment?.intentId) {
+      // NOTE: Field is paymentIntentId (not intentId) to match booking schema
+      if (booking.payment?.paymentIntentId) {
         try {
-          const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment.intentId);
+          const paymentIntent = await stripe.paymentIntents.retrieve(booking.payment.paymentIntentId);
 
           if (paymentIntent.status === "requires_capture") {
-            await stripe.paymentIntents.cancel(booking.payment.intentId);
+            await stripe.paymentIntents.cancel(booking.payment.paymentIntentId);
             await bookingDoc.ref.update({
               "payment.status": "cancelled",
               "payment.refundReason": "Driver account deleted - booking cancelled",
@@ -5233,7 +5278,7 @@ export const deleteUserAccount = onCall(async (request) => {
           } else if (paymentIntent.status === "succeeded" && paymentIntent.amount_received > 0) {
             // Full refund since driver deleted account (not passenger's fault)
             await stripe.refunds.create({
-              payment_intent: booking.payment.intentId,
+              payment_intent: booking.payment.paymentIntentId,
               reason: "requested_by_customer",
             });
             await bookingDoc.ref.update({
@@ -6977,6 +7022,127 @@ export const markBalanceSettled = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, asy
     throw new HttpsError("internal", error.message || "Failed to mark balance as settled");
   }
 });
+
+// ============================================================================
+// SCHEDULED FUNCTIONS - Automated Cleanup Tasks
+// ============================================================================
+
+/**
+ * Expire Pending Bookings
+ * 
+ * This scheduled function runs every hour to clean up stale pending_driver bookings.
+ * If a driver doesn't respond within 48 hours, the booking is expired and seats are restored.
+ * 
+ * This prevents seats from being held indefinitely when drivers don't respond.
+ */
+export const expirePendingBookings = onSchedule(
+  { schedule: "every 1 hours", region: "australia-southeast1" },
+  async () => {
+    console.log("🕐 Running pending booking expiration check...");
+
+    const now = new Date();
+
+    // Find bookings that have passed their expiresAt time
+    const expiredBookings = await db.collection("bookings")
+      .where("status", "==", "pending_driver")
+      .where("expiresAt", "<", now)
+      .limit(100) // Process in batches
+      .get();
+
+    if (expiredBookings.empty) {
+      console.log("✅ No expired pending bookings found");
+      return;
+    }
+
+    console.log(`⏰ Found ${expiredBookings.size} expired pending bookings`);
+
+    let expiredCount = 0;
+    let errorCount = 0;
+    const stripe = getStripe();
+
+    for (const bookingDoc of expiredBookings.docs) {
+      try {
+        const booking = bookingDoc.data();
+        const bookingId = bookingDoc.id;
+
+        // Use transaction to safely restore seats
+        await db.runTransaction(async (transaction) => {
+          // Re-check status in transaction to avoid race conditions
+          const freshBooking = await transaction.get(bookingDoc.ref);
+          if (!freshBooking.exists || freshBooking.data()?.status !== "pending_driver") {
+            console.log(`ℹ️ Booking ${bookingId} no longer pending, skipping`);
+            return;
+          }
+
+          const bookingData = freshBooking.data()!;
+
+          // Restore seats to the ride
+          if (bookingData.rideId && bookingData.seats) {
+            const rideRef = db.collection("rides").doc(bookingData.rideId);
+            transaction.update(rideRef, {
+              seatsAvailable: admin.firestore.FieldValue.increment(bookingData.seats),
+              availableSeats: admin.firestore.FieldValue.increment(bookingData.seats),
+              updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+
+          // Mark booking as expired
+          transaction.update(bookingDoc.ref, {
+            status: "expired",
+            expiredAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            expiredReason: "Driver did not respond within 48 hours",
+          });
+        });
+
+        // Cancel any payment authorization
+        const paymentIntentId = booking.payment?.paymentIntentId;
+        if (paymentIntentId) {
+          try {
+            await stripe.paymentIntents.cancel(paymentIntentId, {
+              cancellation_reason: "abandoned",
+            });
+          } catch (stripeError) {
+            // Payment may already be cancelled or captured
+            console.log(`ℹ️ Could not cancel PaymentIntent ${paymentIntentId}:`, stripeError);
+          }
+        }
+
+        // Notify the rider that their booking expired
+        const riderId = booking.riderId || booking.passengerId;
+        if (riderId) {
+          await createNotification({
+            userId: riderId,
+            title: "Booking Request Expired",
+            body: "Your booking request expired because the driver didn't respond in time. No payment was charged.",
+            type: "booking",
+            data: { bookingId, rideId: booking.rideId },
+          });
+        }
+
+        // Notify the driver that a booking request expired
+        if (booking.driverId) {
+          await createNotification({
+            userId: booking.driverId,
+            title: "Booking Request Expired",
+            body: "A booking request has expired because it wasn't responded to in time.",
+            type: "booking",
+            data: { bookingId, rideId: booking.rideId },
+          });
+        }
+
+        expiredCount++;
+        console.log(`✅ Expired booking ${bookingId}, restored ${booking.seats} seat(s)`);
+
+      } catch (error) {
+        console.error(`❌ Failed to expire booking ${bookingDoc.id}:`, error);
+        errorCount++;
+      }
+    }
+
+    console.log(`🏁 Expiration complete: ${expiredCount} expired, ${errorCount} errors`);
+  }
+);
 
 export {
   createVerificationSession,

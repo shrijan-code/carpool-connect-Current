@@ -3,6 +3,32 @@
  * 
  * These functions enforce the business rules for ride/booking operations
  * as defined in the Booking System Architecture.
+ * 
+ * ============================================================================
+ * FIELD NAMING CONVENTIONS (IMPORTANT FOR MAINTAINERS)
+ * ============================================================================
+ * 
+ * Due to historical evolution, some fields have dual names. BOTH should be
+ * updated together for compatibility:
+ * 
+ * SEATS:
+ * - `seatsAvailable` and `availableSeats` - both represent the same value
+ * - Always update BOTH when modifying seat counts
+ * 
+ * PASSENGER ID:
+ * - `riderId` is the current standard field name for passengers
+ * - `passengerId` is an alias set for legacy code compatibility
+ * - Both should be set when creating bookings
+ * - Queries should check BOTH fields when searching for user's bookings
+ * 
+ * LOCATIONS:
+ * - `from`/`to` vs `origin`/`destination` - ride locations may use either
+ * - Always check for both patterns when accessing location data
+ * 
+ * DEPARTURE TIME:
+ * - `departureTime` (ISO string) is the standard
+ * - `departureAt` may exist in some legacy data
+ * ============================================================================
  */
 
 import { Ride, Booking } from '@/types';
