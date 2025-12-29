@@ -6551,6 +6551,216 @@ export const sendSystemMessageFn = onCall(async (request) => {
   }
 });
 
+// ============================================================================
+// OUTSTANDING BALANCE MANAGEMENT
+// ============================================================================
+
+/**
+ * Get user's outstanding balance from failed payment bookings
+ */
+export const getOutstandingBalance = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const userId = request.auth.uid;
+
+  try {
+    // Query for failed payment bookings
+    const failedBookings = await db.collection("bookings")
+      .where("riderId", "==", userId)
+      .where("status", "==", "payment_failed")
+      .get();
+
+    if (failedBookings.empty) {
+      return {
+        hasOutstandingBalance: false,
+        totalAmount: 0,
+        bookings: []
+      };
+    }
+
+    const bookings: any[] = [];
+    let totalAmount = 0;
+
+    for (const doc of failedBookings.docs) {
+      const data = doc.data();
+      const amount = data.amountTotal || 0;
+      totalAmount += amount;
+
+      // Get ride details for context
+      let rideDetails: any = null;
+      if (data.rideId) {
+        const rideDoc = await db.collection("rides").doc(data.rideId).get();
+        if (rideDoc.exists) {
+          const ride = rideDoc.data()!;
+          const rideFrom = ride.from || ride.origin || {};
+          const rideTo = ride.to || ride.destination || {};
+          rideDetails = {
+            origin: rideFrom.name || rideFrom.address || "Unknown",
+            destination: rideTo.name || rideTo.address || "Unknown",
+            departureTime: ride.departureTime || null,
+          };
+        }
+      }
+
+      bookings.push({
+        id: doc.id,
+        rideId: data.rideId,
+        amount,
+        seats: data.seats || 1,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || data.createdAt,
+        failureReason: data.payment?.failureReason || "Payment failed",
+        ride: rideDetails,
+      });
+    }
+
+    console.log(`💰 User ${userId} has $${(totalAmount / 100).toFixed(2)} outstanding from ${bookings.length} booking(s)`);
+
+    return {
+      hasOutstandingBalance: true,
+      totalAmount,
+      totalAmountFormatted: `$${(totalAmount / 100).toFixed(2)}`,
+      bookingCount: bookings.length,
+      bookings,
+    };
+  } catch (error: any) {
+    console.error("Get outstanding balance error:", error);
+    throw new HttpsError("internal", error.message || "Failed to get outstanding balance");
+  }
+});
+
+/**
+ * Settle outstanding balance - charge user for failed payments
+ */
+export const settleOutstandingBalance = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const { paymentMethodId } = request.data;
+  const userId = request.auth.uid;
+
+  if (!paymentMethodId) {
+    throw new HttpsError("invalid-argument", "Missing paymentMethodId");
+  }
+
+  try {
+    console.log(`💳 Settling outstanding balance for user ${userId}`);
+
+    // Get all failed payment bookings
+    const failedBookings = await db.collection("bookings")
+      .where("riderId", "==", userId)
+      .where("status", "==", "payment_failed")
+      .get();
+
+    if (failedBookings.empty) {
+      return {
+        success: true,
+        message: "No outstanding balance to settle",
+        amountCharged: 0,
+      };
+    }
+
+    // Calculate total amount
+    let totalAmount = 0;
+    const bookingIds: string[] = [];
+    failedBookings.docs.forEach(doc => {
+      totalAmount += doc.data().amountTotal || 0;
+      bookingIds.push(doc.id);
+    });
+
+    if (totalAmount <= 0) {
+      return {
+        success: true,
+        message: "No outstanding balance to settle",
+        amountCharged: 0,
+      };
+    }
+
+    // Get user's Stripe customer ID
+    const userDoc = await db.collection("users").doc(userId).get();
+    const userData = userDoc.exists ? userDoc.data() : null;
+
+    if (!userData?.stripeCustomerId) {
+      throw new HttpsError("failed-precondition", "No payment profile found. Please add a payment method first.");
+    }
+
+    const stripe = getStripe();
+
+    // Create and confirm payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: totalAmount,
+      currency: "aud",
+      customer: userData.stripeCustomerId,
+      payment_method: paymentMethodId,
+      confirm: true,
+      automatic_payment_methods: {
+        enabled: true,
+        allow_redirects: "never",
+      },
+      description: `Outstanding balance settlement for ${bookingIds.length} booking(s)`,
+      metadata: {
+        userId,
+        type: "balance_settlement",
+        bookingIds: bookingIds.join(","),
+      },
+    }, {
+      idempotencyKey: `settle_balance_${userId}_${Date.now()}`,
+    });
+
+    if (paymentIntent.status !== "succeeded") {
+      throw new HttpsError("aborted", "Payment was not completed. Please try again.");
+    }
+
+    // Update all failed bookings to settled
+    const batch = db.batch();
+    for (const doc of failedBookings.docs) {
+      batch.update(doc.ref, {
+        status: "settled",
+        "settlement.paymentIntentId": paymentIntent.id,
+        "settlement.settledAt": admin.firestore.FieldValue.serverTimestamp(),
+        "settlement.amount": doc.data().amountTotal || 0,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+
+    // Send confirmation email
+    if (userData.email) {
+      try {
+        await sendEmail(
+          userData.email,
+          "paymentSuccess",
+          [userData.name || "User", totalAmount / 100, `settlement_${Date.now()}`]
+        );
+      } catch (emailError) {
+        console.error("Failed to send settlement confirmation email:", emailError);
+      }
+    }
+
+    console.log(`✅ Balance settled: $${(totalAmount / 100).toFixed(2)} for ${bookingIds.length} booking(s)`);
+
+    return {
+      success: true,
+      message: `Successfully settled $${(totalAmount / 100).toFixed(2)} outstanding balance`,
+      amountCharged: totalAmount,
+      bookingsSettled: bookingIds.length,
+      paymentIntentId: paymentIntent.id,
+    };
+  } catch (error: any) {
+    console.error("Settle outstanding balance error:", error);
+    if (error instanceof HttpsError) throw error;
+
+    // Handle Stripe errors
+    if (error.type === "StripeCardError") {
+      throw new HttpsError("aborted", error.message || "Card was declined");
+    }
+
+    throw new HttpsError("internal", error.message || "Failed to settle outstanding balance");
+  }
+});
+
 export {
   createVerificationSession,
   getVerificationStatus,

@@ -13,6 +13,7 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/config/firebase';
 import { useAuthStore } from '@/store/auth-store';
 import { useStripe } from '@stripe/stripe-react-native';
+import { router } from 'expo-router';
 
 interface BookingModalProps {
   visible: boolean;
@@ -211,9 +212,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
       console.error('❌ Booking error:', error);
 
       let errorMessage = 'Failed to create booking request';
+      let showSettleBalance = false;
+
       if (error.message) {
-        // Handle specific duplicate booking errors
-        if (error.message.includes('already have a')) {
+        // Handle outstanding balance errors - offer to settle
+        if (error.message.includes('outstanding payments')) {
+          showSettleBalance = true;
+          errorMessage = error.message;
+        } else if (error.message.includes('already have a')) {
           errorMessage = '⚠️ Duplicate Booking Detected\n\n' + error.message + '\n\nPlease check your bookings to manage existing requests.';
         } else if (error.message.includes('seats available') || error.message.includes('seats actually available')) {
           errorMessage = '🚫 Not Enough Seats\n\n' + error.message + '\n\nPlease try a different ride or select fewer seats.';
@@ -230,7 +236,24 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         errorMessage = 'Booking service temporarily unavailable. Please try again.';
       }
 
-      Alert.alert('Booking Failed', errorMessage);
+      if (showSettleBalance) {
+        Alert.alert(
+          '💰 Outstanding Balance',
+          errorMessage,
+          [
+            { text: 'Later', style: 'cancel' },
+            {
+              text: 'Settle Balance',
+              onPress: () => {
+                onClose();
+                router.push('/settle-balance');
+              }
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Booking Failed', errorMessage);
+      }
 
       // Reset the booking attempt timer on error to allow retry
       setLastBookingAttempt(0);
