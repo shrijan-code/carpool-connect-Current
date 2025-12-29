@@ -137,16 +137,35 @@ export const RideControls: React.FC<RideControlsProps> = ({
     );
   };
 
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString('en-US', {
+  // Helper to convert various date formats (ISO string, Firestore Timestamp, Date object)
+  const toDate = (value: any): Date => {
+    if (!value) return new Date();
+    // Firestore Timestamp object has toDate() method
+    if (value && typeof value.toDate === 'function') {
+      return value.toDate();
+    }
+    // Already a Date object
+    if (value instanceof Date) {
+      return value;
+    }
+    // String or number
+    return new Date(value);
+  };
+
+  const formatTime = (dateValue: any) => {
+    const date = toDate(dateValue);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
       hour12: true,
     });
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+  const formatDate = (dateValue: any) => {
+    const date = toDate(dateValue);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',

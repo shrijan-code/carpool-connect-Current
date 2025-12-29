@@ -14,7 +14,15 @@ const TIMEZONE = 'Australia/Sydney';
 export function formatDateTime(date: Date | string | null | undefined): string {
     if (!date) return 'N/A';
 
-    const d = typeof date === 'string' ? new Date(date) : date;
+    // Handle Firestore Timestamp objects (have toDate method)
+    let d: Date;
+    if (typeof date === 'object' && date !== null && 'toDate' in date && typeof (date as any).toDate === 'function') {
+        d = (date as any).toDate();
+    } else if (typeof date === 'string') {
+        d = new Date(date);
+    } else {
+        d = date as Date;
+    }
 
     if (isNaN(d.getTime())) return 'Invalid Date';
 
@@ -34,7 +42,15 @@ export function formatDateTime(date: Date | string | null | undefined): string {
 export function formatDate(date: Date | string | null | undefined): string {
     if (!date) return 'N/A';
 
-    const d = typeof date === 'string' ? new Date(date) : date;
+    // Handle Firestore Timestamp objects
+    let d: Date;
+    if (typeof date === 'object' && date !== null && 'toDate' in date && typeof (date as any).toDate === 'function') {
+        d = (date as any).toDate();
+    } else if (typeof date === 'string') {
+        d = new Date(date);
+    } else {
+        d = date as Date;
+    }
 
     if (isNaN(d.getTime())) return 'Invalid Date';
 
@@ -52,7 +68,15 @@ export function formatDate(date: Date | string | null | undefined): string {
 export function formatTime(date: Date | string | null | undefined): string {
     if (!date) return 'N/A';
 
-    const d = typeof date === 'string' ? new Date(date) : date;
+    // Handle Firestore Timestamp objects
+    let d: Date;
+    if (typeof date === 'object' && date !== null && 'toDate' in date && typeof (date as any).toDate === 'function') {
+        d = (date as any).toDate();
+    } else if (typeof date === 'string') {
+        d = new Date(date);
+    } else {
+        d = date as Date;
+    }
 
     if (isNaN(d.getTime())) return 'Invalid Date';
 
@@ -69,7 +93,15 @@ export function formatTime(date: Date | string | null | undefined): string {
 export function formatRelativeTime(date: Date | string | null | undefined): string {
     if (!date) return 'N/A';
 
-    const d = typeof date === 'string' ? new Date(date) : date;
+    // Handle Firestore Timestamp objects
+    let d: Date;
+    if (typeof date === 'object' && date !== null && 'toDate' in date && typeof (date as any).toDate === 'function') {
+        d = (date as any).toDate();
+    } else if (typeof date === 'string') {
+        d = new Date(date);
+    } else {
+        d = date as Date;
+    }
 
     if (isNaN(d.getTime())) return 'Invalid Date';
 
