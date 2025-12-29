@@ -24,7 +24,7 @@ graph TD
     Path -->|Driver Cancels| DrCancel[Booking: cancelled - 100% Refund]
     
     Path -->|Rider Cancels| TimeCheck{Time Window?}
-    TimeCheck -->|>24h Before| Early[Early: Rider gets Full Fare refund, Platform keeps $5]
+    TimeCheck -->|>24h Before| Early[Early: Rider gets 100% Refund, Platform/Driver get $0]
     TimeCheck -->|<24h Before| Late[Late: 50/50 Fare split, Platform keeps $5]
     
     Path -->|Ride Completed| Completed[Booking: completed - Driver gets Full Fare, Platform keeps $5]
@@ -53,7 +53,7 @@ graph TD
 (100% Ref)     |
                |----( Driver Cancels )-----> [ 100% REFUND ]
                |
-               |----( Rider Cancels >24h )--> [ FULL FARE REFUND, $5 FEE KEPT ]
+               |----( Rider Cancels >24h )--> [ 100% REFUND ]
                |
                |----( Rider Cancels <24h )--> [ 50% REFUND, 50% TO DRIVER, $5 FEE KEPT ]
                |
@@ -106,18 +106,18 @@ The logic depends on **when** the cancellation happens relative to the departure
 
 | Scenario | Definition | Rider Refund | Driver Gets | Platform Gets |
 | :--- | :--- | :--- | :--- | :--- |
-| **Early Cancellation** | > 24h before departure | Full Fare (Total - $5) | $0 | $5.00 |
+| **Early Cancellation** | > 24h before departure | 100% Refund (Total) | $0 | $0 |
 | **Late Cancellation** | < 24h before departure | 50% of Fare | 50% of Fare | $5.00 |
 | **No-Show** | Marked by driver | $0 | Full Fare (100%) | $5.00 |
-| **Driver Cancels** | Any time | **Full Refund ($20)** | $0 | $0 |
+| **Driver Cancels** | Any time | **100% Refund (Total)** | $0 | $0 |
 
 ### Mathematical Breakdown (Example: $20 Total Booking)
 *Assuming $15 Fare + $5 Platform Fee*
 
 1.  **Early (>24h)**:
-    *   Rider loses $5 fee.
-    *   **Rider Refund**: $15.00
-    *   **Platform Receipt**: $5.00
+    *   **Rider Refund**: $20.00 (100%)
+    *   **Platform Receipt**: $0.00
+    *   **Driver Earnings**: $0.00
 2.  **Late (<24h)**:
     *   Platform takes $5 first. Remaining is $15.
     *   $15 is split 50/50.

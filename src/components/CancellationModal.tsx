@@ -85,13 +85,13 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
       case 'passenger_cancel':
       default:
         if (hoursUntilDeparture > 24) {
-          // Early cancellation (>24h): Full fare refund, platform keeps $5 fee
+          // Early cancellation (>24h): 100% refund (Full fare + platform fee)
           return {
-            refundAmountCents: fareAmount,
+            refundAmountCents: amountCents,
             driverCompensationCents: 0,
-            cancellationFee: PLATFORM_FEE,
+            cancellationFee: 0,
             refundType: 'full',
-            reason: 'Cancelled 24+ hours before - full fare refund, platform fee retained'
+            reason: 'Cancelled 24+ hours before - 100% refund'
           };
         } else {
           // Late cancellation (<24h): 50% refund, 50% to driver, platform keeps $5

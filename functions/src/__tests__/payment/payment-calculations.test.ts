@@ -84,8 +84,8 @@ describe('Payment Calculations', () => {
             }
 
             if (hoursBeforeDeparture > 24) {
-                // Early: Full fare refund, platform keeps $5
-                return { refund: fareAmount, driverCompensation: 0, platformFee: PLATFORM_FEE };
+                // Early: 100% refund (Full fare + platform fee)
+                return { refund: totalAmount, driverCompensation: 0, platformFee: 0 };
             } else if (hoursBeforeDeparture > 0) {
                 // Late: 50% refund, 50% to driver, platform keeps $5
                 const half = Math.round(fareAmount / 2);
@@ -96,11 +96,11 @@ describe('Payment Calculations', () => {
             }
         };
 
-        it('should give full fare refund for early cancellation (>24h)', () => {
+        it('should give 100% refund for early cancellation (>24h)', () => {
             const result = calculateCancellationRefund(2000, 48); // $20 total
-            expect(result.refund).toBe(1500); // Full fare ($20 - $5 = $15)
+            expect(result.refund).toBe(2000); // 100% refund
             expect(result.driverCompensation).toBe(0);
-            expect(result.platformFee).toBe(500); // Platform keeps $5
+            expect(result.platformFee).toBe(0);
         });
 
         it('should give 50% refund for late cancellation (<24h)', () => {

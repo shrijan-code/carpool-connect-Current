@@ -2909,11 +2909,11 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
             platformFee = PLATFORM_FEE;
             console.log(`⚡ Late cancellation - 50% refund: $${(refundAmount / 100).toFixed(2)}, driver: $${(driverCompensation / 100).toFixed(2)}`);
           } else {
-            // Early cancellation (>24h): Full fare refund, platform keeps $5
-            refundAmount = fareAmount;
+            // Early cancellation (>24h): 100% refund (Full fare + platform fee)
+            refundAmount = totalAmount;
             driverCompensation = 0;
-            platformFee = PLATFORM_FEE;
-            console.log(`✅ Early cancellation - full fare refund: $${(refundAmount / 100).toFixed(2)}, platform fee kept: $${(platformFee / 100).toFixed(2)}`);
+            platformFee = 0;
+            console.log(`✅ Early cancellation - 100% refund to rider: $${(refundAmount / 100).toFixed(2)}`);
           }
 
           if (refundAmount > 0) {
@@ -5217,11 +5217,11 @@ function calculateCancellationFee(amountTotal: number, departureTime: Date): { f
   const fareAmount = Math.max(0, amountTotal - PLATFORM_FEE);
 
   if (hoursUntil > 24) {
-    // Early: Full fare refund, platform keeps $5
+    // Early: 100% refund (Full fare + platform fee)
     return {
-      fee: PLATFORM_FEE,
-      refund: fareAmount,
-      feePercent: Math.round((PLATFORM_FEE / amountTotal) * 100),
+      fee: 0,
+      refund: amountTotal,
+      feePercent: 0,
     };
   } else if (hoursUntil > 0) {
     // Late: 50% refund, platform keeps $5 (Driver gets other 50%)
