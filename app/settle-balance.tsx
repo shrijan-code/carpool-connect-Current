@@ -79,14 +79,17 @@ export default function SettleBalanceScreen() {
 
         setProcessing(true);
         try {
-            // Create payment intent for settlement
-            const createIntent = httpsCallable(functions, 'createPaymentIntent');
-            const intentResult = await createIntent({
+            // Create payment intent for settlement via the new createSettlementPayment function
+            const createSettlement = httpsCallable(functions, 'createSettlementPayment');
+            const intentResult = await createSettlement({
                 amount: balanceData.totalAmount,
-                type: 'balance_settlement',
             });
 
             const { clientSecret, paymentIntentId } = intentResult.data as any;
+
+            if (!clientSecret) {
+                throw new Error('Failed to create payment intent');
+            }
 
             // Initialize and present payment sheet
             const { error: initError } = await initPaymentSheet({
@@ -109,9 +112,9 @@ export default function SettleBalanceScreen() {
                 throw new Error(presentError.message);
             }
 
-            // Payment succeeded - settle the balance
-            const settleBalance = httpsCallable(functions, 'settleOutstandingBalance');
-            const settleResult = await settleBalance({ paymentIntentId });
+            // Payment succeeded via PaymentSheet - now mark bookings as settled
+            const markSettled = httpsCallable(functions, 'markBalanceSettled');
+            const settleResult = await markSettled({ paymentIntentId });
             const result = settleResult.data as any;
 
             if (result.success) {

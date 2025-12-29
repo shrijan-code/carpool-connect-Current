@@ -6761,6 +6761,175 @@ export const settleOutstandingBalance = onCall({ secrets: ["STRIPE_SECRET_KEY"] 
   }
 });
 
+/**
+ * Create payment intent for balance settlement - returns client secret for PaymentSheet
+ */
+export const createSettlementPayment = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const userId = request.auth.uid;
+
+  try {
+    // Get failed payment bookings
+    const failedBookings = await db.collection("bookings")
+      .where("riderId", "==", userId)
+      .where("status", "==", "payment_failed")
+      .get();
+
+    if (failedBookings.empty) {
+      throw new HttpsError("failed-precondition", "No outstanding balance to settle");
+    }
+
+    // Calculate total
+    let totalAmount = 0;
+    const bookingIds: string[] = [];
+    failedBookings.docs.forEach(doc => {
+      totalAmount += doc.data().amountTotal || 0;
+      bookingIds.push(doc.id);
+    });
+
+    if (totalAmount <= 0) {
+      throw new HttpsError("failed-precondition", "No outstanding balance to settle");
+    }
+
+    // Get or create Stripe customer
+    const userDoc = await db.collection("users").doc(userId).get();
+    const userData = userDoc.exists ? userDoc.data() : null;
+
+    const stripe = getStripe();
+    let customerId = userData?.stripeCustomerId;
+
+    if (!customerId) {
+      // Create Stripe customer
+      const customer = await stripe.customers.create({
+        email: userData?.email,
+        name: userData?.name,
+        metadata: { userId },
+      });
+      customerId = customer.id;
+      await db.collection("users").doc(userId).update({
+        stripeCustomerId: customerId,
+      });
+    }
+
+    // Create PaymentIntent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: totalAmount,
+      currency: "aud",
+      customer: customerId,
+      automatic_payment_methods: {
+        enabled: true,
+      },
+      description: `Outstanding balance settlement for ${bookingIds.length} booking(s)`,
+      metadata: {
+        userId,
+        type: "balance_settlement",
+        bookingIds: bookingIds.join(","),
+      },
+    });
+
+    console.log(`💳 Created settlement PaymentIntent: ${paymentIntent.id} for $${(totalAmount / 100).toFixed(2)}`);
+
+    return {
+      clientSecret: paymentIntent.client_secret,
+      paymentIntentId: paymentIntent.id,
+      amount: totalAmount,
+    };
+  } catch (error: any) {
+    console.error("Create settlement payment error:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", error.message || "Failed to create settlement payment");
+  }
+});
+
+/**
+ * Mark balance as settled after PaymentSheet completes successfully
+ */
+export const markBalanceSettled = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be logged in");
+  }
+
+  const { paymentIntentId } = request.data;
+  const userId = request.auth.uid;
+
+  if (!paymentIntentId) {
+    throw new HttpsError("invalid-argument", "Missing paymentIntentId");
+  }
+
+  try {
+    const stripe = getStripe();
+
+    // Verify payment succeeded
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      throw new HttpsError("failed-precondition", `Payment not completed. Status: ${paymentIntent.status}`);
+    }
+
+    // Verify this payment belongs to this user
+    if (paymentIntent.metadata.userId !== userId) {
+      throw new HttpsError("permission-denied", "This payment does not belong to you");
+    }
+
+    // Get the booking IDs from metadata
+    const bookingIds = paymentIntent.metadata.bookingIds?.split(",") || [];
+
+    if (bookingIds.length === 0) {
+      // Fallback: get all failed bookings for this user
+      const failedBookings = await db.collection("bookings")
+        .where("riderId", "==", userId)
+        .where("status", "==", "payment_failed")
+        .get();
+
+      failedBookings.docs.forEach(doc => bookingIds.push(doc.id));
+    }
+
+    // Update bookings to settled
+    const batch = db.batch();
+    for (const bookingId of bookingIds) {
+      const bookingRef = db.collection("bookings").doc(bookingId);
+      batch.update(bookingRef, {
+        status: "settled",
+        "settlement.paymentIntentId": paymentIntentId,
+        "settlement.settledAt": admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+
+    // Send confirmation email
+    const userDoc = await db.collection("users").doc(userId).get();
+    const userData = userDoc.exists ? userDoc.data() : null;
+
+    if (userData?.email) {
+      try {
+        await sendEmail(
+          userData.email,
+          "paymentSuccess",
+          [userData.name || "User", paymentIntent.amount / 100, paymentIntentId]
+        );
+      } catch (emailError) {
+        console.error("Failed to send settlement confirmation email:", emailError);
+      }
+    }
+
+    console.log(`✅ Marked ${bookingIds.length} booking(s) as settled for user ${userId}`);
+
+    return {
+      success: true,
+      message: `Successfully settled ${bookingIds.length} booking(s)`,
+      bookingsSettled: bookingIds.length,
+    };
+  } catch (error: any) {
+    console.error("Mark balance settled error:", error);
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", error.message || "Failed to mark balance as settled");
+  }
+});
+
 export {
   createVerificationSession,
   getVerificationStatus,
