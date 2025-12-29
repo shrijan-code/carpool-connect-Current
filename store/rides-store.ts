@@ -45,13 +45,13 @@ interface RidesState {
   refreshBookings: () => Promise<void>;
   checkDriverStripeRequirement: (driverId: string) => Promise<{ required: boolean; completedRides: number; message: string }>;
   getDriverCompletedRidesCount: (driverId: string) => number;
-  // New methods for Real Payment Flow
   prepareBookingRequest: (rideId: string, seats: number, passenger: User) => Promise<{
     bookingId: string;
     clientSecret: string;
     paymentIntentId: string;
   }>;
   confirmBookingPayment: (bookingId: string) => Promise<void>;
+  cancelAbandonedBooking: (bookingId: string, paymentIntentId?: string) => Promise<void>;
   // Legacy method for backward compatibility
   bookRide: (rideId: string, seats: number, passenger: User) => Promise<string>;
   // New method to fetch ride from server
@@ -202,6 +202,59 @@ export const useRidesStore = create<RidesState>((set, get) => ({
       throw error;
     } finally {
       set({ isLoading: false });
+    }
+  },
+
+  // Cancel an abandoned booking (user cancelled payment before completing)
+  cancelAbandonedBooking: async (bookingId: string, paymentIntentId?: string) => {
+    try {
+      logger.info('Cancelling abandoned booking', { bookingId, paymentIntentId });
+
+      const { doc, deleteDoc, getDoc } = require('firebase/firestore');
+
+      // Get the booking to find the rideId and restore seats
+      const bookingRef = doc(db, 'bookings', bookingId);
+      const bookingSnap = await getDoc(bookingRef);
+
+      if (bookingSnap.exists()) {
+        const bookingData = bookingSnap.data();
+
+        // Only cancel if status is still pending_payment
+        if (bookingData.status === 'pending_payment') {
+          // Restore seats to the ride
+          if (bookingData.rideId && bookingData.seats) {
+            const { updateDoc, increment } = require('firebase/firestore');
+            const rideRef = doc(db, 'rides', bookingData.rideId);
+            await updateDoc(rideRef, {
+              availableSeats: increment(bookingData.seats),
+              seatsAvailable: increment(bookingData.seats),
+            }).catch((err: Error) => logger.warn('Failed to restore seats', err));
+          }
+
+          // Delete the abandoned booking
+          await deleteDoc(bookingRef);
+          logger.info('Abandoned booking deleted', { bookingId });
+
+          // Update local state
+          const updatedBookings = get().bookings.filter(b => b.id !== bookingId);
+          set({ bookings: updatedBookings });
+        }
+      }
+
+      // Cancel the payment intent if provided
+      if (paymentIntentId) {
+        try {
+          const { StripePaymentService } = require('@/services/stripe');
+          await StripePaymentService.cancelPaymentIntent(paymentIntentId);
+        } catch (stripeError) {
+          // Payment intent may already be cancelled or expired, that's ok
+          logger.warn('Could not cancel payment intent', stripeError);
+        }
+      }
+
+    } catch (error) {
+      // Don't throw - cleanup failures shouldn't break the UI flow
+      logger.error('Failed to cancel abandoned booking', error);
     }
   },
 

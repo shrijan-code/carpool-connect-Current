@@ -29,6 +29,7 @@ export default function RideDetailsScreen() {
     bookRide,
     prepareBookingRequest,
     confirmBookingPayment,
+    cancelAbandonedBooking,
     deleteRide,
     refreshRides,
     refreshBookings,
@@ -157,12 +158,13 @@ export default function RideDetailsScreen() {
       const { error: paymentError } = await presentPaymentSheet();
 
       if (paymentError) {
-        // Retrieve friendly error message
+        // User cancelled or payment failed - CLEAN UP the abandoned booking
+        console.log('🚨 Payment cancelled/failed, cleaning up booking:', bookingId);
+        await cancelAbandonedBooking(bookingId, paymentIntentId);
+
         if (paymentError.code === 'Canceled') {
-          // User cancelled, we might want to cancel the pending booking or leave it as abandoned?
-          // Ideally cancel it.
-          // await cancelBooking(bookingId...);
-          throw new Error('Payment cancelled');
+          // User intentionally cancelled - no error alert needed
+          return;
         }
         throw new Error(paymentError.message);
       }
