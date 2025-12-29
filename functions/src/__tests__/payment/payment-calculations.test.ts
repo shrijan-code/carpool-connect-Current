@@ -66,50 +66,62 @@ describe('Payment Calculations', () => {
     });
 
     // ==========================================================================
-    // Cancellation Fee Tiers
+    // Cancellation Fee Tiers (New Policy)
     // ==========================================================================
     describe('Cancellation Fee Tiers', () => {
-        const calculateCancellationFee = (hoursBeforeDeparture: number, amount: number) => {
+        const PLATFORM_FEE = 500; // $5 flat fee
+
+        const calculateCancellationRefund = (
+            totalAmount: number,
+            hoursBeforeDeparture: number,
+            cancelledByDriver: boolean = false
+        ) => {
+            const fareAmount = totalAmount - PLATFORM_FEE;
+
+            if (cancelledByDriver) {
+                // Driver cancels: Full refund including platform fee
+                return { refund: totalAmount, driverCompensation: 0, platformFee: 0 };
+            }
+
             if (hoursBeforeDeparture > 24) {
-                return Math.round(amount * 0.05); // 5% fee
-            } else if (hoursBeforeDeparture > 12) {
-                return Math.round(amount * 0.25); // 25% fee
+                // Early: Full fare refund, platform keeps $5
+                return { refund: fareAmount, driverCompensation: 0, platformFee: PLATFORM_FEE };
             } else if (hoursBeforeDeparture > 0) {
-                return Math.round(amount * 0.50); // 50% fee
+                // Late: 50% refund, 50% to driver, platform keeps $5
+                const half = Math.round(fareAmount / 2);
+                return { refund: half, driverCompensation: half, platformFee: PLATFORM_FEE };
             } else {
-                return amount; // No refund
+                // No-show / after departure: Nothing to rider
+                return { refund: 0, driverCompensation: fareAmount, platformFee: PLATFORM_FEE };
             }
         };
 
-        it('should charge 5% for cancellation >24 hours before', () => {
-            const amount = 2000;
-            const fee = calculateCancellationFee(48, amount);
-            expect(fee).toBe(100); // 5% of $20
+        it('should give full fare refund for early cancellation (>24h)', () => {
+            const result = calculateCancellationRefund(2000, 48); // $20 total
+            expect(result.refund).toBe(1500); // Full fare ($20 - $5 = $15)
+            expect(result.driverCompensation).toBe(0);
+            expect(result.platformFee).toBe(500); // Platform keeps $5
         });
 
-        it('should charge 25% for cancellation 12-24 hours before', () => {
-            const amount = 2000;
-            const fee = calculateCancellationFee(18, amount);
-            expect(fee).toBe(500); // 25% of $20
+        it('should give 50% refund for late cancellation (<24h)', () => {
+            const result = calculateCancellationRefund(2000, 12);
+            expect(result.refund).toBe(750); // Half of $15 fare
+            expect(result.driverCompensation).toBe(750); // Half to driver
+            expect(result.platformFee).toBe(500); // Platform keeps $5
         });
 
-        it('should charge 50% for cancellation <12 hours before', () => {
-            const amount = 2000;
-            const fee = calculateCancellationFee(6, amount);
-            expect(fee).toBe(1000); // 50% of $20
+        it('should give no refund for no-show', () => {
+            const result = calculateCancellationRefund(2000, -1);
+            expect(result.refund).toBe(0);
+            expect(result.driverCompensation).toBe(1500); // Driver gets full fare
+            expect(result.platformFee).toBe(500);
         });
 
-        it('should retain full amount for cancellation after departure', () => {
-            const amount = 2000;
-            const fee = calculateCancellationFee(-1, amount);
-            expect(fee).toBe(2000); // Full amount
-        });
-
-        it('should calculate refund correctly', () => {
-            const amount = 2000;
-            const fee = calculateCancellationFee(30, amount);
-            const refund = amount - fee;
-            expect(refund).toBe(1900); // 95% refund
+        it('should give full refund (including platform fee) when driver cancels', () => {
+            const result = calculateCancellationRefund(2000, 12, true);
+            expect(result.refund).toBe(2000); // Full amount including $5 fee
+            expect(result.driverCompensation).toBe(0);
+            expect(result.platformFee).toBe(0); // Platform gets nothing
         });
     });
 

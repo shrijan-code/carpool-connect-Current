@@ -52,11 +52,16 @@ All payment processing is provided by Stripe, Inc. CarpoolConnect does not direc
 • Drivers receive payouts via Stripe Connect
 • All fees displayed before booking confirmation
 
-6. CANCELLATION
+6. CANCELLATION POLICY
 
-• Passengers: Free cancellation 24+ hours before ride
-• Late cancellations may incur fees
-• Repeated driver cancellations may result in restrictions
+PASSENGERS:
+• Early cancellation (24+ hours before): Full fare refund, $5 platform fee retained
+• Late cancellation (within 24 hours): 50% fare refund, 50% goes to driver, $5 platform fee retained
+• No-show: No refund, driver receives full fare compensation
+
+DRIVERS:
+• Driver cancellation: Passenger receives full refund including platform fee
+• Repeated cancellations may result in account restrictions
 
 7. SAFETY & CONDUCT
 
@@ -198,7 +203,7 @@ Q: Are passengers verified?
 A: Passenger verification is optional. Drivers can see if passengers have completed verification on their profiles.
 
 Q: Can I cancel a ride?
-A: Yes. Free cancellation up to 24 hours before. Late cancellations may incur fees.
+A: Yes. Cancel 24+ hours before for a full fare refund (platform fee not refunded). Cancellations within 24 hours receive 50% refund with 50% going to the driver. No-shows receive no refund.
 
 Q: What if I leave something in a car?
 A: Contact the driver through the app immediately. If unreachable, contact support at hello@carpoolconnect.com.au

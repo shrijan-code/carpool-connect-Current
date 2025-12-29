@@ -198,15 +198,15 @@ export default function TermsPage() {
                                     <div className="glass rounded-xl p-4">
                                         <p className="font-bold text-white mb-2">Passengers</p>
                                         <ul className="list-disc list-inside text-sm space-y-1">
-                                            <li>Free cancellation up to 24 hours before ride</li>
-                                            <li>Cancellations within 24 hours may incur fees</li>
-                                            <li>No-shows may be charged the full fare</li>
+                                            <li>Early cancellation (24+ hours before): Full fare refund, $5 platform fee retained</li>
+                                            <li>Late cancellation (within 24 hours): 50% refund, 50% goes to driver, platform fee retained</li>
+                                            <li>No-show: No refund, driver receives full fare compensation</li>
                                         </ul>
                                     </div>
                                     <div className="glass rounded-xl p-4">
                                         <p className="font-bold text-white mb-2">Drivers</p>
                                         <ul className="list-disc list-inside text-sm space-y-1">
-                                            <li>Should avoid cancelling after accepting bookings</li>
+                                            <li>Driver cancellation: Passenger receives full refund including platform fee</li>
                                             <li>Repeated cancellations may result in account restrictions</li>
                                             <li>Should communicate promptly if cancellation is necessary</li>
                                         </ul>

@@ -2873,7 +2873,7 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
           // Payment was captured - need to process refund with cancellation fee
           console.log(`💳 Processing refund for captured PaymentIntent ${paymentIntentId}`);
 
-          // Calculate cancellation fee based on time to departure
+          // Calculate cancellation fee based on new policy
           const departureTime = rideData?.departureTime
             ? new Date(rideData.departureTime)
             : null;
@@ -2882,21 +2882,39 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
             ? (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60)
             : 999; // If no departure time, assume >24h
 
-          let feePercentage: number;
-          if (hoursUntilDeparture < 0) {
-            // After departure - no refund
-            feePercentage = 100;
-          } else if (hoursUntilDeparture < 12) {
-            feePercentage = 50;
-          } else if (hoursUntilDeparture < 24) {
-            feePercentage = 25;
-          } else {
-            feePercentage = 5;
-          }
-
           const totalAmount = bookingData.amountTotal || 0;
-          const cancellationFee = Math.round(totalAmount * (feePercentage / 100));
-          const refundAmount = totalAmount - cancellationFee;
+          const PLATFORM_FEE = 500; // $5.00 flat fee
+          const fareAmount = Math.max(0, totalAmount - PLATFORM_FEE);
+
+          let refundAmount: number;
+          let driverCompensation = 0;
+          let platformFee: number;
+
+          if (cancelledBy === "driver") {
+            // Driver cancels: Full refund including platform fee
+            refundAmount = totalAmount;
+            platformFee = 0;
+            console.log(`🚗 Driver cancellation - full refund to rider: $${(refundAmount / 100).toFixed(2)}`);
+          } else if (hoursUntilDeparture < 0) {
+            // After departure - no refund (same as no-show)
+            refundAmount = 0;
+            driverCompensation = fareAmount;
+            platformFee = PLATFORM_FEE;
+            console.log(`⏰ After departure - no refund, driver compensated: $${(driverCompensation / 100).toFixed(2)}`);
+          } else if (hoursUntilDeparture <= 24) {
+            // Late cancellation (<24h): 50% refund, 50% to driver, platform keeps $5
+            const halfFare = Math.round(fareAmount / 2);
+            refundAmount = halfFare;
+            driverCompensation = halfFare;
+            platformFee = PLATFORM_FEE;
+            console.log(`⚡ Late cancellation - 50% refund: $${(refundAmount / 100).toFixed(2)}, driver: $${(driverCompensation / 100).toFixed(2)}`);
+          } else {
+            // Early cancellation (>24h): Full fare refund, platform keeps $5
+            refundAmount = fareAmount;
+            driverCompensation = 0;
+            platformFee = PLATFORM_FEE;
+            console.log(`✅ Early cancellation - full fare refund: $${(refundAmount / 100).toFixed(2)}, platform fee kept: $${(platformFee / 100).toFixed(2)}`);
+          }
 
           if (refundAmount > 0) {
             const refund = await stripe.refunds.create({
@@ -2912,20 +2930,24 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
               "payment.status": "refunded",
               "payment.refundId": refund.id,
               "payment.refundAmount": refundAmount,
-              "payment.cancellationFee": cancellationFee,
+              "payment.driverCompensation": driverCompensation,
+              "payment.platformFeeRetained": platformFee,
+              "payment.cancellationFee": totalAmount - refundAmount, // What rider loses
               "payment.refundedAt": admin.firestore.FieldValue.serverTimestamp(),
             });
 
             refundResult = {
               status: "refunded",
               amount: refundAmount / 100,
-              fee: cancellationFee / 100,
+              fee: (totalAmount - refundAmount) / 100,
             };
-            console.log(`✅ Refund processed: $${(refundAmount / 100).toFixed(2)} (fee: $${(cancellationFee / 100).toFixed(2)})`);
+            console.log(`✅ Refund processed: $${(refundAmount / 100).toFixed(2)} (driver: $${(driverCompensation / 100).toFixed(2)}, platform: $${(platformFee / 100).toFixed(2)})`);
           } else {
-            // No refund (after departure or 100% fee)
+            // No refund (after departure or no-show)
             await db.collection("bookings").doc(bookingId).update({
               "payment.status": "no_refund",
+              "payment.driverCompensation": driverCompensation,
+              "payment.platformFeeRetained": platformFee,
               "payment.cancellationFee": totalAmount,
               "payment.refundedAt": admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -2935,8 +2957,11 @@ export const cancelBooking = onCall({ secrets: ["STRIPE_SECRET_KEY"] }, async (r
               amount: 0,
               fee: totalAmount / 100,
             };
-            console.log(`⚠️ No refund - cancellation fee is 100%`);
+            console.log(`⚠️ No refund - driver compensated: $${(driverCompensation / 100).toFixed(2)}`);
           }
+
+          // TODO: Transfer driver compensation to their Stripe Connect account
+          // This would be done via stripe.transfers.create if driverCompensation > 0
 
         } else if (setupIntentId && !paymentIntentId) {
           // Only SetupIntent exists (pending booking) - no payment to cancel
@@ -3988,11 +4013,27 @@ export const processDriverPayout = onCall(
         );
       }
 
-      // Calculate amounts (platform takes 10% fee)
-      const totalAmount = bookingData.amountTotal || 0; // Amount in cents
-      const platformFeePercent = 0.1; // 10% platform fee
-      const platformFee = Math.round(totalAmount * platformFeePercent);
-      const driverAmount = totalAmount - platformFee;
+      // Calculate amounts
+      const totalAmount = bookingData.amountTotal || 0;
+      const PLATFORM_FEE = 500; // $5 flat platform fee
+
+      let driverAmount = 0;
+      let platformFee = PLATFORM_FEE;
+
+      // Logic check: Was this a normal completion or a cancellation with compensation?
+      if (bookingData.status === "completed") {
+        // Normal ride completion - Driver gets full subtotal, platform gets $5
+        driverAmount = Math.max(0, totalAmount - PLATFORM_FEE);
+      } else if (bookingData.payment?.driverCompensation) {
+        // Cancellation or No-Show with specific compensation recorded
+        driverAmount = bookingData.payment.driverCompensation;
+        platformFee = bookingData.payment.platformFeeRetained || PLATFORM_FEE;
+      } else {
+        // Fallback or old data logic
+        const legacyFee = Math.round(totalAmount * 0.1); // Legacy 10%
+        driverAmount = totalAmount - legacyFee;
+        platformFee = legacyFee;
+      }
 
       console.log(`💵 Payout calculation: Total=${totalAmount} cents, Fee=${platformFee} cents, Driver=${driverAmount} cents`);
 
@@ -5118,10 +5159,16 @@ export const markNoShow = onCall(
       }
 
       // Update booking
+      const PLATFORM_FEE = 500;
+      const amountTotal = bookingData.amountTotal || 0;
+      const driverCompensation = Math.max(0, amountTotal - PLATFORM_FEE);
+
       await db.collection("bookings").doc(bookingId).update({
         status: "no_show",
         noShowAt: admin.firestore.FieldValue.serverTimestamp(),
         "payment.status": paymentCaptured ? "captured" : bookingData.payment?.status,
+        "payment.driverCompensation": driverCompensation,
+        "payment.platformFeeRetained": PLATFORM_FEE,
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -5166,22 +5213,33 @@ function calculateCancellationFee(amountTotal: number, departureTime: Date): { f
   const now = new Date();
   const hoursUntil = (departureTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-  let feePercent: number;
+  const PLATFORM_FEE = 500; // $5 flat fee
+  const fareAmount = Math.max(0, amountTotal - PLATFORM_FEE);
 
   if (hoursUntil > 24) {
-    feePercent = 5;
-  } else if (hoursUntil > 12) {
-    feePercent = 25;
+    // Early: Full fare refund, platform keeps $5
+    return {
+      fee: PLATFORM_FEE,
+      refund: fareAmount,
+      feePercent: Math.round((PLATFORM_FEE / amountTotal) * 100),
+    };
   } else if (hoursUntil > 0) {
-    feePercent = 50;
+    // Late: 50% refund, platform keeps $5 (Driver gets other 50%)
+    const halfFare = Math.round(fareAmount / 2);
+    const totalFee = amountTotal - halfFare; // Platform fee + 50% fare
+    return {
+      fee: totalFee,
+      refund: halfFare,
+      feePercent: Math.round((totalFee / amountTotal) * 100),
+    };
   } else {
-    feePercent = 100; // Past departure
+    // Past departure: No refund
+    return {
+      fee: amountTotal,
+      refund: 0,
+      feePercent: 100,
+    };
   }
-
-  const fee = Math.round(amountTotal * (feePercent / 100));
-  const refund = amountTotal - fee;
-
-  return { fee, refund, feePercent };
 }
 
 /**

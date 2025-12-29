@@ -56,50 +56,52 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
     const now = new Date();
     const departure = new Date(booking.ride.departureAt);
     const hoursUntilDeparture = (departure.getTime() - now.getTime()) / (1000 * 60 * 60);
-    
+
     const amountCents = (booking as any).amountTotal || 0;
-    const platformFeeCents = Math.round(amountCents * 0.1); // 10% platform fee
-    const passengerAmount = amountCents - platformFeeCents;
+    const PLATFORM_FEE = 500; // $5 flat platform fee
+    const fareAmount = Math.max(0, amountCents - PLATFORM_FEE); // Fare excluding platform fee
 
     switch (cancellationType) {
       case 'driver_cancel':
+        // Driver cancels: Full refund including platform fee, platform gets nothing
         return {
           refundAmountCents: amountCents,
           driverCompensationCents: 0,
           cancellationFee: 0,
           refundType: 'full',
-          reason: 'Driver cancelled - full refund including service fees'
+          reason: 'Driver cancelled - full refund including platform fee'
         };
 
       case 'no_show':
+        // No-show: Driver gets full fare, platform keeps fee, rider gets nothing
         return {
           refundAmountCents: 0,
-          driverCompensationCents: passengerAmount,
-          cancellationFee: amountCents,
+          driverCompensationCents: fareAmount,
+          cancellationFee: PLATFORM_FEE,
           refundType: 'none',
-          reason: 'Passenger no-show - driver compensated for full amount'
+          reason: 'Passenger no-show - driver receives full fare compensation'
         };
 
       case 'passenger_cancel':
       default:
         if (hoursUntilDeparture > 24) {
+          // Early cancellation (>24h): Full fare refund, platform keeps $5 fee
           return {
-            refundAmountCents: passengerAmount,
+            refundAmountCents: fareAmount,
             driverCompensationCents: 0,
-            cancellationFee: platformFeeCents,
+            cancellationFee: PLATFORM_FEE,
             refundType: 'full',
-            reason: 'Cancelled more than 24 hours before departure - full refund excluding service fees'
+            reason: 'Cancelled 24+ hours before - full fare refund, platform fee retained'
           };
         } else {
-          const refundAmount = Math.round(passengerAmount * 0.5);
-          const driverCompensation = Math.round(passengerAmount * 0.5);
-          
+          // Late cancellation (<24h): 50% refund, 50% to driver, platform keeps $5
+          const halfFare = Math.round(fareAmount / 2);
           return {
-            refundAmountCents: refundAmount,
-            driverCompensationCents: driverCompensation,
-            cancellationFee: platformFeeCents + (passengerAmount - refundAmount - driverCompensation),
+            refundAmountCents: halfFare,
+            driverCompensationCents: halfFare,
+            cancellationFee: PLATFORM_FEE,
             refundType: 'partial',
-            reason: 'Cancelled less than 24 hours before departure - 50% refund, driver compensated 50%'
+            reason: 'Cancelled within 24 hours - 50% refund, 50% to driver, platform fee retained'
           };
         }
     }
@@ -113,9 +115,9 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
 
     const actionText = cancellationType === 'no_show' ? 'mark as no-show' : 'cancel';
     const confirmTitle = cancellationType === 'no_show' ? 'Mark as No-Show?' : 'Confirm Cancellation';
-    
+
     let confirmMessage = `Are you sure you want to ${actionText} this booking?\n\n`;
-    
+
     if (cancellationPreview.refundAmountCents > 0) {
       confirmMessage += `• Refund: ${formatCurrency(cancellationPreview.refundAmountCents)}\n`;
     }
@@ -125,7 +127,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
     if (cancellationPreview.cancellationFee > 0) {
       confirmMessage += `• Cancellation fee: ${formatCurrency(cancellationPreview.cancellationFee)}\n`;
     }
-    
+
     confirmMessage += `\nReason: ${reason}`;
 
     Alert.alert(
@@ -155,7 +157,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
   const renderDriverOptions = () => (
     <View style={styles.optionsContainer}>
       <Text style={styles.optionsTitle}>Cancellation Type</Text>
-      
+
       <TouchableOpacity
         style={[styles.optionButton, cancellationType === 'driver_cancel' && styles.optionButtonSelected]}
         onPress={() => setCancellationType('driver_cancel')}
@@ -192,10 +194,10 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
         <Info size={20} color="#007bff" />
         <Text style={styles.policyTitle}>Cancellation Policy</Text>
       </View>
-      
+
       <View style={styles.policyContent}>
         <Text style={styles.policyReason}>{cancellationPreview.reason}</Text>
-        
+
         <View style={styles.policyBreakdown}>
           {cancellationPreview.refundAmountCents > 0 && (
             <View style={styles.policyRow}>
@@ -205,7 +207,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
               </Text>
             </View>
           )}
-          
+
           {cancellationPreview.driverCompensationCents > 0 && (
             <View style={styles.policyRow}>
               <Text style={styles.policyLabel}>Driver Compensation:</Text>
@@ -214,7 +216,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
               </Text>
             </View>
           )}
-          
+
           {cancellationPreview.cancellationFee > 0 && (
             <View style={styles.policyRow}>
               <Text style={styles.policyLabel}>Cancellation Fee:</Text>
@@ -231,7 +233,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
   const renderBookingInfo = () => (
     <View style={styles.bookingInfo}>
       <Text style={styles.bookingTitle}>Booking Details</Text>
-      
+
       <View style={styles.routeContainer}>
         <View style={styles.locationRow}>
           <View style={[styles.dot, styles.fromDot]} />
@@ -292,9 +294,9 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
 
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {renderBookingInfo()}
-          
+
           {userRole === 'driver' && renderDriverOptions()}
-          
+
           {renderPolicyBreakdown()}
 
           <View style={styles.reasonContainer}>
@@ -321,7 +323,7 @@ export const CancellationModal: React.FC<CancellationModalProps> = ({
           >
             <Text style={styles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity
             style={[styles.confirmButton, isProcessing && styles.disabledButton]}
             onPress={handleConfirm}
