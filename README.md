@@ -175,12 +175,113 @@ CarpoolConnect uses Microsoft 365 SMTP for sending emails (booking confirmations
 
 ---
 
-## 📦 Deploy Firebase Functions
+## � Firebase CLI Commands Reference
+
+### Deployment
 
 ```bash
+# Deploy all Cloud Functions
 cd functions
-npm install
 firebase deploy --only functions
+
+# Deploy a specific function
+firebase deploy --only functions:onRideCreated
+
+# Rebuild before deploying (recommended after code changes)
+cd functions
+npm run build
+firebase deploy --only functions
+```
+
+### Viewing Logs
+
+```bash
+# View last N log entries (replace N with a number)
+firebase functions:log -n 10     # Shows last 10 entries
+firebase functions:log -n 50     # Shows last 50 entries
+
+# Follow logs in real-time (live streaming)
+firebase functions:log --follow
+
+# Filter logs by specific function
+firebase functions:log --only onRideCreated -n 20
+
+# Common patterns to search for
+firebase functions:log -n 30 | Select-String "Error"     # Find errors (PowerShell)
+firebase functions:log -n 30 | grep "Error"              # Find errors (Linux/Mac)
+firebase functions:log -n 30 | Select-String "Email sent" # Find successful emails
+```
+
+| Flag | Description | Example |
+|------|-------------|---------|
+| `-n <number>` | Number of log entries to show | `-n 20` shows last 20 logs |
+| `--follow` | Stream logs in real-time | Live debugging |
+| `--only <function>` | Filter by function name | `--only onSafetyReportCreated` |
+
+### Managing Secrets
+
+```bash
+# Set a secret (prompts for value securely)
+firebase functions:secrets:set EMAIL_PASSWORD
+
+# View a secret value
+firebase functions:secrets:access EMAIL_USER
+
+# List all secrets
+firebase functions:secrets:list
+
+# Delete a secret
+firebase functions:secrets:destroy OLD_SECRET_NAME
+```
+
+### Debugging & Testing
+
+```bash
+# Run functions locally (emulator)
+cd functions
+npm run serve
+
+# Check function deployment status
+firebase functions:list
+
+# View function details in browser
+firebase open functions
+
+# Test a callable function
+# Use Firebase Console → Functions → Test tab
+```
+
+### Common Troubleshooting Commands
+
+```bash
+# Clear cache and rebuild
+cd functions
+Remove-Item -Recurse -Force lib      # PowerShell
+rm -rf lib                            # Linux/Mac
+npm run build
+
+# Check for TypeScript errors
+cd functions
+npm run build
+
+# View recent errors only
+firebase functions:log -n 50 | Select-String "Error|Failed|535"
+```
+
+---
+
+## 📦 Quick Deploy Checklist
+
+```bash
+# 1. Make code changes
+# 2. Build TypeScript
+cd functions && npm run build
+
+# 3. Deploy
+firebase deploy --only functions
+
+# 4. Verify deployment
+firebase functions:log -n 10
 ```
 
 ---
