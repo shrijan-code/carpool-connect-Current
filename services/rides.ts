@@ -889,7 +889,8 @@ export class RidesService {
     }
   }
 
-  // Reject booking (Driver action)
+  // Reject booking (Driver action) - NOW USES CLOUD FUNCTION FOR SECURITY
+  // Server-side validation prevents spoofing and ensures atomic seat restoration
   static async rejectBooking(
     bookingId: string,
     rideId: string,
@@ -898,84 +899,41 @@ export class RidesService {
     reason?: string
   ): Promise<void> {
     try {
-      logger.debug('Rejecting booking', { bookingId, driverId });
+      logger.debug('Rejecting booking via Cloud Function', { bookingId, driverId });
 
-      // Get booking data
-      const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
-      if (!bookingDoc.exists()) {
-        throw new Error('Booking not found');
-      }
+      // Import CarpoolBookingService dynamically to avoid circular dependency
+      const { CarpoolBookingService } = await import('./carpool-booking');
 
-      const bookingData = bookingDoc.data() as Booking;
-
-      if (bookingData.status !== 'pending_driver') {
-        throw new Error('Booking is not in pending state');
-      }
-
-      // Update booking status to declined
-      await updateDoc(doc(db, 'bookings', bookingId), {
-        status: 'declined',
-        rejectionReason: reason || 'No reason provided',
-        rejectedBy: driverId,
-        updatedAt: serverTimestamp()
+      // Use the secure Cloud Function which:
+      // 1. Validates driverId matches the booking's driver
+      // 2. Restores seats atomically in a transaction
+      // 3. Updates booking status server-side
+      await CarpoolBookingService.driverRespondBooking({
+        bookingId,
+        action: 'decline'
       });
 
-      // CRITICAL: Restore seats to the ride since they were decremented when booking was created
-      const seatsToRestore = bookingData.seats || seats || 1;
-      const rideRef = doc(db, 'rides', rideId);
-      const rideDoc = await getDoc(rideRef);
+      console.log('✅ Booking rejected via Cloud Function - seats restored server-side');
 
-      if (rideDoc.exists()) {
-        const { increment } = await import('firebase/firestore');
-        await updateDoc(rideRef, {
-          availableSeats: increment(seatsToRestore),
-          seatsAvailable: increment(seatsToRestore),
-          updatedAt: serverTimestamp()
-        });
-        console.log(`🪑 Restored ${seatsToRestore} seats to ride ${rideId} after rejection`);
-      }
-
-      // Cancel payment if payment intent exists
-      if (bookingData.payment?.intentId) {
-        try {
-          // TODO: Implement Stripe payment cancellation
-          console.log('Would cancel payment:', bookingData.payment.intentId);
-
-          await updateDoc(doc(db, 'bookings', bookingId), {
-            'payment.status': 'cancelled',
-            updatedAt: serverTimestamp()
-          });
-        } catch (paymentError) {
-          console.error('Payment cancellation failed:', paymentError);
-          // Continue with booking rejection even if payment cancellation fails
-        }
-      }
-
-      // Send notification to passenger
-      await NotificationService.sendInAppNotification(
-        bookingData.riderId || bookingData.passenger?.id || '',
-        'Booking Declined',
-        `Your booking request has been declined by the driver. ${reason ? `Reason: ${reason}` : 'No reason provided.'}`,
-        'booking_rejected',
-        { bookingId, rideId }
-      );
-
-      // Log audit trail
+      // Log audit trail (still client-side for now, could be moved to CF)
       await AuditService.logAction('REJECT_BOOKING', 'booking', bookingId, driverId, {
         reason,
-        riderId: bookingData.riderId || bookingData.passenger?.id,
         rideId,
         seats
       });
 
-      console.log('Booking rejected successfully');
     } catch (error: any) {
       console.error('Reject booking error:', error);
       throw new Error(error.message || 'Failed to reject booking');
     }
   }
 
-  // Cancel booking by passenger
+  // Cancel booking by passenger - NOW USES CLOUD FUNCTION FOR SECURITY
+  // Server-side validation ensures proper refund handling and atomic seat restoration
+  /**
+   * @deprecated Use CarpoolBookingService.cancelBooking() directly for new code.
+   * This wrapper exists for backward compatibility.
+   */
   static async cancelBookingByPassenger(
     bookingId: string,
     rideId: string,
@@ -984,70 +942,30 @@ export class RidesService {
     reason?: string
   ): Promise<void> {
     try {
-      logger.debug('Cancelling booking', { bookingId, passengerId });
+      logger.debug('Cancelling booking via Cloud Function', { bookingId, passengerId });
 
-      // Get booking and ride data
-      const bookingDoc = await getDoc(doc(db, 'bookings', bookingId));
-      if (!bookingDoc.exists()) {
-        throw new Error('Booking not found');
-      }
+      // Import CarpoolBookingService dynamically to avoid circular dependency
+      const { CarpoolBookingService } = await import('./carpool-booking');
 
-      const bookingData = bookingDoc.data() as Booking;
-      const ride = await this.getRideById(rideId);
-
-      if (!ride) {
-        throw new Error('Ride not found');
-      }
-
-      // Determine cancellation type based on current status
-      const cancellationType = bookingData.status === 'confirmed' ? 'CANCEL_AFTER_ACCEPTANCE' : 'CANCEL_BOOKING';
-
-      // Update booking status to cancelled
-      await updateDoc(doc(db, 'bookings', bookingId), {
-        status: 'cancelled_by_rider',
-        cancellationReason: reason || 'Cancelled by passenger',
-        cancelledBy: passengerId,
-        updatedAt: serverTimestamp()
+      // Use the secure Cloud Function which:
+      // 1. Validates passengerId matches the booking's rider
+      // 2. Calculates cancellation fees based on timing
+      // 3. Processes refunds via Stripe server-side
+      // 4. Restores seats atomically in a transaction
+      await CarpoolBookingService.cancelBooking({
+        bookingId,
+        reason: reason || 'Cancelled by passenger'
       });
 
-      // Remove passenger from ride and restore seats if booking was confirmed
-      if (bookingData.status === 'confirmed') {
-        const rideRef = doc(db, 'rides', rideId);
-        const rideDoc = await getDoc(rideRef);
+      console.log('✅ Booking cancelled via Cloud Function - refund and seats handled server-side');
 
-        if (rideDoc.exists()) {
-          const rideData = rideDoc.data() as Ride;
-          const updatedPassengers = (rideData.passengers || []).filter(
-            (p: any) => p.bookingId !== bookingId
-          );
-
-          await updateDoc(rideRef, {
-            passengers: updatedPassengers,
-            availableSeats: Math.max(0, ((rideData.availableSeats ?? rideData.seatsAvailable ?? 0) as number) + seats),
-            seatsAvailable: Math.max(0, ((rideData.availableSeats ?? rideData.seatsAvailable ?? 0) as number) + seats),
-            updatedAt: serverTimestamp()
-          });
-        }
-      }
-
-      // Send notification to driver
-      await NotificationService.sendInAppNotification(
-        ride.driverId,
-        'Booking Cancelled',
-        `A passenger has cancelled their booking for your ride from ${ride.from?.name || ride.origin?.name || 'Unknown'} to ${ride.to?.name || ride.destination?.name || 'Unknown'}. ${reason ? `Reason: ${reason}` : ''}`,
-        'ride_cancelled',
-        { bookingId, rideId }
-      );
-
-      // Log audit trail
-      await AuditService.logAction(cancellationType, 'booking', bookingId, passengerId, {
+      // Log audit trail (still client-side for now)
+      await AuditService.logAction('CANCEL_BOOKING', 'booking', bookingId, passengerId, {
         reason,
         rideId,
-        seats,
-        driverId: ride.driverId
+        seats
       });
 
-      console.log('Booking cancelled successfully by passenger');
     } catch (error: any) {
       console.error('Cancel booking by passenger error:', error);
       throw new Error(error.message || 'Failed to cancel booking');
