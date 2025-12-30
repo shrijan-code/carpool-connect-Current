@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RideCard } from '@/components/RideCard';
@@ -52,6 +52,7 @@ export default function RidesScreen() {
   const [isSubmittingRating, setIsSubmittingRating] = useState<boolean>(false);
   const [showMap, setShowMap] = useState<boolean>(false);
   const [driverPendingRequests, setDriverPendingRequests] = useState<Booking[]>([]); // Driver's pending booking requests
+  const [processingBookingId, setProcessingBookingId] = useState<string | null>(null); // Track which booking is being processed
 
   const userRides = getUserRides(user?.id || '', (user?.role === 'driver' || user?.role === 'rider') ? user.role : 'rider');
   const userBookings = getUserBookings(user?.id || '');
@@ -269,6 +270,8 @@ export default function RidesScreen() {
 
   // Driver accept booking request
   const handleAcceptBookingRequest = (booking: Booking) => {
+    if (processingBookingId) return; // Prevent action if already processing
+
     Alert.alert(
       '✅ Accept Booking',
       `Accept booking from ${booking.passenger?.name || 'Passenger'}?\n\n• ${booking.seats} seat(s)\n• $${(booking.amountTotal / 100).toFixed(2)} total\n• Payment will be captured immediately`,
@@ -277,6 +280,7 @@ export default function RidesScreen() {
         {
           text: 'Accept',
           onPress: async () => {
+            setProcessingBookingId(booking.id);
             try {
               await acceptBooking(booking.id, user!.id);
               Alert.alert(
@@ -287,6 +291,8 @@ export default function RidesScreen() {
               await loadData();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to accept booking');
+            } finally {
+              setProcessingBookingId(null);
             }
           }
         }
@@ -296,6 +302,8 @@ export default function RidesScreen() {
 
   // Driver decline booking request
   const handleDeclineBookingRequest = (booking: Booking) => {
+    if (processingBookingId) return; // Prevent action if already processing
+
     Alert.alert(
       '❌ Decline Booking',
       `Decline booking from ${booking.passenger?.name || 'Passenger'}?\n\n• Payment authorization will be cancelled\n• Passenger will be notified`,
@@ -305,6 +313,7 @@ export default function RidesScreen() {
           text: 'Decline',
           style: 'destructive',
           onPress: async () => {
+            setProcessingBookingId(booking.id);
             try {
               await declineBooking(booking.id, booking.rideId, booking.seats, user!.id, 'Declined by driver');
               Alert.alert(
@@ -315,6 +324,8 @@ export default function RidesScreen() {
               await loadData();
             } catch (err: any) {
               Alert.alert('Error', err.message || 'Failed to decline booking');
+            } finally {
+              setProcessingBookingId(null);
             }
           }
         }
@@ -765,22 +776,40 @@ export default function RidesScreen() {
 
                         {/* Driver Accept/Decline Actions */}
                         <View style={styles.modernCompactActions}>
-                          <TouchableOpacity
-                            style={[styles.modernActionButton, { backgroundColor: colors.success + '20' }]}
-                            onPress={() => handleAcceptBookingRequest(booking)}
-                            activeOpacity={0.8}
-                          >
-                            <Check size={16} color={colors.success} />
-                            <Text style={[styles.modernActionText, { color: colors.success }]}>Accept</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.modernCancelButton}
-                            onPress={() => handleDeclineBookingRequest(booking)}
-                            activeOpacity={0.8}
-                          >
-                            <X size={16} color={colors.error} />
-                            <Text style={styles.modernCancelText}>Decline</Text>
-                          </TouchableOpacity>
+                          {processingBookingId === booking.id ? (
+                            <View style={styles.processingContainer}>
+                              <ActivityIndicator size="small" color={colors.primary} />
+                              <Text style={[styles.processingText, { color: colors.primary }]}>Processing...</Text>
+                            </View>
+                          ) : (
+                            <>
+                              <TouchableOpacity
+                                style={[
+                                  styles.modernActionButton,
+                                  { backgroundColor: colors.success + '20' },
+                                  processingBookingId ? styles.disabledButton : null
+                                ]}
+                                onPress={() => handleAcceptBookingRequest(booking)}
+                                activeOpacity={0.8}
+                                disabled={!!processingBookingId}
+                              >
+                                <Check size={16} color={colors.success} />
+                                <Text style={[styles.modernActionText, { color: colors.success }]}>Accept</Text>
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[
+                                  styles.modernCancelButton,
+                                  processingBookingId ? styles.disabledButton : null
+                                ]}
+                                onPress={() => handleDeclineBookingRequest(booking)}
+                                activeOpacity={0.8}
+                                disabled={!!processingBookingId}
+                              >
+                                <X size={16} color={colors.error} />
+                                <Text style={styles.modernCancelText}>Decline</Text>
+                              </TouchableOpacity>
+                            </>
+                          )}
                         </View>
                       </View>
                     </View>
@@ -1438,6 +1467,26 @@ const createStyles = (colors: any) => StyleSheet.create({
   passengerRating: {
     fontSize: 13,
     color: colors.textSecondary,
+  },
+  processingContainer: {
+    flex: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  processingText: {
+    fontSize: 14,
+    fontWeight: '500' as const,
+    color: colors.primary,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });
 

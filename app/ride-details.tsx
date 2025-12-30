@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db, functions } from '@/config/firebase';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Modal, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Alert, Modal, TouchableWithoutFeedback, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, Stack, router } from 'expo-router';
 import { Colors } from '@/constants/colors';
@@ -43,6 +43,7 @@ export default function RideDetailsScreen() {
   const [isLoadingRide, setIsLoadingRide] = useState(false);
   const [rideNotFound, setRideNotFound] = useState(false);
   const [seatModalVisible, setSeatModalVisible] = useState(false);
+  const [processingBookingId, setProcessingBookingId] = useState<string | null>(null);
 
   // Subscribe to real-time ride updates
   useEffect(() => {
@@ -199,8 +200,9 @@ export default function RideDetailsScreen() {
   };
 
   const handleAcceptBooking = async (booking: Booking) => {
-    if (!user || !isDriver) return;
+    if (!user || !isDriver || processingBookingId) return;
 
+    setProcessingBookingId(booking.id);
     try {
       await RidesService.acceptBooking(booking.id, user.id);
       Alert.alert('Booking Accepted', 'You can now message the passenger.');
@@ -221,11 +223,13 @@ export default function RideDetailsScreen() {
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to accept booking';
       Alert.alert('Error', errorMessage);
+    } finally {
+      setProcessingBookingId(null);
     }
   };
 
   const handleRejectBooking = async (booking: Booking) => {
-    if (!user || !isDriver) return;
+    if (!user || !isDriver || processingBookingId) return;
 
     Alert.alert(
       'Reject Booking',
@@ -236,6 +240,7 @@ export default function RideDetailsScreen() {
           text: 'Reject',
           style: 'destructive',
           onPress: async () => {
+            setProcessingBookingId(booking.id);
             try {
               await RidesService.rejectBooking(
                 booking.id,
@@ -253,6 +258,8 @@ export default function RideDetailsScreen() {
             } catch (error: unknown) {
               const errorMessage = error instanceof Error ? error.message : 'Failed to reject booking';
               Alert.alert('Error', errorMessage);
+            } finally {
+              setProcessingBookingId(null);
             }
           }
         }
@@ -476,19 +483,33 @@ export default function RideDetailsScreen() {
   };
 
   const renderBookingActions = (booking: Booking) => {
+    const isProcessing = processingBookingId === booking.id;
+
     if (booking.status === 'pending_driver' && isDriver) {
+      if (isProcessing) {
+        return (
+          <View style={styles.bookingActions}>
+            <View style={[styles.actionButton, styles.processingButton]}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.processingButtonText}>Processing...</Text>
+            </View>
+          </View>
+        );
+      }
       return (
         <View style={styles.bookingActions}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.acceptButton]}
+            style={[styles.actionButton, styles.acceptButton, processingBookingId ? styles.disabledButton : null]}
             onPress={() => handleAcceptBooking(booking)}
+            disabled={!!processingBookingId}
           >
             <Check size={16} color={Colors.background} />
             <Text style={styles.acceptButtonText}>Accept</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
+            style={[styles.actionButton, styles.rejectButton, processingBookingId ? styles.disabledButton : null]}
             onPress={() => handleRejectBooking(booking)}
+            disabled={!!processingBookingId}
           >
             <X size={16} color={Colors.background} />
             <Text style={styles.rejectButtonText}>Reject</Text>
@@ -1310,5 +1331,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500' as const,
     color: Colors.textSecondary,
+  },
+  processingButton: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    flexDirection: 'row' as const,
+    gap: 8,
+  },
+  processingButtonText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: '500' as const,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
 });
