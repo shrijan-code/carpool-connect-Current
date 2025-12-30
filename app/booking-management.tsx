@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Dimensions, Platform } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Platform, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { Card } from '@/components/ui/Card';
@@ -13,10 +13,11 @@ import { CancellationModal } from '@/src/components/CancellationModal';
 import { router } from 'expo-router';
 import { logger } from '@/utils/logger';
 
-const { width: screenWidth } = Dimensions.get('window');
-const isSmallScreen = screenWidth < 375;
-
 export default function BookingManagementScreen() {
+  // Reactive screen size calculation - updates on rotation/resize
+  const { width: screenWidth } = useWindowDimensions();
+  const isSmallScreen = screenWidth < 375;
+
   const { user } = useAuthStore();
   const { getUserBookings, cancelBooking, isLoading } = useRidesStore();
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -582,13 +583,13 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: isSmallScreen ? 16 : 24,
+    padding: 24,
   },
   header: {
-    marginBottom: isSmallScreen ? 16 : 24,
+    marginBottom: 24,
   },
   title: {
-    fontSize: isSmallScreen ? 24 : 28,
+    fontSize: 28,
     fontWeight: '700' as const,
     color: Colors.text,
     marginBottom: 4,
@@ -597,7 +598,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
   },
   subtitle: {
-    fontSize: isSmallScreen ? 14 : 16,
+    fontSize: 16,
     color: Colors.textSecondary,
   },
   smallScreenSubtitle: {
@@ -605,18 +606,18 @@ const styles = StyleSheet.create({
   },
   bookingCard: {
     marginBottom: 16,
-    padding: isSmallScreen ? 16 : 20,
+    padding: 20,
   },
   smallScreenCard: {
     marginBottom: 12,
     padding: 12,
   },
   bookingHeader: {
-    flexDirection: isSmallScreen ? 'column' : 'row',
+    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: isSmallScreen ? 'flex-start' : 'center',
+    alignItems: 'center',
     marginBottom: 16,
-    gap: isSmallScreen ? 8 : 0,
+    gap: 0,
   },
   smallScreenHeader: {
     marginBottom: 12,
@@ -626,7 +627,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statusText: {
-    fontSize: isSmallScreen ? 14 : 16,
+    fontSize: 16,
     fontWeight: '600' as const,
     marginLeft: 8,
   },
@@ -634,7 +635,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   bookingId: {
-    fontSize: isSmallScreen ? 10 : 12,
+    fontSize: 12,
     color: Colors.textLight,
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
@@ -671,7 +672,7 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   locationText: {
-    fontSize: isSmallScreen ? 14 : 16,
+    fontSize: 16,
     fontWeight: '500' as const,
     color: Colors.text,
     flex: 1,
@@ -681,7 +682,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   bookingDetails: {
-    gap: isSmallScreen ? 6 : 8,
+    gap: 8,
     marginBottom: 12,
   },
   smallScreenDetails: {
@@ -690,14 +691,14 @@ const styles = StyleSheet.create({
   },
   detailItem: {
     flexDirection: 'row',
-    alignItems: isSmallScreen ? 'flex-start' : 'center',
-    flexWrap: isSmallScreen ? 'wrap' : 'nowrap',
+    alignItems: 'center',
+    flexWrap: 'nowrap',
   },
   smallScreenDetailItem: {
     alignItems: 'flex-start',
   },
   detailText: {
-    fontSize: isSmallScreen ? 12 : 14,
+    fontSize: 14,
     color: Colors.textSecondary,
     marginLeft: 8,
     flex: 1,
@@ -727,7 +728,7 @@ const styles = StyleSheet.create({
   actionSection: {
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
-    paddingTop: isSmallScreen ? 12 : 16,
+    paddingTop: 16,
   },
   actionButtonsContainer: {
     flexDirection: 'row',
@@ -775,8 +776,8 @@ const styles = StyleSheet.create({
   },
   policyInfo: {
     flexDirection: 'row',
-    alignItems: isSmallScreen ? 'flex-start' : 'center',
-    padding: isSmallScreen ? 6 : 8,
+    alignItems: 'center',
+    padding: 8,
     backgroundColor: Colors.surface,
     borderRadius: 6,
   },
@@ -784,11 +785,11 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   policyText: {
-    fontSize: isSmallScreen ? 10 : 12,
+    fontSize: 12,
     marginLeft: 6,
     fontWeight: '500' as const,
     flex: 1,
-    lineHeight: isSmallScreen ? 12 : 16,
+    lineHeight: 16,
   },
   smallScreenPolicyText: {
     fontSize: 9,

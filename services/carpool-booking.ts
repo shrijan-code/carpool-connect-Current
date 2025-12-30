@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '@/config/firebase';
+import { logger } from '@/utils/logger';
 
 export interface BookingRequest {
   rideId: string;
@@ -32,6 +33,50 @@ export interface BookingCancellation {
   reason?: string;
 }
 
+// Type-safe response interfaces
+interface CloudFunctionResponse {
+  success: boolean;
+  message?: string;
+}
+
+interface BookingCreatedResponse extends CloudFunctionResponse {
+  bookingId: string;
+  clientSecret: string;
+}
+
+interface DriverResponseResult extends CloudFunctionResponse {
+  action: string;
+}
+
+interface StartRideResponse extends CloudFunctionResponse {
+  passengerCount: number;
+}
+
+interface CompleteRideResponse extends CloudFunctionResponse {
+  summary: {
+    passengerCount: number;
+    totalRevenue: number;
+    platformFees: number;
+    driverPayout: number;
+    payoutId: string;
+  };
+}
+
+interface DriverBookingRequestsResponse extends CloudFunctionResponse {
+  bookingRequests: Array<{
+    id: string;
+    rideId: string;
+    riderId: string;
+    seats: number;
+    amountTotal: number;
+    status: string;
+    createdAt: string;
+    ride: Record<string, unknown>;
+    rider: Record<string, unknown>;
+    payment: Record<string, unknown>;
+  }>;
+}
+
 /**
  * Carpool Booking Service
  * Handles all Firebase Cloud Function calls for the carpool booking flow
@@ -44,22 +89,23 @@ export class CarpoolBookingService {
    */
   static async createPendingBooking(request: BookingRequest): Promise<BookingResponse> {
     try {
-      console.log('🚗 Creating pending booking:', request);
+      logger.debug('Creating pending booking', { rideId: request.rideId, seats: request.seats });
 
       const createPendingBooking = httpsCallable(functions, 'createPendingBooking');
       const result = await createPendingBooking(request);
 
-      const data = result.data as any;
+      const data = result.data as BookingCreatedResponse;
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to create booking');
       }
 
-      console.log('✅ Booking created successfully:', data.bookingId);
-      return data;
-    } catch (error: any) {
-      console.error('❌ Create pending booking error:', error);
-      throw new Error(error.message || 'Failed to create booking request');
+      logger.booking.created(data.bookingId, request.rideId);
+      return data as BookingResponse;
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create booking request';
+      logger.error('Create pending booking error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -68,22 +114,23 @@ export class CarpoolBookingService {
    */
   static async updateBookingPaymentMethod(request: PaymentMethodUpdate): Promise<{ success: boolean; message: string }> {
     try {
-      console.log('💳 Updating booking payment method:', request.bookingId);
+      logger.booking.paymentUpdated(request.bookingId);
 
       const updatePaymentMethod = httpsCallable(functions, 'updateBookingPaymentMethod');
       const result = await updatePaymentMethod(request);
 
-      const data = result.data as any;
+      const data = result.data as CloudFunctionResponse;
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to update payment method');
       }
 
-      console.log('✅ Payment method saved successfully');
-      return data;
-    } catch (error: any) {
-      console.error('❌ Update payment method error:', error);
-      throw new Error(error.message || 'Failed to update payment method');
+      logger.debug('Payment method saved successfully', { bookingId: request.bookingId });
+      return { success: data.success, message: data.message || 'Payment method updated' };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update payment method';
+      logger.error('Update payment method error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -93,22 +140,23 @@ export class CarpoolBookingService {
    */
   static async driverRespondBooking(response: DriverResponse): Promise<{ success: boolean; message: string; action: string }> {
     try {
-      console.log(`🚗 Driver ${response.action}ing booking:`, response.bookingId);
+      logger.debug('Driver responding to booking', { bookingId: response.bookingId, action: response.action });
 
       const driverRespondBooking = httpsCallable(functions, 'driverRespondBooking');
       const result = await driverRespondBooking(response);
 
-      const data = result.data as any;
+      const data = result.data as DriverResponseResult;
 
       if (!data.success) {
         throw new Error(data.message || `Failed to ${response.action} booking`);
       }
 
-      console.log(`✅ Booking ${response.action}ed successfully`);
-      return data;
-    } catch (error: any) {
-      console.error(`❌ Driver respond booking error:`, error);
-      throw new Error(error.message || `Failed to ${response.action} booking`);
+      logger.booking.updated(response.bookingId, response.action === 'accept' ? 'confirmed' : 'declined');
+      return { success: data.success, message: data.message || '', action: data.action };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : `Failed to ${response.action} booking`;
+      logger.error('Driver respond booking error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -118,22 +166,23 @@ export class CarpoolBookingService {
    */
   static async startRide(request: RideAction): Promise<{ success: boolean; message: string; passengerCount: number }> {
     try {
-      console.log('🚗 Starting ride:', request.rideId);
+      logger.debug('Starting ride', { rideId: request.rideId });
 
       const startRide = httpsCallable(functions, 'startRide');
       const result = await startRide(request);
 
-      const data = result.data as any;
+      const data = result.data as StartRideResponse;
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to start ride');
       }
 
-      console.log('✅ Ride started successfully');
-      return data;
-    } catch (error: any) {
-      console.error('❌ Start ride error:', error);
-      throw new Error(error.message || 'Failed to start ride');
+      logger.info('Ride started successfully', { rideId: request.rideId, passengerCount: data.passengerCount });
+      return { success: data.success, message: data.message || '', passengerCount: data.passengerCount };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to start ride';
+      logger.error('Start ride error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -153,22 +202,23 @@ export class CarpoolBookingService {
     };
   }> {
     try {
-      console.log('🚗 Completing ride and processing charges:', request.rideId);
+      logger.debug('Completing ride and processing charges', { rideId: request.rideId });
 
       const completeRideAndCharge = httpsCallable(functions, 'completeRideAndCharge');
       const result = await completeRideAndCharge(request);
 
-      const data = result.data as any;
+      const data = result.data as CompleteRideResponse;
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to complete ride');
       }
 
-      console.log('✅ Ride completed and payments processed');
-      return data;
-    } catch (error: any) {
-      console.error('❌ Complete ride and charge error:', error);
-      throw new Error(error.message || 'Failed to complete ride');
+      logger.info('Ride completed and payments processed', { rideId: request.rideId, ...data.summary });
+      return { success: data.success, message: data.message || '', summary: data.summary };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to complete ride';
+      logger.error('Complete ride and charge error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -178,22 +228,23 @@ export class CarpoolBookingService {
    */
   static async cancelBooking(request: BookingCancellation): Promise<{ success: boolean; message: string }> {
     try {
-      console.log('🚗 Cancelling booking:', request.bookingId);
+      logger.debug('Cancelling booking', { bookingId: request.bookingId, reason: request.reason });
 
       const cancelBooking = httpsCallable(functions, 'cancelBooking');
       const result = await cancelBooking(request);
 
-      const data = result.data as any;
+      const data = result.data as CloudFunctionResponse;
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to cancel booking');
       }
 
-      console.log('✅ Booking cancelled successfully');
-      return data;
-    } catch (error: any) {
-      console.error('❌ Cancel booking error:', error);
-      throw new Error(error.message || 'Failed to cancel booking');
+      logger.booking.cancelled(request.bookingId, request.reason);
+      return { success: data.success, message: data.message || 'Booking cancelled' };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to cancel booking';
+      logger.error('Cancel booking error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -211,28 +262,29 @@ export class CarpoolBookingService {
       amountTotal: number;
       status: string;
       createdAt: string;
-      ride: any;
-      rider: any;
-      payment: any;
+      ride: Record<string, unknown>;
+      rider: Record<string, unknown>;
+      payment: Record<string, unknown>;
     }>;
   }> {
     try {
-      console.log('📱 Loading booking requests for driver');
+      logger.debug('Loading booking requests for driver');
 
       const getDriverBookingRequests = httpsCallable(functions, 'getDriverBookingRequests');
       const result = await getDriverBookingRequests({});
 
-      const data = result.data as any;
+      const data = result.data as DriverBookingRequestsResponse;
 
       if (!data.success) {
         throw new Error(data.message || 'Failed to load booking requests');
       }
 
-      console.log('✅ Loaded', data.bookingRequests?.length || 0, 'booking requests');
-      return data;
-    } catch (error: any) {
-      console.error('❌ Get driver booking requests error:', error);
-      throw new Error(error.message || 'Failed to load booking requests');
+      logger.debug('Loaded booking requests', { count: data.bookingRequests?.length || 0 });
+      return { success: data.success, bookingRequests: data.bookingRequests };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load booking requests';
+      logger.error('Get driver booking requests error', error);
+      throw new Error(errorMessage);
     }
   }
 
@@ -245,6 +297,7 @@ export class CarpoolBookingService {
 
   /**
    * Utility method to get platform fee ($5 AUD flat)
+   * @deprecated Use PLATFORM_FEE from '@/utils/price' instead
    */
   static calculatePlatformFee(): number {
     return 500; // $5 AUD flat fee in cents
@@ -252,6 +305,7 @@ export class CarpoolBookingService {
 
   /**
    * Utility method to calculate driver payout
+   * @deprecated Use calculateDriverPayout from '@/utils/price' instead
    */
   static calculateDriverPayout(totalRevenue: number, platformFee: number = 500): number {
     return totalRevenue - platformFee;

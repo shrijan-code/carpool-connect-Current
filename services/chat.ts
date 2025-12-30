@@ -22,6 +22,7 @@ import { db, functions } from '@/config/firebase';
 import { ChatMessage, MessageThread } from '@/types';
 import { ImageService } from './image';
 import { NotificationService } from './notifications';
+import { logger } from '@/utils/logger';
 
 export class ChatService {
   // Get all participants for a ride (including from confirmed bookings)
@@ -64,12 +65,12 @@ export class ChatService {
           if (bookingData.driverId) participants.add(bookingData.driverId);
         });
       } catch (bookingError) {
-        console.warn('Error fetching bookings for participants:', bookingError);
+        logger.warn('Error fetching bookings for participants', { error: bookingError });
       }
 
       return Array.from(participants);
     } catch (error) {
-      console.warn('Error fetching ride participants:', error);
+      logger.warn('Error fetching ride participants', { error });
       return [];
     }
   }
@@ -105,10 +106,10 @@ export class ChatService {
         updatedAt: serverTimestamp()
       });
 
-      console.log('Created new message thread:', threadRef.id);
+      logger.chat.threadCreated(threadRef.id, bookingId);
       return threadRef.id;
-    } catch (error: any) {
-      console.error('Create or get thread error:', error);
+    } catch (error: unknown) {
+      logger.error('Create or get thread error', error);
       throw new Error('Failed to create message thread');
     }
   }
@@ -124,11 +125,11 @@ export class ChatService {
     try {
       // Validate required parameters
       if (!rideId || !senderId || !senderName || !message?.trim()) {
-        console.error('Missing required message parameters:', { rideId, senderId, senderName, message: message?.trim() });
+        logger.error('Missing required message parameters', undefined, { rideId, senderId, senderName, hasMessage: !!message?.trim() });
         throw new Error('Missing required message parameters');
       }
 
-      console.log('Attempting to send message:', { rideId, senderId, senderName, messageLength: message.length, bookingId });
+      logger.debug('Attempting to send message', { rideId, senderId, messageLength: message.length, bookingId });
 
       let threadId: string | undefined;
       let participants: string[] = [];
@@ -147,18 +148,18 @@ export class ChatService {
               // PRIVATE conversation: only driver and this specific rider
               participants = [driverId, passengerId];
               threadId = await this.createOrGetThread(bookingId, rideId, driverId, passengerId);
-              console.log(`📩 Private message between driver ${driverId} and rider ${passengerId}`);
+              logger.debug('Private message between driver and rider', { driverId, passengerId });
             }
           }
         } catch (threadError) {
-          console.warn('Failed to create thread, falling back to ride-based participants:', threadError);
+          logger.warn('Failed to create thread, falling back to ride-based participants', { error: threadError });
         }
       }
 
       // Fallback: If no bookingId or thread creation failed, use ride-based participants (group chat)
       if (participants.length === 0) {
         participants = await this.getParticipantsForRide(rideId);
-        console.log(`📢 Group message to all ride participants: ${participants.length} people`);
+        logger.debug('Group message to all ride participants', { count: participants.length });
       }
 
       // Ensure sender is always in participants
@@ -180,9 +181,9 @@ export class ChatService {
         timestamp: serverTimestamp()
       };
 
-      console.log('Sending message with data:', messageData);
+      logger.debug('Sending message', { rideId: messageData.rideId, threadId: messageData.threadId });
       const messageRef = await addDoc(collection(db, 'messages'), messageData);
-      console.log('Message sent successfully with ID:', messageRef.id);
+      logger.chat.messageSent(rideId, senderId);
 
       // Update thread with last message info (non-blocking)
       if (threadId) {
@@ -193,7 +194,7 @@ export class ChatService {
             updatedAt: serverTimestamp()
           });
         } catch (updateError) {
-          console.warn('Failed to update thread, message still sent:', updateError);
+          logger.warn('Failed to update thread, message still sent', { error: updateError });
         }
       }
 
@@ -217,14 +218,15 @@ export class ChatService {
             }
           }
         } catch (notificationError) {
-          console.warn('Failed to send notification, message still sent:', notificationError);
+          logger.warn('Failed to send notification, message still sent', { error: notificationError });
         }
       }
 
       return messageRef.id;
-    } catch (error: any) {
-      console.error('Send message error:', error);
-      throw new Error(`Failed to send message: ${error.message}`);
+    } catch (error: unknown) {
+      logger.error('Send message error', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      throw new Error(`Failed to send message: ${errorMessage}`);
     }
   }
 

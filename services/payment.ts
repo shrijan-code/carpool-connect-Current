@@ -2,6 +2,8 @@ import { Platform } from 'react-native';
 import { PaymentMethod } from '@/types';
 import { auth, db } from '@/config/firebase';
 import { doc, setDoc, getDoc, updateDoc, collection, addDoc, serverTimestamp, query, where, getDocs, orderBy } from 'firebase/firestore';
+import { logger } from '@/utils/logger';
+import { PLATFORM_FEE_CENTS } from '@/utils/price';
 
 // Note: Stripe integration would require backend Cloud Functions for security
 // This service handles the frontend payment flow
@@ -58,7 +60,7 @@ export class PaymentService {
         // });
       }
     } catch (error) {
-      console.error('Stripe initialization error:', error);
+      logger.error('Stripe initialization error', error);
     }
   }
 
@@ -93,7 +95,7 @@ export class PaymentService {
         paymentIntentId: data.paymentIntentId,
       };
     } catch (error) {
-      console.error('Create payment intent error:', error);
+      logger.error('Create payment intent error', error);
       throw new Error('Failed to create payment intent');
     }
   }
@@ -118,7 +120,7 @@ export class PaymentService {
         return { success: true };
       }
     } catch (error) {
-      console.error('Confirm payment error:', error);
+      logger.error('Confirm payment error', error);
       return { success: false, error: 'Payment confirmation failed' };
     }
   }
@@ -142,7 +144,7 @@ export class PaymentService {
         isDefault: true,
       };
     } catch (error) {
-      console.error('Add payment method error:', error);
+      logger.error('Add payment method error', error);
       return null;
     }
   }
@@ -160,7 +162,7 @@ export class PaymentService {
 
       return data.paymentMethods || [];
     } catch (error) {
-      console.error('Get payment methods error:', error);
+      logger.error('Get payment methods error', error);
       return [];
     }
   }
@@ -174,7 +176,7 @@ export class PaymentService {
 
       return response.ok;
     } catch (error) {
-      console.error('Delete payment method error:', error);
+      logger.error('Delete payment method error', error);
       return false;
     }
   }
@@ -198,17 +200,19 @@ export class PaymentService {
 
       return response.ok;
     } catch (error) {
-      console.error('Process refund error:', error);
+      logger.error('Process refund error', error);
       return false;
     }
   }
 
-  // Platform fee: Flat $5 AUD
-  private static readonly PLATFORM_FEE_CENTS = 500; // $5.00 AUD
+  // Platform fee: Flat $5 AUD - uses centralized constant
+  // @deprecated Use PLATFORM_FEE_CENTS from '@/utils/price' directly
+  private static readonly PLATFORM_FEE_CENTS_LOCAL = PLATFORM_FEE_CENTS; // $5.00 AUD
 
   // Calculate platform fee (flat $5 AUD)
+  // @deprecated Use PLATFORM_FEE_CENTS from '@/utils/price' directly
   static calculatePlatformFee(_amount: number): number {
-    return 5.00; // Flat $5 fee
+    return PLATFORM_FEE_CENTS / 100; // Return in dollars for backward compatibility
   }
 
   // Calculate total amount including fees
@@ -260,7 +264,7 @@ export class PaymentService {
 
       return paymentMethod;
     } catch (error) {
-      console.error('Setup Direct Debit error:', error);
+      logger.error('Setup Direct Debit error', error);
       return null;
     }
   }
@@ -339,7 +343,7 @@ export class PaymentService {
         return null;
       }
     } catch (error) {
-      console.error('Process ride payment error:', error);
+      logger.error('Process ride payment error', error);
       return null;
     }
   }
@@ -365,7 +369,7 @@ export class PaymentService {
 
       return payments;
     } catch (error) {
-      console.error('Get payment history error:', error);
+      logger.error('Get payment history error', error);
       return [];
     }
   }
@@ -405,7 +409,7 @@ export class PaymentService {
         available: Math.round(available * 100) / 100,
       };
     } catch (error) {
-      console.error('Get driver earnings error:', error);
+      logger.error('Get driver earnings error', error);
       return { total: 0, pending: 0, available: 0 };
     }
   }

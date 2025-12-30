@@ -25,6 +25,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import { NotificationService } from './notifications';
 import SecurityManager from '@/security/SecurityManager';
+import { logger } from '@/utils/logger';
 
 // Configure WebBrowser for auth session
 if (Platform.OS !== 'web') {
@@ -35,22 +36,16 @@ export class AuthService {
   // Password Reset
   static async sendPasswordResetEmail(email: string): Promise<void> {
     try {
-      console.log('AuthService: Attempting to send password reset email to:', email);
-      console.log('AuthService: Firebase auth instance:', !!auth);
-      console.log('AuthService: Firebase config:', {
-        projectId: auth.app.options.projectId,
-        authDomain: auth.app.options.authDomain
-      });
+      logger.debug('Attempting to send password reset email', { email });
 
       await sendPasswordResetEmail(auth, email);
-      console.log('AuthService: Password reset email sent successfully');
-    } catch (error: any) {
-      console.error('AuthService: Password reset error:', error);
-      console.error('AuthService: Error code:', error.code);
-      console.error('AuthService: Error message:', error.message);
+      logger.info('Password reset email sent successfully', { email });
+    } catch (error: unknown) {
+      const firebaseError = error as { code?: string; message?: string };
+      logger.error('Password reset error', error, { code: firebaseError.code });
 
       // Handle specific Firebase Auth errors
-      switch (error.code) {
+      switch (firebaseError.code) {
         case 'auth/user-not-found':
           throw new Error('No account found with this email address. Please check your email or create a new account.');
         case 'auth/invalid-email':
@@ -66,7 +61,7 @@ export class AuthService {
         case 'auth/operation-not-allowed':
           throw new Error('Password reset is not enabled. Please contact support.');
         default:
-          throw new Error(error.message || 'Failed to send password reset email. Please try again.');
+          throw new Error(firebaseError.message || 'Failed to send password reset email. Please try again.');
       }
     }
   }
@@ -119,13 +114,13 @@ export class AuthService {
 
       let user = await this.getUserProfile(userCredential.user.uid);
       if (!user) {
-        console.log('User profile not found after sign-in. Creating default profile...');
+        logger.debug('User profile not found after sign-in, creating default profile');
         user = await this.createUserFromFirebaseUser(userCredential.user);
       }
 
       return user;
     } catch (error: any) {
-      console.error('Sign in error:', error);
+      logger.error('Sign in error', error);
 
       // Record failed login attempt for brute force protection
       if (email) {
@@ -188,9 +183,10 @@ export class AuthService {
       await signOut(auth);
 
       return newUser;
-    } catch (error: any) {
-      console.error('Sign up error:', error);
-      throw new Error(error.message || 'Failed to create account');
+    } catch (error: unknown) {
+      logger.error('Sign up error', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create account';
+      throw new Error(errorMessage);
     }
   }
 
@@ -200,7 +196,7 @@ export class AuthService {
       if (Platform.OS === 'web') {
         // Check if current domain is authorized
         const currentDomain = window.location.hostname;
-        console.log('Current domain:', currentDomain);
+        logger.debug('Google sign-in from web', { domain: currentDomain });
 
         // Web implementation using popup
         const provider = new GoogleAuthProvider();
@@ -219,7 +215,7 @@ export class AuthService {
       } else {
         // Mobile implementation using AuthSession
         const redirectUri = AuthSession.makeRedirectUri();
-        console.log('Redirect URI:', redirectUri);
+        logger.debug('Google sign-in redirect URI', { redirectUri });
 
         // Get OAuth client IDs from environment variables
         const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS;
@@ -265,23 +261,24 @@ export class AuthService {
           throw new Error('Google sign in was cancelled');
         }
       }
-    } catch (error: any) {
-      console.error('Google sign in error:', error);
+    } catch (error: unknown) {
+      logger.error('Google sign in error', error);
 
       // Provide specific error messages for common issues
-      if (error.code === 'auth/unauthorized-domain') {
+      const firebaseError = error as { code?: string; message?: string };
+      if (firebaseError.code === 'auth/unauthorized-domain') {
         const currentDomain = Platform.OS === 'web' ? window.location.hostname : 'mobile';
         throw new Error(
           `Domain '${currentDomain}' is not authorized for Google Sign-In. ` +
           'Please add this domain to Firebase Authentication authorized domains in the Firebase Console.'
         );
-      } else if (error.code === 'auth/popup-blocked') {
+      } else if (firebaseError.code === 'auth/popup-blocked') {
         throw new Error('Popup was blocked by browser. Please allow popups and try again.');
-      } else if (error.code === 'auth/popup-closed-by-user') {
+      } else if (firebaseError.code === 'auth/popup-closed-by-user') {
         throw new Error('Sign-in was cancelled.');
       }
 
-      throw new Error(error.message || 'Failed to sign in with Google');
+      throw new Error(firebaseError.message || 'Failed to sign in with Google');
     }
   }
 
@@ -291,8 +288,8 @@ export class AuthService {
       // Clear notification cache before signing out
       NotificationService.clearCache();
       await signOut(auth);
-    } catch (error: any) {
-      console.error('Sign out error:', error);
+    } catch (error: unknown) {
+      logger.error('Sign out error', error);
       throw new Error('Failed to sign out');
     }
   }
@@ -306,7 +303,7 @@ export class AuthService {
       }
       return null;
     } catch (error) {
-      console.error('Get user profile error:', error);
+      logger.error('Get user profile error', error);
       return null;
     }
   }
@@ -318,8 +315,8 @@ export class AuthService {
         ...userData,
         updatedAt: serverTimestamp()
       });
-    } catch (error: any) {
-      console.error('Update user profile error:', error);
+    } catch (error: unknown) {
+      logger.error('Update user profile error', error);
       throw new Error('Failed to update profile');
     }
   }
@@ -358,7 +355,7 @@ export class AuthService {
       if (firebaseUser) {
         let user = await this.getUserProfile(firebaseUser.uid);
         if (!user) {
-          console.log('Auth state changed: profile missing. Creating default profile...');
+          logger.debug('Auth state changed: profile missing, creating default profile');
           user = await this.createUserFromFirebaseUser(firebaseUser);
         }
         callback(user);

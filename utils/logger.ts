@@ -93,6 +93,29 @@ class Logger {
         succeeded: (intentId: string) => this.info('Payment succeeded', { intentId }),
         failed: (intentId: string, error: string) => this.error('Payment failed', new Error(error), { intentId }),
     };
+
+    booking = {
+        created: (bookingId: string, rideId: string) => this.info('Booking created', { bookingId, rideId }),
+        updated: (bookingId: string, status: string) => this.info('Booking updated', { bookingId, status }),
+        cancelled: (bookingId: string, reason?: string) => this.info('Booking cancelled', { bookingId, reason }),
+        paymentUpdated: (bookingId: string) => this.debug('Payment method updated', { bookingId }),
+    };
+
+    chat = {
+        messageSent: (rideId: string, senderId: string) => this.debug('Message sent', { rideId, senderId }),
+        threadCreated: (threadId: string, bookingId: string) => this.debug('Thread created', { threadId, bookingId }),
+    };
+
+    image = {
+        uploadStarted: (path: string) => this.debug('Image upload started', { path }),
+        uploadComplete: (path: string, url: string) => this.debug('Image upload complete', { path, urlLength: url.length }),
+        uploadFailed: (path: string, error: string) => this.error('Image upload failed', new Error(error), { path }),
+    };
+
+    emergency = {
+        contactAdded: (contactId: string, userId: string) => this.info('Emergency contact added', { contactId, userId }),
+        alertTriggered: (userId: string) => this.warn('Emergency alert triggered', { userId }),
+    };
 }
 
 export const logger = new Logger();

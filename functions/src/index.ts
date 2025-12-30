@@ -63,6 +63,79 @@ export const getServerTime = onCall(() => {
 });
 
 /**
+ * Test Email Connection - verifies SMTP configuration is working
+ * Call this function to diagnose email delivery issues
+ * Only accessible to authenticated users
+ */
+import { verifyEmailConnection, sendTestEmail } from "./utils/email";
+
+export const testEmailConnection = onCall(
+  { secrets: ["EMAIL_USER", "EMAIL_PASSWORD"] },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Must be logged in to test email");
+    }
+
+    const userId = request.auth.uid;
+    const targetEmail = request.data?.email;
+
+    logger.info("Testing email connection", { userId, targetEmail });
+
+    try {
+      // Step 1: Verify SMTP connection
+      const connectionResult = await verifyEmailConnection();
+
+      if (!connectionResult.success) {
+        return {
+          success: false,
+          step: "connection",
+          error: connectionResult.error,
+          config: {
+            host: "smtp.office365.com",
+            port: 587,
+            emailUserConfigured: !!process.env.EMAIL_USER,
+            emailPasswordConfigured: !!process.env.EMAIL_PASSWORD,
+          },
+        };
+      }
+
+      // Step 2: Send a test email if targetEmail provided
+      if (targetEmail) {
+        const sendResult = await sendTestEmail(targetEmail);
+
+        return {
+          success: sendResult.success,
+          step: "send",
+          message: sendResult.success
+            ? `Test email sent to ${targetEmail} successfully!`
+            : `Connection OK but email send failed: ${sendResult.error}`,
+          error: sendResult.error,
+        };
+      }
+
+      return {
+        success: true,
+        step: "connection",
+        message: "SMTP connection verified successfully! Email server is reachable.",
+        config: {
+          host: "smtp.office365.com",
+          port: 587,
+          emailUser: process.env.EMAIL_USER?.substring(0, 5) + "...", // Partial for security
+        },
+      };
+    } catch (error: unknown) {
+      const message = getErrorMessage(error);
+      logger.error("Email connection test failed", error);
+      return {
+        success: false,
+        step: "unknown",
+        error: message,
+      };
+    }
+  }
+);
+
+/**
  * Admin function to fix seat availability for all rides
  * Recalculates based on confirmed/pending bookings and ensures no negative values
  */

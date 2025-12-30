@@ -26,13 +26,103 @@ const createTransporter = () => {
     return null;
   }
 
+  // Lines 29-40 - REPLACE WITH THIS
   return nodemailer.createTransport({
-    service: "gmail",
+    host: "smtp.office365.com",
+    port: 587,
+    secure: false, // Use STARTTLS
     auth: {
-      user: emailConfig.user,
-      pass: emailConfig.password,
+      user: emailConfig.user,    // e.g., "noreply@carpoolconnect.com"
+      pass: emailConfig.password, // App password from Microsoft 365
+    },
+    tls: {
+      // IMPORTANT: Do NOT use SSLv3 - it's deprecated and blocked by Microsoft 365
+      // Using default ciphers supports modern TLS 1.2+
+      rejectUnauthorized: true, // Verify server certificate for security
     },
   });
+};
+
+/**
+ * Verify email configuration is working
+ * Call this to test if emails can be sent
+ * Returns success: true if SMTP connection works
+ */
+export const verifyEmailConnection = async (): Promise<{ success: boolean; error?: string }> => {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    return {
+      success: false,
+      error: "Email transporter not configured. Check EMAIL_USER and EMAIL_PASSWORD environment variables."
+    };
+  }
+
+  try {
+    // This tests the SMTP connection without sending an email
+    await transporter.verify();
+    console.log("✅ Email server connection verified successfully!");
+    return { success: true };
+  } catch (error: any) {
+    const errorMessage = error.message || "Unknown error";
+    console.error("❌ Email verification failed:", errorMessage);
+    console.error("Error details:", {
+      code: error.code,
+      command: error.command,
+      response: error.response,
+    });
+    return {
+      success: false,
+      error: `Email verification failed: ${errorMessage}. Code: ${error.code || "N/A"}`
+    };
+  }
+};
+
+/**
+ * Send a test email to verify delivery works
+ * @param toEmail - Email address to send test to
+ */
+export const sendTestEmail = async (toEmail: string): Promise<{ success: boolean; error?: string }> => {
+  const transporter = createTransporter();
+
+  if (!transporter) {
+    return {
+      success: false,
+      error: "Email transporter not configured"
+    };
+  }
+
+  try {
+    const result = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: toEmail,
+      subject: "✅ CarpoolConnect Email Test - Success!",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: #10B981; padding: 20px; border-radius: 10px; text-align: center;">
+            <h1 style="color: white; margin: 0;">✅ Email Test Successful!</h1>
+          </div>
+          <div style="padding: 20px;">
+            <p>This is a test email from CarpoolConnect.</p>
+            <p>If you're seeing this, your Microsoft 365 SMTP configuration is working correctly!</p>
+            <p style="color: #6B7280; font-size: 12px;">
+              Sent at: ${new Date().toISOString()}<br/>
+              From: ${process.env.EMAIL_USER}
+            </p>
+          </div>
+        </div>
+      `,
+    });
+
+    console.log("✅ Test email sent successfully:", result.messageId);
+    return { success: true };
+  } catch (error: any) {
+    console.error("❌ Test email failed:", error.message);
+    return {
+      success: false,
+      error: error.message || "Failed to send test email"
+    };
+  }
 };
 
 // Email templates

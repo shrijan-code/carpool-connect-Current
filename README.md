@@ -131,6 +131,50 @@ cd webapp && npm run build
 
 ---
 
+## 📧 Email Configuration (Microsoft 365)
+
+CarpoolConnect uses Microsoft 365 SMTP for sending emails (booking confirmations, safety reports, etc).
+
+### Setup Steps
+
+1. **Create an App Password** (if MFA is enabled):
+   - Go to [Microsoft Security Settings](https://account.microsoft.com/security)
+   - Select "App passwords" → Generate new password
+   - Copy the 16-character password
+
+2. **Enable SMTP AUTH** in Microsoft 365 Admin:
+   - Admin Center → Settings → Org Settings
+   - Enable "Authenticated SMTP" for the sending mailbox
+
+3. **Set Environment Variables** in Firebase:
+   ```bash
+   firebase functions:secrets:set EMAIL_USER
+   # Enter: noreply@yourdomain.com
+   
+   firebase functions:secrets:set EMAIL_PASSWORD  
+   # Enter: your-app-password (16 chars, no spaces)
+   ```
+
+4. **Test Email Delivery**:
+   ```javascript
+   // In your app, call the testEmailConnection function:
+   const result = await httpsCallable(functions, 'testEmailConnection')({ 
+     email: 'your-test-email@example.com' 
+   });
+   console.log(result.data);
+   // Check Firebase Console → Functions → Logs for details
+   ```
+
+### SMTP Configuration (Reference)
+| Setting | Value |
+|---------|-------|
+| Host | `smtp.office365.com` |
+| Port | `587` |
+| Security | STARTTLS |
+| Auth | Required |
+
+---
+
 ## 📦 Deploy Firebase Functions
 
 ```bash
@@ -160,4 +204,4 @@ MIT License
 
 ---
 
-**Last Updated:** December 23, 2025
+**Last Updated:** December 30, 2025

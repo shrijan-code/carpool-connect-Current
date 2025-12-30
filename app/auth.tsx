@@ -340,14 +340,14 @@ export default function AuthScreen() {
           leftIcon={<Lock size={20} color={colors.textSecondary} />}
         />
 
-        {/* Password Strength Indicator */}
+        {/* Password Strength Indicator - matches validation.ts rules */}
         {formData.password.length > 0 && (
           <View style={styles.passwordStrengthContainer}>
             <View style={styles.passwordStrengthBars}>
               <View style={[
                 styles.passwordStrengthBar,
                 formData.password.length >= 1 && (
-                  formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                  formData.password.length >= 8 && /[a-zA-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
                     ? styles.passwordStrengthStrong
                     : formData.password.length >= 6
                       ? styles.passwordStrengthMedium
@@ -357,7 +357,7 @@ export default function AuthScreen() {
               <View style={[
                 styles.passwordStrengthBar,
                 formData.password.length >= 6 && (
-                  formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                  formData.password.length >= 8 && /[a-zA-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
                     ? styles.passwordStrengthStrong
                     : formData.password.length >= 6
                       ? styles.passwordStrengthMedium
@@ -366,24 +366,24 @@ export default function AuthScreen() {
               ]} />
               <View style={[
                 styles.passwordStrengthBar,
-                formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+                formData.password.length >= 8 && /[a-zA-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
                   ? styles.passwordStrengthStrong
                   : styles.passwordStrengthEmpty
               ]} />
             </View>
             <Text style={[
               styles.passwordStrengthText,
-              formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+              formData.password.length >= 8 && /[a-zA-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
                 ? styles.passwordStrengthTextStrong
                 : formData.password.length >= 6
                   ? styles.passwordStrengthTextMedium
                   : styles.passwordStrengthTextWeak
             ]}>
-              {formData.password.length >= 8 && /[A-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
+              {formData.password.length >= 8 && /[a-zA-Z]/.test(formData.password) && /[0-9]/.test(formData.password)
                 ? '✓ Strong password'
                 : formData.password.length >= 6
-                  ? 'Medium - add uppercase & number'
-                  : 'Weak - minimum 6 characters'}
+                  ? 'Medium - add letter & number'
+                  : 'Weak - minimum 8 characters'}
             </Text>
           </View>
         )}
